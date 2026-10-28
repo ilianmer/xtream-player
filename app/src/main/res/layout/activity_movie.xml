@@ -1,0 +1,73 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:orientation="horizontal"
+    android:padding="36dp">
+
+    <ImageView
+        android:id="@+id/ivPoster"
+        android:layout_width="250dp"
+        android:layout_height="375dp"
+        android:scaleType="centerCrop"
+        android:src="@drawable/ph_poster" />
+
+    <LinearLayout
+        android:layout_width="0dp"
+        android:layout_height="match_parent"
+        android:layout_marginStart="32dp"
+        android:layout_weight="1"
+        android:orientation="vertical">
+
+        <TextView
+            android:id="@+id/tvTitle"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:ellipsize="end"
+            android:maxLines="2"
+            android:textColor="@color/text"
+            android:textSize="28sp"
+            android:textStyle="bold" />
+
+        <TextView
+            android:id="@+id/tvMeta"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="6dp"
+            android:textColor="@color/accent"
+            android:textSize="15sp" />
+
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="18dp"
+            android:orientation="horizontal">
+
+            <Button android:id="@+id/btnPlay" style="@style/Btn" android:layout_width="wrap_content" android:layout_marginTop="0dp" android:layout_marginEnd="10dp" android:paddingStart="26dp" android:paddingEnd="26dp" />
+            <Button android:id="@+id/btnRestart" style="@style/Btn" android:layout_width="wrap_content" android:layout_marginTop="0dp" android:layout_marginEnd="10dp" android:paddingStart="20dp" android:paddingEnd="20dp" android:text="Depuis le début" android:visibility="gone" />
+            <Button android:id="@+id/btnFav" style="@style/Btn" android:layout_width="wrap_content" android:layout_marginTop="0dp" android:layout_marginEnd="10dp" android:paddingStart="20dp" android:paddingEnd="20dp" />
+            <Button android:id="@+id/btnDownload" style="@style/Btn" android:layout_width="wrap_content" android:layout_marginTop="0dp" android:paddingStart="20dp" android:paddingEnd="20dp" />
+        </LinearLayout>
+
+        <TextView
+            android:id="@+id/tvPlot"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="20dp"
+            android:ellipsize="end"
+            android:lineSpacingExtra="3dp"
+            android:maxLines="7"
+            android:textColor="@color/text"
+            android:textSize="15sp" />
+
+        <TextView
+            android:id="@+id/tvCredits"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="14dp"
+            android:ellipsize="end"
+            android:maxLines="3"
+            android:textColor="@color/text_dim"
+            android:textSize="13sp" />
+    </LinearLayout>
+</LinearLayout>

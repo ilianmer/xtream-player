@@ -1,0 +1,422 @@
+package com.ilian.xtreamplayer
+
+import android.content.ContentValues
+import android.content.Context
+import android.database.Cursor
+import android.database.sqlite.SQLiteDatabase
+import android.database.sqlite.SQLiteOpenHelper
+import org.json.JSONObject
+
+/**
+ * Base locale : sources, catalogue (pour ne pas tout recharger à chaque démarrage),
+ * favoris, reprise de lecture, téléchargements et cache TMDB.
+ */
+object Db {
+    private lateinit var helper: Helper
+    private val db: SQLiteDatabase get() = helper.writableDatabase
+
+    fun init(ctx: Context) {
+        helper = Helper(ctx.applicationContext)
+        helper.setWriteAheadLoggingEnabled(true)
+    }
+
+    private class Helper(ctx: Context) : SQLiteOpenHelper(ctx, "xtream.db", null, 1) {
+        override fun onCreate(d: SQLiteDatabase) {
+            d.execSQL(
+                "CREATE TABLE sources(id INTEGER PRIMARY KEY AUTOINCREMENT, name TEXT, server TEXT, user TEXT, pass TEXT, " +
+                    "last_sync INTEGER DEFAULT 0, status TEXT, exp_date INTEGER, max_conn INTEGER DEFAULT 0)"
+            )
+            d.execSQL(
+                "CREATE TABLE categories(source_id INTEGER, kind TEXT, cat_id TEXT, name TEXT, pos INTEGER, hidden INTEGER DEFAULT 0, " +
+                    "PRIMARY KEY(source_id, kind, cat_id))"
+            )
+            d.execSQL(
+                "CREATE TABLE items(source_id INTEGER, kind TEXT, id TEXT, name TEXT, norm TEXT, icon TEXT, cat_id TEXT, ext TEXT, " +
+                    "rating TEXT, tmdb TEXT, plot TEXT, pos INTEGER, PRIMARY KEY(source_id, kind, id))"
+            )
+            d.execSQL("CREATE INDEX items_cat ON items(source_id, kind, cat_id, pos)")
+            d.execSQL("CREATE INDEX items_pos ON items(source_id, kind, pos)")
+            d.execSQL("CREATE TABLE favorites(source_id INTEGER, kind TEXT, id TEXT, added INTEGER, PRIMARY KEY(source_id, kind, id))")
+            d.execSQL(
+                "CREATE TABLE progress(source_id INTEGER, kind TEXT, id TEXT, pos INTEGER, dur INTEGER, finished INTEGER, updated INTEGER, " +
+                    "name TEXT, icon TEXT, ext TEXT, extra TEXT, PRIMARY KEY(source_id, kind, id))"
+            )
+            d.execSQL("CREATE TABLE downloads(dm_id INTEGER PRIMARY KEY, source_id INTEGER, kind TEXT, id TEXT, json TEXT, created INTEGER)")
+            d.execSQL("CREATE TABLE tmdb(key TEXT PRIMARY KEY, json TEXT, fetched INTEGER)")
+        }
+
+        override fun onUpgrade(d: SQLiteDatabase, oldVersion: Int, newVersion: Int) {}
+    }
+
+    private fun <T> tx(block: () -> T): T {
+        val d = db
+        d.beginTransaction()
+        try {
+            val r = block()
+            d.setTransactionSuccessful()
+            return r
+        } finally {
+            d.endTransaction()
+        }
+    }
+
+    private fun args(vararg a: Any): Array<String> = a.map { it.toString() }.toTypedArray()
+    private fun Cursor.str(i: Int): String? = if (isNull(i)) null else getString(i)
+
+    // ---------- Sources ----------
+
+    private const val SRC_COLS = "id, name, server, user, pass, last_sync, status, exp_date, max_conn"
+
+    private fun source(c: Cursor) = Source(
+        id = c.getLong(0),
+        name = c.str(1) ?: "",
+        server = c.str(2) ?: "",
+        user = c.str(3) ?: "",
+        pass = c.str(4) ?: "",
+        lastSync = c.getLong(5),
+        status = c.str(6),
+        expDate = if (c.isNull(7)) null else c.getLong(7),
+        maxConn = c.getInt(8)
+    )
+
+    fun sources(): List<Source> = db.rawQuery("SELECT $SRC_COLS FROM sources ORDER BY id", null).use { c ->
+        val out = ArrayList<Source>()
+        while (c.moveToNext()) out.add(source(c))
+        out
+    }
+
+    fun source(id: Long): Source? = db.rawQuery("SELECT $SRC_COLS FROM sources WHERE id=?", args(id)).use { c ->
+        if (c.moveToFirst()) source(c) else null
+    }
+
+    fun addSource(name: String, server: String, user: String, pass: String): Long =
+        db.insert("sources", null, ContentValues().apply {
+            put("name", name)
+            put("server", server)
+            put("user", user)
+            put("pass", pass)
+            put("last_sync", 0L)
+        })
+
+    /** Met à jour une source. Si les identifiants changent, son catalogue sera rechargé. */
+    fun updateSource(id: Long, name: String, server: String, user: String, pass: String) {
+        val old = source(id)
+        val changed = old == null || old.server != server || old.user != user || old.pass != pass
+        db.update("sources", ContentValues().apply {
+            put("name", name)
+            put("server", server)
+            put("user", user)
+            put("pass", pass)
+            if (changed) put("last_sync", 0L)
+        }, "id=?", args(id))
+    }
+
+    fun updateAccount(id: Long, a: AccountInfo) {
+        db.update("sources", ContentValues().apply {
+            put("status", a.status)
+            if (a.expDate != null) put("exp_date", a.expDate) else putNull("exp_date")
+            put("max_conn", a.maxConn)
+        }, "id=?", args(id))
+    }
+
+    fun setLastSync(id: Long, t: Long) {
+        db.update("sources", ContentValues().apply { put("last_sync", t) }, "id=?", args(id))
+    }
+
+    fun deleteSource(id: Long) {
+        tx {
+            for (t in listOf("categories", "items", "favorites", "progress", "downloads")) db.delete(t, "source_id=?", args(id))
+            db.delete("sources", "id=?", args(id))
+        }
+        favCache.remove(id)
+    }
+
+    // ---------- Catalogue ----------
+
+    /** Catégories dans l'ordre du fournisseur, avec leur état masqué. */
+    fun categories(src: Long, kind: Kind): List<Pair<Category, Boolean>> =
+        db.rawQuery("SELECT cat_id, name, hidden FROM categories WHERE source_id=? AND kind=? ORDER BY pos", args(src, kind.name)).use { c ->
+            val out = ArrayList<Pair<Category, Boolean>>()
+            while (c.moveToNext()) out.add(Category(c.str(0) ?: "", c.str(1) ?: "Sans nom") to (c.getInt(2) == 1))
+            out
+        }
+
+    private fun hiddenIds(src: Long, kind: Kind): Set<String> =
+        db.rawQuery("SELECT cat_id FROM categories WHERE source_id=? AND kind=? AND hidden=1", args(src, kind.name)).use { c ->
+            val out = HashSet<String>()
+            while (c.moveToNext()) c.str(0)?.let { out.add(it) }
+            out
+        }
+
+    fun setHidden(src: Long, kind: Kind, ids: Set<String>) {
+        tx {
+            db.update("categories", ContentValues().apply { put("hidden", 0) }, "source_id=? AND kind=?", args(src, kind.name))
+            for (id in ids) {
+                db.update("categories", ContentValues().apply { put("hidden", 1) }, "source_id=? AND kind=? AND cat_id=?", args(src, kind.name, id))
+            }
+        }
+    }
+
+    /**
+     * Remplace le catalogue d'un type pour une source, en une seule transaction :
+     * si le téléchargement échoue en route, l'ancien catalogue est conservé.
+     */
+    fun replaceCatalog(src: Long, kind: Kind, cats: List<Category>, fill: ((Item) -> Unit) -> Unit) {
+        val hidden = hiddenIds(src, kind)
+        tx {
+            db.delete("categories", "source_id=? AND kind=?", args(src, kind.name))
+            db.delete("items", "source_id=? AND kind=?", args(src, kind.name))
+            cats.forEachIndexed { i, cat ->
+                db.insertWithOnConflict("categories", null, ContentValues().apply {
+                    put("source_id", src)
+                    put("kind", kind.name)
+                    put("cat_id", cat.id)
+                    put("name", cat.name)
+                    put("pos", i)
+                    put("hidden", if (cat.id in hidden) 1 else 0)
+                }, SQLiteDatabase.CONFLICT_REPLACE)
+            }
+            val st = db.compileStatement(
+                "INSERT OR REPLACE INTO items(source_id, kind, id, name, norm, icon, cat_id, ext, rating, tmdb, plot, pos) " +
+                    "VALUES (?,?,?,?,?,?,?,?,?,?,?,?)"
+            )
+            var pos = 0L
+            fun bind(i: Int, v: String?) {
+                if (v == null) st.bindNull(i) else st.bindString(i, v)
+            }
+            try {
+                fill { item ->
+                    st.clearBindings()
+                    st.bindLong(1, src)
+                    st.bindString(2, kind.name)
+                    st.bindString(3, item.id)
+                    st.bindString(4, item.name)
+                    st.bindString(5, normalize(item.name))
+                    bind(6, item.icon)
+                    bind(7, item.catId)
+                    bind(8, item.ext)
+                    bind(9, item.rating)
+                    bind(10, item.tmdb)
+                    bind(11, item.plot)
+                    st.bindLong(12, pos++)
+                    st.executeInsert()
+                }
+            } finally {
+                st.close()
+            }
+        }
+    }
+
+    private const val ITEM_COLS = "kind, id, name, icon, ext, plot, cat_id, rating, tmdb"
+    private val ITEM_COLS_I = ITEM_COLS.split(",").joinToString(",") { "i." + it.trim() }
+
+    private fun item(c: Cursor): Item {
+        val kind = Kind.valueOf(c.getString(0))
+        val rating = c.str(7)
+        return Item(
+            kind = kind,
+            id = c.getString(1),
+            name = c.str(2) ?: "?",
+            icon = c.str(3),
+            ext = c.str(4),
+            plot = c.str(5),
+            extra = if (kind == Kind.MOVIE && rating != null && rating != "0") "★ $rating" else null,
+            catId = c.str(6),
+            rating = rating,
+            tmdb = c.str(8)
+        )
+    }
+
+    private fun escapeLike(s: String) = s.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
+
+    /** catIds null = toutes les catégories visibles. */
+    private fun where(src: Long, kind: Kind, catIds: List<String>?, q: String?, a: MutableList<String>): String {
+        val sb = StringBuilder("source_id=? AND kind=?")
+        a.add(src.toString())
+        a.add(kind.name)
+        if (catIds != null) {
+            sb.append(" AND cat_id IN (").append(catIds.joinToString(",") { "?" }).append(")")
+            a.addAll(catIds)
+        } else {
+            sb.append(" AND (cat_id IS NULL OR cat_id NOT IN (SELECT cat_id FROM categories WHERE source_id=? AND kind=? AND hidden=1))")
+            a.add(src.toString())
+            a.add(kind.name)
+        }
+        if (!q.isNullOrBlank()) {
+            sb.append(" AND norm LIKE ? ESCAPE '\\'")
+            a.add("%" + escapeLike(normalize(q.trim())) + "%")
+        }
+        return sb.toString()
+    }
+
+    fun count(src: Long, kind: Kind, catIds: List<String>?, q: String?): Int {
+        if (catIds != null && catIds.isEmpty()) return 0
+        val a = ArrayList<String>()
+        val w = where(src, kind, catIds, q, a)
+        return db.rawQuery("SELECT COUNT(*) FROM items WHERE $w", a.toTypedArray()).use { c -> if (c.moveToFirst()) c.getInt(0) else 0 }
+    }
+
+    fun page(src: Long, kind: Kind, catIds: List<String>?, q: String?, offset: Int, limit: Int): List<Item> {
+        if (catIds != null && catIds.isEmpty()) return emptyList()
+        val a = ArrayList<String>()
+        val w = where(src, kind, catIds, q, a)
+        a.add(limit.toString())
+        a.add(offset.toString())
+        return db.rawQuery("SELECT $ITEM_COLS FROM items WHERE $w ORDER BY pos LIMIT ? OFFSET ?", a.toTypedArray()).use { c ->
+            val out = ArrayList<Item>(limit)
+            while (c.moveToNext()) out.add(item(c))
+            out
+        }
+    }
+
+    fun countAll(src: Long, kind: Kind): Int =
+        db.rawQuery("SELECT COUNT(*) FROM items WHERE source_id=? AND kind=?", args(src, kind.name)).use { c -> if (c.moveToFirst()) c.getInt(0) else 0 }
+
+    fun countWithTmdb(src: Long, kind: Kind): Int =
+        db.rawQuery(
+            "SELECT COUNT(*) FROM items WHERE source_id=? AND kind=? AND tmdb IS NOT NULL AND tmdb != '' AND tmdb != '0'",
+            args(src, kind.name)
+        ).use { c -> if (c.moveToFirst()) c.getInt(0) else 0 }
+
+    // ---------- Favoris ----------
+
+    private val favCache = HashMap<Long, MutableSet<String>>()
+
+    private fun favSet(src: Long): MutableSet<String> = favCache.getOrPut(src) {
+        val s = HashSet<String>()
+        db.rawQuery("SELECT kind, id FROM favorites WHERE source_id=?", args(src)).use { c ->
+            while (c.moveToNext()) s.add(c.getString(0) + ":" + c.getString(1))
+        }
+        s
+    }
+
+    fun isFav(src: Long, item: Item): Boolean = item.key in favSet(src)
+
+    /** Renvoie true si l'élément est maintenant en favori. */
+    fun toggleFav(src: Long, item: Item): Boolean {
+        val set = favSet(src)
+        return if (item.key in set) {
+            db.delete("favorites", "source_id=? AND kind=? AND id=?", args(src, item.kind.name, item.id))
+            set.remove(item.key)
+            false
+        } else {
+            db.insertWithOnConflict("favorites", null, ContentValues().apply {
+                put("source_id", src)
+                put("kind", item.kind.name)
+                put("id", item.id)
+                put("added", System.currentTimeMillis())
+            }, SQLiteDatabase.CONFLICT_REPLACE)
+            set.add(item.key)
+            true
+        }
+    }
+
+    fun favorites(src: Long, kind: Kind): List<Item> = db.rawQuery(
+        "SELECT $ITEM_COLS_I FROM favorites f JOIN items i ON i.source_id=f.source_id AND i.kind=f.kind AND i.id=f.id " +
+            "WHERE f.source_id=? AND f.kind=? ORDER BY f.added DESC",
+        args(src, kind.name)
+    ).use { c ->
+        val out = ArrayList<Item>()
+        while (c.moveToNext()) out.add(item(c))
+        out
+    }
+
+    // ---------- Reprise de lecture ----------
+
+    data class Progress(val pos: Long, val dur: Long, val finished: Boolean)
+
+    fun progress(src: Long, item: Item): Progress? =
+        db.rawQuery("SELECT pos, dur, finished FROM progress WHERE source_id=? AND kind=? AND id=?", args(src, item.kind.name, item.id)).use { c ->
+            if (c.moveToFirst()) Progress(c.getLong(0), c.getLong(1), c.getInt(2) == 1) else null
+        }
+
+    fun progressMap(src: Long, kind: Kind, ids: List<String>): Map<String, Progress> {
+        val out = HashMap<String, Progress>()
+        for (chunk in ids.chunked(400)) {
+            if (chunk.isEmpty()) continue
+            val a = arrayListOf(src.toString(), kind.name)
+            a.addAll(chunk)
+            db.rawQuery(
+                "SELECT id, pos, dur, finished FROM progress WHERE source_id=? AND kind=? AND id IN (${chunk.joinToString(",") { "?" }})",
+                a.toTypedArray()
+            ).use { c ->
+                while (c.moveToNext()) out[c.getString(0)] = Progress(c.getLong(1), c.getLong(2), c.getInt(3) == 1)
+            }
+        }
+        return out
+    }
+
+    fun saveProgress(src: Long, item: Item, pos: Long, dur: Long, finished: Boolean) {
+        db.insertWithOnConflict("progress", null, ContentValues().apply {
+            put("source_id", src)
+            put("kind", item.kind.name)
+            put("id", item.id)
+            put("pos", pos)
+            put("dur", dur)
+            put("finished", if (finished) 1 else 0)
+            put("updated", System.currentTimeMillis())
+            put("name", item.name)
+            put("icon", item.icon)
+            put("ext", item.ext)
+            put("extra", item.extra)
+        }, SQLiteDatabase.CONFLICT_REPLACE)
+    }
+
+    /** Films en cours (finished = false) ou terminés (finished = true), du plus récent au plus ancien. */
+    fun progressList(src: Long, kind: Kind, finished: Boolean): List<Item> = db.rawQuery(
+        "SELECT id, name, icon, ext, extra FROM progress WHERE source_id=? AND kind=? AND finished=? " +
+            (if (finished) "" else "AND pos > 0 ") + "ORDER BY updated DESC LIMIT 300",
+        args(src, kind.name, if (finished) 1 else 0)
+    ).use { c ->
+        val out = ArrayList<Item>()
+        while (c.moveToNext()) out.add(Item(kind, c.getString(0), c.str(1) ?: "?", c.str(2), c.str(3), extra = c.str(4)))
+        out
+    }
+
+    // ---------- Téléchargements ----------
+
+    data class DlRow(val dmId: Long, val sourceId: Long, val item: Item)
+
+    fun addDownload(dmId: Long, src: Long, item: Item) {
+        db.insertWithOnConflict("downloads", null, ContentValues().apply {
+            put("dm_id", dmId)
+            put("source_id", src)
+            put("kind", item.kind.name)
+            put("id", item.id)
+            put("json", item.toJson().toString())
+            put("created", System.currentTimeMillis())
+        }, SQLiteDatabase.CONFLICT_REPLACE)
+    }
+
+    fun downloads(): List<DlRow> = db.rawQuery("SELECT dm_id, source_id, json FROM downloads ORDER BY created DESC", null).use { c ->
+        val out = ArrayList<DlRow>()
+        while (c.moveToNext()) {
+            val item = try {
+                Item.fromJson(JSONObject(c.getString(2)))
+            } catch (_: Exception) {
+                null
+            }
+            if (item != null) out.add(DlRow(c.getLong(0), c.getLong(1), item))
+        }
+        out
+    }
+
+    fun removeDownload(dmId: Long) {
+        db.delete("downloads", "dm_id=?", args(dmId))
+    }
+
+    // ---------- Cache TMDB ----------
+
+    fun tmdbGet(key: String): Pair<String, Long>? =
+        db.rawQuery("SELECT json, fetched FROM tmdb WHERE key=?", arrayOf(key)).use { c ->
+            if (c.moveToFirst()) (c.str(0) ?: "{}") to c.getLong(1) else null
+        }
+
+    fun tmdbPut(key: String, json: String) {
+        db.insertWithOnConflict("tmdb", null, ContentValues().apply {
+            put("key", key)
+            put("json", json)
+            put("fetched", System.currentTimeMillis())
+        }, SQLiteDatabase.CONFLICT_REPLACE)
+    }
+}
