@@ -438,6 +438,7 @@ class LightSync(private val outputFactory: () -> LightOutput, private val delayM
             val colors = IntArray(6)
             val levels = FloatArray(6)
             try {
+                (out as? MultiOutput)?.awaitReady(8_000)
                 for (pal in PALETTES) {
                     for (step in 0 until 50) {
                         val beat = if (step % 12 == 0) 1f else 0.4f + 0.3f * sin(step / 4.0).toFloat()
