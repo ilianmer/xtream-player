@@ -47,6 +47,8 @@
             android:screenOrientation="landscape"
             android:windowSoftInputMode="stateVisible|adjustPan" />
         <activity android:name=".TeamsActivity" android:exported="false" android:screenOrientation="landscape" />
+        <activity android:name=".ProfilesActivity" android:exported="false" android:screenOrientation="landscape" />
+        <activity android:name=".CategoriesActivity" android:exported="false" android:screenOrientation="landscape" />
 
         <activity
             android:name=".SettingsActivity"

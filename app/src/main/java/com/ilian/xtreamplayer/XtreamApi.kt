@@ -201,7 +201,9 @@ class XtreamApi(server: String, val user: String, val pass: String) {
             }
         }
 
-        val seasons = bySeason.map { (n, list) -> Season(n, list.sortedBy { it.first }.map { it.second }) }
+        // Saisons dans l'ordre (1, 2, 3… 10, 11), épisodes spéciaux (saison 0) à la fin
+        val sorted = bySeason.map { (n, list) -> Season(n, list.sortedBy { it.first }.map { it.second }) }
+        val seasons = sorted.filter { it.number > 0 } + sorted.filter { it.number <= 0 }
         return SeriesInfo(
             info?.str("name") ?: "", cover, info?.str("plot"), info?.str("tmdb") ?: info?.str("tmdb_id"), seasons,
             backdrop = backdrop(info),

@@ -98,6 +98,11 @@ object Prefs {
         get() = bool("guide_preview", true)
         set(v) = putBool("guide_preview", v)
 
+    /** Dernier profil utilisé pour une source. */
+    fun profileFor(src: Long): Long = sp.getLong("profile_$src", -1L)
+
+    fun setProfileFor(src: Long, id: Long) = sp.edit().putLong("profile_$src", id).apply()
+
     /** Son de navigation : 0 aucun, 1 doux, 2 plus marqué. */
     var navSound: Int
         get() = int("nav_sound", 1)
@@ -152,6 +157,20 @@ object Session {
             cachedKey = key
         }
         return cachedApi
+    }
+
+    /** Profil en cours de la source active (créé s'il n'existe pas). Met aussi la base sur ce profil. */
+    fun profile(): Profile? {
+        val s = source() ?: return null
+        val id = Prefs.profileFor(s.id)
+        val p = (if (id > 0) Db.profileById(id)?.takeIf { it.sourceId == s.id } else null) ?: Db.ensureProfile(s.id)
+        Db.profile = p.id
+        return p
+    }
+
+    fun selectProfile(p: Profile) {
+        Prefs.setProfileFor(p.sourceId, p.id)
+        Db.profile = p.id
     }
 
     fun reset() {

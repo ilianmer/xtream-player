@@ -120,6 +120,11 @@ data class Source(
     val maxConn: Int
 )
 
+/** Profil de visionnage (jusqu'à 5 par source), avec ses langues préférées (« fr,ar »). */
+data class Profile(val id: Long, val sourceId: Long, val name: String, val color: Int, val langs: String) {
+    val langSet: Set<String> get() = langs.split(',').map { it.trim() }.filter { it.isNotEmpty() }.toSet()
+}
+
 /** Lit un champ texte en ignorant les null JSON et les chaînes vides. */
 fun JSONObject.str(key: String): String? {
     if (!has(key) || isNull(key)) return null

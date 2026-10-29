@@ -89,6 +89,28 @@ object Img {
         }
     }
 
+    /** Prépare en avance le fond flouté d'une image (pendant l'animation d'ouverture). Bloquant. */
+    fun warmBlur(url: String?) {
+        if (url.isNullOrBlank() || !url.startsWith("http", ignoreCase = true)) return
+        val key = "blur|$url"
+        if (cache.get(key) != null) return
+        try {
+            decode(Http.getBytes(url), 200)?.let { Blur.apply(it, 72, 3) }?.let { cache.put(key, it) }
+        } catch (_: Throwable) {
+        }
+    }
+
+    /** Télécharge et garde en mémoire une image (pendant l'animation d'ouverture). Bloquant. */
+    fun warm(url: String?, maxPx: Int) {
+        if (url.isNullOrBlank() || !url.startsWith("http", ignoreCase = true)) return
+        val key = "$maxPx|$url"
+        if (cache.get(key) != null) return
+        try {
+            decode(Http.getBytes(url), maxPx)?.let { cache.put(key, it) }
+        } catch (_: Throwable) {
+        }
+    }
+
     private fun decode(bytes: ByteArray, maxPx: Int): Bitmap? {
         val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
         BitmapFactory.decodeByteArray(bytes, 0, bytes.size, bounds)

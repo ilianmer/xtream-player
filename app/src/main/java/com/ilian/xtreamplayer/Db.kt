@@ -20,7 +20,15 @@ object Db {
         helper.setWriteAheadLoggingEnabled(true)
     }
 
-    private class Helper(ctx: Context) : SQLiteOpenHelper(ctx, "xtream.db", null, 2) {
+    /** Profil en cours : favoris, reprise, catégories masquées et équipes suivies lui sont propres. */
+    @Volatile
+    var profile: Long = 0L
+
+    /** Change à chaque modification des catégories masquées : les écrans se reconstruisent au retour. */
+    @Volatile
+    var hiddenVersion = 0
+
+    private class Helper(ctx: Context) : SQLiteOpenHelper(ctx, "xtream.db", null, 3) {
         override fun onCreate(d: SQLiteDatabase) {
             d.execSQL(
                 "CREATE TABLE sources(id INTEGER PRIMARY KEY AUTOINCREMENT, name TEXT, server TEXT, user TEXT, pass TEXT, " +
@@ -37,11 +45,10 @@ object Db {
             d.execSQL("CREATE INDEX items_cat ON items(source_id, kind, cat_id, pos)")
             d.execSQL("CREATE INDEX items_pos ON items(source_id, kind, pos)")
             d.execSQL("CREATE INDEX items_added ON items(source_id, kind, added)")
-            d.execSQL("CREATE TABLE favorites(source_id INTEGER, kind TEXT, id TEXT, added INTEGER, PRIMARY KEY(source_id, kind, id))")
-            d.execSQL(
-                "CREATE TABLE progress(source_id INTEGER, kind TEXT, id TEXT, pos INTEGER, dur INTEGER, finished INTEGER, updated INTEGER, " +
-                    "name TEXT, icon TEXT, ext TEXT, extra TEXT, series TEXT, PRIMARY KEY(source_id, kind, id))"
-            )
+            d.execSQL(FAV_TABLE.replace("%s", "favorites"))
+            d.execSQL(PROGRESS_TABLE.replace("%s", "progress"))
+            d.execSQL(PROFILES_TABLE)
+            d.execSQL(HIDDEN_TABLE)
             d.execSQL("CREATE TABLE kv(key TEXT PRIMARY KEY, value TEXT)")
             d.execSQL("CREATE TABLE downloads(dm_id INTEGER PRIMARY KEY, source_id INTEGER, kind TEXT, id TEXT, json TEXT, created INTEGER)")
             d.execSQL("CREATE TABLE tmdb(key TEXT PRIMARY KEY, json TEXT, fetched INTEGER)")
@@ -58,8 +65,44 @@ object Db {
                 // Le catalogue est rechargé une fois pour remplir les nouvelles colonnes.
                 d.execSQL("UPDATE sources SET last_sync=0")
             }
+            if (oldVersion < 3) {
+                // Version 6 : profils. Les données existantes vont au premier profil de chaque source.
+                d.execSQL(PROFILES_TABLE)
+                d.execSQL(
+                    "INSERT INTO profiles(source_id, name, color, langs, created) " +
+                        "SELECT id, 'Profil 1', 0, '', ${System.currentTimeMillis()} FROM sources"
+                )
+                val pOf = "(SELECT p.id FROM profiles p WHERE p.source_id=x.source_id ORDER BY p.id LIMIT 1)"
+                d.execSQL(FAV_TABLE.replace("%s", "fav3"))
+                d.execSQL("INSERT OR IGNORE INTO fav3 SELECT $pOf, x.source_id, x.kind, x.id, x.added FROM favorites x")
+                d.execSQL("DROP TABLE favorites")
+                d.execSQL("ALTER TABLE fav3 RENAME TO favorites")
+                d.execSQL(PROGRESS_TABLE.replace("%s", "prog3"))
+                d.execSQL(
+                    "INSERT OR IGNORE INTO prog3 SELECT $pOf, x.source_id, x.kind, x.id, x.pos, x.dur, x.finished, x.updated, " +
+                        "x.name, x.icon, x.ext, x.extra, x.series FROM progress x"
+                )
+                d.execSQL("DROP TABLE progress")
+                d.execSQL("ALTER TABLE prog3 RENAME TO progress")
+                d.execSQL(HIDDEN_TABLE)
+                d.execSQL("INSERT OR IGNORE INTO hidden SELECT $pOf, x.source_id, x.kind, x.cat_id FROM categories x WHERE x.hidden=1")
+                d.execSQL(
+                    "INSERT OR REPLACE INTO kv SELECT 'p' || (SELECT MIN(id) FROM profiles) || ':' || key, value FROM kv " +
+                        "WHERE key IN ('sport:teams','sport:teaminfo') AND (SELECT MIN(id) FROM profiles) IS NOT NULL"
+                )
+            }
         }
     }
+
+    private const val FAV_TABLE =
+        "CREATE TABLE %s(profile INTEGER, source_id INTEGER, kind TEXT, id TEXT, added INTEGER, PRIMARY KEY(profile, source_id, kind, id))"
+    private const val PROGRESS_TABLE =
+        "CREATE TABLE %s(profile INTEGER, source_id INTEGER, kind TEXT, id TEXT, pos INTEGER, dur INTEGER, finished INTEGER, " +
+            "updated INTEGER, name TEXT, icon TEXT, ext TEXT, extra TEXT, series TEXT, PRIMARY KEY(profile, source_id, kind, id))"
+    private const val PROFILES_TABLE =
+        "CREATE TABLE profiles(id INTEGER PRIMARY KEY AUTOINCREMENT, source_id INTEGER, name TEXT, color INTEGER DEFAULT 0, langs TEXT, created INTEGER)"
+    private const val HIDDEN_TABLE =
+        "CREATE TABLE hidden(profile INTEGER, source_id INTEGER, kind TEXT, cat_id TEXT, PRIMARY KEY(profile, source_id, kind, cat_id))"
 
     private fun <T> tx(block: () -> T): T {
         val d = db
@@ -138,34 +181,119 @@ object Db {
 
     fun deleteSource(id: Long) {
         tx {
-            for (t in listOf("categories", "items", "favorites", "progress", "downloads")) db.delete(t, "source_id=?", args(id))
+            for (t in listOf("categories", "items", "favorites", "progress", "downloads", "hidden", "profiles")) db.delete(t, "source_id=?", args(id))
             db.delete("sources", "id=?", args(id))
         }
-        favCache.remove(id)
+        favCache.clear()
+    }
+
+    // ---------- Profils ----------
+
+    fun profiles(src: Long): List<Profile> =
+        db.rawQuery("SELECT id, source_id, name, color, langs FROM profiles WHERE source_id=? ORDER BY id", args(src)).use { c ->
+            val out = ArrayList<Profile>()
+            while (c.moveToNext()) out.add(Profile(c.getLong(0), c.getLong(1), c.str(2) ?: "Profil", c.getInt(3), c.str(4).orEmpty()))
+            out
+        }
+
+    fun profileById(id: Long): Profile? =
+        db.rawQuery("SELECT id, source_id, name, color, langs FROM profiles WHERE id=?", args(id)).use { c ->
+            if (c.moveToFirst()) Profile(c.getLong(0), c.getLong(1), c.str(2) ?: "Profil", c.getInt(3), c.str(4).orEmpty()) else null
+        }
+
+    fun addProfile(src: Long, name: String, color: Int): Long =
+        db.insert("profiles", null, ContentValues().apply {
+            put("source_id", src)
+            put("name", name)
+            put("color", color)
+            put("langs", "")
+            put("created", System.currentTimeMillis())
+        })
+
+    fun updateProfile(id: Long, name: String, color: Int) {
+        db.update("profiles", ContentValues().apply {
+            put("name", name)
+            put("color", color)
+        }, "id=?", args(id))
+    }
+
+    fun setProfileLangs(id: Long, langs: String) {
+        db.update("profiles", ContentValues().apply { put("langs", langs) }, "id=?", args(id))
+    }
+
+    /** Supprime un profil et tout ce qui lui appartient. */
+    fun deleteProfile(id: Long) {
+        tx {
+            for (t in listOf("favorites", "progress", "hidden")) db.delete(t, "profile=?", args(id))
+            db.delete("kv", "key LIKE ?", arrayOf("p$id:%"))
+            db.delete("profiles", "id=?", args(id))
+        }
+        favCache.clear()
+    }
+
+    /** Premier profil de la source (créé s'il n'y en a pas encore). */
+    fun ensureProfile(src: Long): Profile {
+        profiles(src).firstOrNull()?.let { return it }
+        val id = addProfile(src, "Profil 1", 0)
+        return profileById(id)!!
     }
 
     // ---------- Catalogue ----------
 
-    /** Catégories dans l'ordre du fournisseur, avec leur état masqué. */
-    fun categories(src: Long, kind: Kind): List<Pair<Category, Boolean>> =
-        db.rawQuery("SELECT cat_id, name, hidden FROM categories WHERE source_id=? AND kind=? ORDER BY pos", args(src, kind.name)).use { c ->
+    /** Catégories dans l'ordre du fournisseur, avec leur état masqué pour le profil [prof] (le profil en cours par défaut). */
+    fun categories(src: Long, kind: Kind, prof: Long = profile): List<Pair<Category, Boolean>> =
+        db.rawQuery(
+            "SELECT c.cat_id, c.name, CASE WHEN h.cat_id IS NULL THEN 0 ELSE 1 END FROM categories c " +
+                "LEFT JOIN hidden h ON h.profile=? AND h.source_id=c.source_id AND h.kind=c.kind AND h.cat_id=c.cat_id " +
+                "WHERE c.source_id=? AND c.kind=? ORDER BY c.pos",
+            args(prof, src, kind.name)
+        ).use { c ->
             val out = ArrayList<Pair<Category, Boolean>>()
             while (c.moveToNext()) out.add(Category(c.str(0) ?: "", c.str(1) ?: "Sans nom") to (c.getInt(2) == 1))
             out
         }
 
-    private fun hiddenIds(src: Long, kind: Kind): Set<String> =
-        db.rawQuery("SELECT cat_id FROM categories WHERE source_id=? AND kind=? AND hidden=1", args(src, kind.name)).use { c ->
-            val out = HashSet<String>()
-            while (c.moveToNext()) c.str(0)?.let { out.add(it) }
-            out
-        }
-
-    fun setHidden(src: Long, kind: Kind, ids: Set<String>) {
+    fun setHidden(src: Long, kind: Kind, ids: Set<String>, prof: Long = profile) {
+        hiddenVersion++
         tx {
-            db.update("categories", ContentValues().apply { put("hidden", 0) }, "source_id=? AND kind=?", args(src, kind.name))
+            db.delete("hidden", "profile=? AND source_id=? AND kind=?", args(prof, src, kind.name))
             for (id in ids) {
-                db.update("categories", ContentValues().apply { put("hidden", 1) }, "source_id=? AND kind=? AND cat_id=?", args(src, kind.name, id))
+                db.insertWithOnConflict("hidden", null, ContentValues().apply {
+                    put("profile", prof)
+                    put("source_id", src)
+                    put("kind", kind.name)
+                    put("cat_id", id)
+                }, SQLiteDatabase.CONFLICT_IGNORE)
+            }
+        }
+    }
+
+    /** Masque des catégories en plus de celles déjà masquées. */
+    /** Masque ou affiche une seule catégorie (enregistré tout de suite). */
+    fun setOneHidden(src: Long, kind: Kind, id: String, hide: Boolean, prof: Long = profile) {
+        hiddenVersion++
+        if (hide) {
+            db.insertWithOnConflict("hidden", null, ContentValues().apply {
+                put("profile", prof)
+                put("source_id", src)
+                put("kind", kind.name)
+                put("cat_id", id)
+            }, SQLiteDatabase.CONFLICT_IGNORE)
+        } else {
+            db.delete("hidden", "profile=? AND source_id=? AND kind=? AND cat_id=?", args(prof, src, kind.name, id))
+        }
+    }
+
+    fun addHidden(src: Long, kind: Kind, ids: Collection<String>, prof: Long) {
+        hiddenVersion++
+        tx {
+            for (id in ids) {
+                db.insertWithOnConflict("hidden", null, ContentValues().apply {
+                    put("profile", prof)
+                    put("source_id", src)
+                    put("kind", kind.name)
+                    put("cat_id", id)
+                }, SQLiteDatabase.CONFLICT_IGNORE)
             }
         }
     }
@@ -174,8 +302,12 @@ object Db {
      * Remplace le catalogue d'un type pour une source, en une seule transaction :
      * si le téléchargement échoue en route, l'ancien catalogue est conservé.
      */
-    fun replaceCatalog(src: Long, kind: Kind, cats: List<Category>, fill: ((Item) -> Unit) -> Unit) {
-        val hidden = hiddenIds(src, kind)
+    fun replaceCatalog(src: Long, kind: Kind, cats: List<Category>, fill: ((Item) -> Unit) -> Unit): List<Category> {
+        val before = db.rawQuery("SELECT cat_id FROM categories WHERE source_id=? AND kind=?", args(src, kind.name)).use { c ->
+            val out = HashSet<String>()
+            while (c.moveToNext()) c.str(0)?.let { out.add(it) }
+            out
+        }
         tx {
             db.delete("categories", "source_id=? AND kind=?", args(src, kind.name))
             db.delete("items", "source_id=? AND kind=?", args(src, kind.name))
@@ -186,7 +318,7 @@ object Db {
                     put("cat_id", cat.id)
                     put("name", cat.name)
                     put("pos", i)
-                    put("hidden", if (cat.id in hidden) 1 else 0)
+                    put("hidden", 0)
                 }, SQLiteDatabase.CONFLICT_REPLACE)
             }
             val st = db.compileStatement(
@@ -221,6 +353,8 @@ object Db {
                 st.close()
             }
         }
+        // Catégories apparues depuis la dernière mise à jour (pour leur appliquer les préréglages de langue)
+        return if (before.isEmpty()) cats else cats.filter { it.id !in before }
     }
 
     private const val ITEM_COLS = "kind, id, name, icon, ext, plot, cat_id, rating, tmdb, num, added"
@@ -256,7 +390,8 @@ object Db {
             sb.append(" AND cat_id IN (").append(catIds.joinToString(",") { "?" }).append(")")
             a.addAll(catIds)
         } else {
-            sb.append(" AND (cat_id IS NULL OR cat_id NOT IN (SELECT cat_id FROM categories WHERE source_id=? AND kind=? AND hidden=1))")
+            sb.append(" AND (cat_id IS NULL OR cat_id NOT IN (SELECT cat_id FROM hidden WHERE profile=? AND source_id=? AND kind=?))")
+            a.add(profile.toString())
             a.add(src.toString())
             a.add(kind.name)
         }
@@ -345,27 +480,27 @@ object Db {
         val k = kind.name
         db.rawQuery(
             "SELECT i.cat_id, COUNT(*) FROM progress p JOIN items i ON i.source_id=p.source_id AND i.kind=p.kind AND i.id=p.id " +
-                "WHERE p.source_id=? AND p.kind=? AND i.cat_id IS NOT NULL GROUP BY i.cat_id",
-            args(src, k)
+                "WHERE p.profile=? AND p.source_id=? AND p.kind=? AND i.cat_id IS NOT NULL GROUP BY i.cat_id",
+            args(profile, src, k)
         ).use { c -> while (c.moveToNext()) out[c.getString(0)] = (out[c.getString(0)] ?: 0) + c.getInt(1) * 2 }
         if (kind == Kind.SERIES) {
             db.rawQuery(
                 "SELECT i.cat_id, COUNT(DISTINCT p.series) FROM progress p JOIN items i ON i.source_id=p.source_id AND i.kind='SERIES' AND i.id=p.series " +
-                    "WHERE p.source_id=? AND p.kind='EPISODE' AND i.cat_id IS NOT NULL GROUP BY i.cat_id",
-                args(src)
+                    "WHERE p.profile=? AND p.source_id=? AND p.kind='EPISODE' AND i.cat_id IS NOT NULL GROUP BY i.cat_id",
+                args(profile, src)
             ).use { c -> while (c.moveToNext()) out[c.getString(0)] = (out[c.getString(0)] ?: 0) + c.getInt(1) * 2 }
         }
         db.rawQuery(
             "SELECT i.cat_id, COUNT(*) FROM favorites f JOIN items i ON i.source_id=f.source_id AND i.kind=f.kind AND i.id=f.id " +
-                "WHERE f.source_id=? AND f.kind=? AND i.cat_id IS NOT NULL GROUP BY i.cat_id",
-            args(src, k)
+                "WHERE f.profile=? AND f.source_id=? AND f.kind=? AND i.cat_id IS NOT NULL GROUP BY i.cat_id",
+            args(profile, src, k)
         ).use { c -> while (c.moveToNext()) out[c.getString(0)] = (out[c.getString(0)] ?: 0) + c.getInt(1) }
         return out
     }
 
     /** Identifiants déjà vus (terminés) : on ne les remet pas en avant. */
     fun watchedIds(src: Long, kind: Kind): Set<String> =
-        db.rawQuery("SELECT id FROM progress WHERE source_id=? AND kind=? AND finished=1", args(src, kind.name)).use { c ->
+        db.rawQuery("SELECT id FROM progress WHERE profile=? AND source_id=? AND kind=? AND finished=1", args(profile, src, kind.name)).use { c ->
             val out = HashSet<String>()
             while (c.moveToNext()) out.add(c.getString(0))
             out
@@ -375,6 +510,14 @@ object Db {
     fun find(src: Long, kind: Kind, id: String): Item? =
         db.rawQuery("SELECT $ITEM_COLS FROM items WHERE source_id=? AND kind=? AND id=?", args(src, kind.name, id)).use { c ->
             if (c.moveToFirst()) item(c) else null
+        }
+
+    /** Nombre d'éléments par catégorie (pour l'écran « Catégories affichées »). */
+    fun countsByCat(src: Long, kind: Kind): Map<String, Int> =
+        db.rawQuery("SELECT cat_id, COUNT(*) FROM items WHERE source_id=? AND kind=? GROUP BY cat_id", args(src, kind.name)).use { c ->
+            val out = HashMap<String, Int>()
+            while (c.moveToNext()) out[c.str(0) ?: ""] = c.getInt(1)
+            out
         }
 
     fun countAll(src: Long, kind: Kind): Int =
@@ -388,11 +531,11 @@ object Db {
 
     // ---------- Favoris ----------
 
-    private val favCache = HashMap<Long, MutableSet<String>>()
+    private val favCache = HashMap<String, MutableSet<String>>()
 
-    private fun favSet(src: Long): MutableSet<String> = favCache.getOrPut(src) {
+    private fun favSet(src: Long): MutableSet<String> = favCache.getOrPut("$profile:$src") {
         val s = HashSet<String>()
-        db.rawQuery("SELECT kind, id FROM favorites WHERE source_id=?", args(src)).use { c ->
+        db.rawQuery("SELECT kind, id FROM favorites WHERE profile=? AND source_id=?", args(profile, src)).use { c ->
             while (c.moveToNext()) s.add(c.getString(0) + ":" + c.getString(1))
         }
         s
@@ -404,11 +547,12 @@ object Db {
     fun toggleFav(src: Long, item: Item): Boolean {
         val set = favSet(src)
         return if (item.key in set) {
-            db.delete("favorites", "source_id=? AND kind=? AND id=?", args(src, item.kind.name, item.id))
+            db.delete("favorites", "profile=? AND source_id=? AND kind=? AND id=?", args(profile, src, item.kind.name, item.id))
             set.remove(item.key)
             false
         } else {
             db.insertWithOnConflict("favorites", null, ContentValues().apply {
+                put("profile", profile)
                 put("source_id", src)
                 put("kind", item.kind.name)
                 put("id", item.id)
@@ -421,8 +565,8 @@ object Db {
 
     fun favorites(src: Long, kind: Kind): List<Item> = db.rawQuery(
         "SELECT $ITEM_COLS_I FROM favorites f JOIN items i ON i.source_id=f.source_id AND i.kind=f.kind AND i.id=f.id " +
-            "WHERE f.source_id=? AND f.kind=? ORDER BY f.added DESC",
-        args(src, kind.name)
+            "WHERE f.profile=? AND f.source_id=? AND f.kind=? ORDER BY f.added DESC",
+        args(profile, src, kind.name)
     ).use { c ->
         val out = ArrayList<Item>()
         while (c.moveToNext()) out.add(item(c))
@@ -434,7 +578,7 @@ object Db {
     data class Progress(val pos: Long, val dur: Long, val finished: Boolean)
 
     fun progress(src: Long, item: Item): Progress? =
-        db.rawQuery("SELECT pos, dur, finished FROM progress WHERE source_id=? AND kind=? AND id=?", args(src, item.kind.name, item.id)).use { c ->
+        db.rawQuery("SELECT pos, dur, finished FROM progress WHERE profile=? AND source_id=? AND kind=? AND id=?", args(profile, src, item.kind.name, item.id)).use { c ->
             if (c.moveToFirst()) Progress(c.getLong(0), c.getLong(1), c.getInt(2) == 1) else null
         }
 
@@ -442,10 +586,10 @@ object Db {
         val out = HashMap<String, Progress>()
         for (chunk in ids.chunked(400)) {
             if (chunk.isEmpty()) continue
-            val a = arrayListOf(src.toString(), kind.name)
+            val a = arrayListOf(profile.toString(), src.toString(), kind.name)
             a.addAll(chunk)
             db.rawQuery(
-                "SELECT id, pos, dur, finished FROM progress WHERE source_id=? AND kind=? AND id IN (${chunk.joinToString(",") { "?" }})",
+                "SELECT id, pos, dur, finished FROM progress WHERE profile=? AND source_id=? AND kind=? AND id IN (${chunk.joinToString(",") { "?" }})",
                 a.toTypedArray()
             ).use { c ->
                 while (c.moveToNext()) out[c.getString(0)] = Progress(c.getLong(1), c.getLong(2), c.getInt(3) == 1)
@@ -456,6 +600,7 @@ object Db {
 
     fun saveProgress(src: Long, item: Item, pos: Long, dur: Long, finished: Boolean) {
         db.insertWithOnConflict("progress", null, ContentValues().apply {
+            put("profile", profile)
             put("source_id", src)
             put("kind", item.kind.name)
             put("id", item.id)
@@ -473,9 +618,9 @@ object Db {
 
     /** Films en cours (finished = false) ou terminés (finished = true), du plus récent au plus ancien. */
     fun progressList(src: Long, kind: Kind, finished: Boolean): List<Item> = db.rawQuery(
-        "SELECT id, name, icon, ext, extra FROM progress WHERE source_id=? AND kind=? AND finished=? " +
+        "SELECT id, name, icon, ext, extra FROM progress WHERE profile=? AND source_id=? AND kind=? AND finished=? " +
             (if (finished) "" else "AND pos > 0 ") + "ORDER BY updated DESC LIMIT 300",
-        args(src, kind.name, if (finished) 1 else 0)
+        args(profile, src, kind.name, if (finished) 1 else 0)
     ).use { c ->
         val out = ArrayList<Item>()
         while (c.moveToNext()) out.add(Item(kind, c.getString(0), c.str(1) ?: "?", c.str(2), c.str(3), extra = c.str(4)))
@@ -486,10 +631,10 @@ object Db {
 
     /** Films et épisodes commencés (ou un seul type), du plus récent au plus ancien. */
     fun resume(src: Long, limit: Int, kind: Kind? = null): List<Resume> = db.rawQuery(
-        "SELECT kind, id, name, icon, ext, extra, pos, dur, series, updated FROM progress WHERE source_id=? AND finished=0 AND pos > 0 " +
+        "SELECT kind, id, name, icon, ext, extra, pos, dur, series, updated FROM progress WHERE profile=? AND source_id=? AND finished=0 AND pos > 0 " +
             (if (kind != null) "AND kind='${kind.name}' " else "AND kind IN ('MOVIE','EPISODE') ") +
             "ORDER BY updated DESC LIMIT $limit",
-        args(src)
+        args(profile, src)
     ).use { c ->
         val out = ArrayList<Resume>()
         while (c.moveToNext()) {
@@ -504,9 +649,9 @@ object Db {
         val out = ArrayList<Pair<String, Resume>>()
         val seen = HashSet<String>()
         db.rawQuery(
-            "SELECT kind, id, name, icon, ext, extra, pos, dur, series, finished, updated FROM progress WHERE source_id=? AND kind='EPISODE' " +
-                "AND series IS NOT NULL ORDER BY updated DESC LIMIT 400",
-            args(src)
+            "SELECT kind, id, name, icon, ext, extra, pos, dur, series, finished, updated FROM progress WHERE profile=? AND source_id=? " +
+                "AND kind='EPISODE' AND series IS NOT NULL ORDER BY updated DESC LIMIT 400",
+            args(profile, src)
         ).use { c ->
             while (c.moveToNext() && out.size < limit) {
                 val series = c.getString(8)
@@ -520,6 +665,9 @@ object Db {
     }
 
     // ---------- Petites valeurs (chaîne choisie pour un match, équipes suivies…) ----------
+
+    /** Clé propre au profil en cours. */
+    fun pkey(key: String) = "p$profile:$key"
 
     fun kvGet(key: String): String? =
         db.rawQuery("SELECT value FROM kv WHERE key=?", arrayOf(key)).use { c -> if (c.moveToFirst()) c.getString(0) else null }

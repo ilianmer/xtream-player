@@ -6,7 +6,7 @@
 
     <LinearLayout
         android:layout_width="match_parent"
-        android:layout_height="30dp"
+        android:layout_height="39dp"
         android:gravity="center_vertical"
         android:orientation="horizontal">
 
@@ -19,19 +19,23 @@
             android:text="Sport"
             android:textSize="20sp" />
 
+        <!-- Même barre d'onglets que Direct / Films / Séries -->
         <LinearLayout
             android:id="@+id/sportChips"
             android:layout_width="wrap_content"
-            android:layout_height="match_parent"
+            android:layout_height="37dp"
+            android:background="@drawable/glass_pill"
             android:gravity="center_vertical"
-            android:orientation="horizontal" />
+            android:orientation="horizontal"
+            android:paddingStart="4dp"
+            android:paddingEnd="4dp" />
 
         <TextView
             android:id="@+id/btnTeams"
             style="@style/Medium"
             android:layout_width="wrap_content"
-            android:layout_height="28dp"
-            android:layout_marginStart="4dp"
+            android:layout_height="32dp"
+            android:layout_marginStart="10dp"
             android:background="@drawable/pill_bg"
             android:clickable="true"
             android:drawableStart="@drawable/ic_edit_small"

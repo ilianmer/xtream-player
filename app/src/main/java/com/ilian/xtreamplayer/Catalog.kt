@@ -24,7 +24,7 @@ object Sync {
             progress("$label : catégories…")
             val cats = api.categories(kind)
             progress("$label : téléchargement…")
-            Db.replaceCatalog(src.id, kind, cats) { insert ->
+            val added = Db.replaceCatalog(src.id, kind, cats) { insert ->
                 var n = 0
                 api.streamItems(kind) { item ->
                     insert(item)
@@ -33,6 +33,8 @@ object Sync {
                 }
                 progress("$label : ${fmt(n)}")
             }
+            // Nouvelles catégories : préréglage de langue de chaque profil
+            Langs.onNewCategories(src.id, kind, added)
         }
         Db.setLastSync(src.id, System.currentTimeMillis())
     }

@@ -1,7 +1,6 @@
 package com.ilian.xtreamplayer
 
 import android.app.Activity
-import android.app.AlertDialog
 import android.content.Intent
 import android.os.Bundle
 import android.view.LayoutInflater
@@ -166,7 +165,26 @@ class SettingsActivity : BaseActivity() {
 
         rows.action("Rafraîchir", "Recharge toutes les listes depuis le serveur.") { Ui.restart(this, forceSync = true) }
         rows.action("Modifier", "Nom, serveur, identifiant, mot de passe.") { editSource(src.id) }
-        rows.action("Catégories affichées", "Coche seulement les catégories que tu veux voir.") { hideCategories(src) }
+
+        val prof = Session.profile()
+        rows.header("Profil" + (prof?.let { " · ${it.name}" } ?: ""))
+        if (prof != null) {
+            rows.action(
+                "Langue du contenu",
+                "Préréglage : n'affiche que les chaînes, films et séries dans ces langues. On affine ensuite avec « Catégories affichées ».",
+                Profiles.langsLabel(prof)
+            ) { v ->
+                val cur = Session.profile() ?: return@action
+                Profiles.chooseLangs(this, cur) { Session.profile()?.let { rows.value(v).text = Profiles.langsLabel(it) } }
+            }
+        }
+        rows.action("Catégories affichées", "Coche seulement les catégories que tu veux voir (Direct, Films, Séries).") {
+            startActivity(Intent(this, CategoriesActivity::class.java))
+        }
+        rows.action("Profils", "Jusqu'à ${Profiles.MAX} profils sur cette source, chacun avec ses favoris, sa reprise, ses langues et ses équipes.", "${Db.profiles(src.id).size} / ${Profiles.MAX}") {
+            startActivity(Intent(this, ProfilesActivity::class.java).putExtra(ProfilesActivity.EXTRA_MANAGE, true))
+        }
+        rows.header("Gestion de la source")
         rows.action("Supprimer", "Retire la source et ses listes de cet appareil.", danger = true) {
             Ui.confirm(this, "Supprimer « ${src.name} » ?", "Ses favoris et sa progression de lecture seront aussi supprimés.", "Supprimer") {
                 deleteSource(src.id)
@@ -222,53 +240,6 @@ class SettingsActivity : BaseActivity() {
         } else {
             Prefs.activeSourceId = next.id
             Ui.restart(this, forceSync = false)
-        }
-    }
-
-    /** Catégories visibles : cochées. « Tout décocher » puis on coche seulement ce qu'on veut voir. */
-    private fun hideCategories(src: Source) {
-        val kinds = listOf(Kind.LIVE, Kind.MOVIE, Kind.SERIES)
-        Ui.choose(this, "Catégories affichées", listOf("Direct", "Films", "Séries")) { w ->
-            val k = kinds[w]
-            val cats = Db.categories(src.id, k)
-            if (cats.isEmpty()) {
-                Ui.toast(this, "Aucune catégorie pour ce type.")
-                return@choose
-            }
-            val names = cats.map { it.first.name }.toTypedArray()
-            val visible = cats.map { !it.second }.toBooleanArray()
-            val dlg = AlertDialog.Builder(this, Ui.DIALOG)
-                .setTitle("Coche les catégories à afficher")
-                .setMultiChoiceItems(names, visible) { _, i, c -> visible[i] = c }
-                .setPositiveButton("Enregistrer") { _, _ ->
-                    val hidden = cats.filterIndexed { i, _ -> !visible[i] }.map { it.first.id }.toSet()
-                    Db.setHidden(src.id, k, hidden)
-                    Ui.toast(this, "${cats.size - hidden.size} catégorie(s) affichée(s) sur ${cats.size}")
-                }
-                .setNeutralButton("Tout décocher", null)
-                .setNegativeButton("Annuler", null)
-                .create()
-            dlg.setOnShowListener {
-                // Le bouton bascule entre « Tout décocher » et « Tout cocher » sans fermer la fenêtre.
-                val b = dlg.getButton(AlertDialog.BUTTON_NEUTRAL)
-                fun label() {
-                    b.text = if (visible.any { it }) "Tout décocher" else "Tout cocher"
-                }
-                label()
-                b.setOnClickListener {
-                    val target = !visible.any { it }
-                    for (i in visible.indices) {
-                        visible[i] = target
-                        dlg.listView.setItemChecked(i, target)
-                    }
-                    label()
-                }
-                dlg.listView.setOnItemClickListener { _, _, i, _ ->
-                    visible[i] = dlg.listView.isItemChecked(i)
-                    label()
-                }
-            }
-            dlg.show()
         }
     }
 

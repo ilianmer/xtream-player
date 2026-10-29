@@ -1,58 +1,69 @@
 <?xml version="1.0" encoding="utf-8"?>
 <FrameLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:id="@+id/startRoot"
     android:layout_width="match_parent"
     android:layout_height="match_parent"
-    android:background="@drawable/bg_home">
+    android:background="#05060A">
 
+    <!-- Animation d'ouverture : la tuile apparaît, le play jaune glisse, puis on « entre » dedans -->
+    <FrameLayout
+        android:id="@+id/splash"
+        android:layout_width="match_parent"
+        android:layout_height="match_parent">
+
+        <View
+            android:id="@+id/splashGlow"
+            android:layout_width="300dp"
+            android:layout_height="300dp"
+            android:layout_gravity="center"
+            android:alpha="0"
+            android:background="@drawable/splash_glow" />
+
+        <ImageView
+            android:id="@+id/splashTile"
+            android:layout_width="120dp"
+            android:layout_height="120dp"
+            android:layout_gravity="center"
+            android:alpha="0"
+            android:src="@drawable/logo_tile_only" />
+
+        <ImageView
+            android:id="@+id/splashPlay"
+            android:layout_width="120dp"
+            android:layout_height="120dp"
+            android:layout_gravity="center"
+            android:alpha="0"
+            android:src="@drawable/logo_play_only" />
+    </FrameLayout>
+
+    <!-- Mise à jour des listes (seulement quand c'est nécessaire) -->
     <LinearLayout
+        android:id="@+id/syncBox"
         android:layout_width="wrap_content"
         android:layout_height="wrap_content"
         android:layout_gravity="center"
         android:gravity="center_horizontal"
-        android:orientation="vertical">
+        android:orientation="vertical"
+        android:visibility="gone">
 
         <ImageView
-            android:layout_width="84dp"
-            android:layout_height="84dp"
+            android:layout_width="72dp"
+            android:layout_height="72dp"
             android:src="@drawable/ic_logo" />
-
-        <LinearLayout
-            android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
-            android:layout_marginTop="14dp"
-            android:orientation="horizontal">
-
-            <TextView
-                android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
-                android:fontFamily="@font/outfit_bold"
-                android:text="Xtream"
-                android:textColor="@color/text"
-                android:textSize="28sp" />
-
-            <TextView
-                android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
-                android:layout_marginStart="7dp"
-                android:fontFamily="@font/outfit_light"
-                android:text="Player"
-                android:textColor="#D5D8DE"
-                android:textSize="28sp" />
-        </LinearLayout>
 
         <TextView
             android:id="@+id/tvSource"
             style="@style/Txt"
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
-            android:layout_marginTop="2dp"
+            android:layout_marginTop="10dp"
             android:textColor="@color/text_dim"
             android:textSize="14sp" />
 
         <LinearLayout
             android:layout_width="440dp"
             android:layout_height="wrap_content"
-            android:layout_marginTop="26dp"
+            android:layout_marginTop="20dp"
             android:background="@drawable/glass_panel"
             android:gravity="center_horizontal"
             android:orientation="vertical"
