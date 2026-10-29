@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="utf-8"?>
+<TextView xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="wrap_content"
+    android:layout_height="28dp"
+    android:layout_marginEnd="6dp"
+    android:background="@drawable/sport_chip_bg"
+    android:clickable="true"
+    android:focusable="true"
+    android:fontFamily="@font/outfit_medium"
+    android:gravity="center"
+    android:paddingStart="12dp"
+    android:paddingEnd="12dp"
+    android:singleLine="true"
+    android:textColor="@color/chip_text"
+    android:textSize="12sp" />

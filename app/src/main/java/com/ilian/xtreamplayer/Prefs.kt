@@ -92,6 +92,16 @@ object Prefs {
     var tmdbKey: String
         get() = str("tmdb_key", "")
         set(v) = putStr("tmdb_key", v)
+
+    /** Aperçu vidéo de la chaîne sélectionnée dans le guide du Direct. */
+    var guidePreview: Boolean
+        get() = bool("guide_preview", true)
+        set(v) = putBool("guide_preview", v)
+
+    /** Onglet Sport affiché dans la barre du haut. */
+    var showSport: Boolean
+        get() = bool("show_sport", true)
+        set(v) = putBool("show_sport", v)
 }
 
 /** État partagé entre les écrans pendant que l'appli tourne. */

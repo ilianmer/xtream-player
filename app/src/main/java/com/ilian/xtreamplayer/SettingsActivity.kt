@@ -315,6 +315,16 @@ class SettingsActivity : Activity() {
             { Prefs.showRewatch }, { Prefs.showRewatch = it }
         )
         rows.note("La liste Reprendre (films commencés) apparaît automatiquement dans Films dès qu'un film est en cours.")
+        rows.toggle(
+            "Aperçu vidéo dans le guide",
+            { if (it) "La chaîne sélectionnée dans le Direct se lance en petit, comme sur un décodeur. Elle utilise un écran de ton compte." else "Pas d'aperçu : seul le guide s'affiche." },
+            { Prefs.guidePreview }, { Prefs.guidePreview = it }
+        )
+        rows.toggle(
+            "Onglet Sport",
+            { if (it) "Scores en direct et matchs à venir, avec la chaîne qui les diffuse." else "L'onglet Sport est masqué." },
+            { Prefs.showSport }, { Prefs.showSport = it }
+        )
     }
 
     // ---------- Protection multi-écran ----------

@@ -1,0 +1,92 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="36dp"
+    android:layout_marginBottom="4dp"
+    android:background="@drawable/row_soft_bg"
+    android:clickable="true"
+    android:focusable="true"
+    android:gravity="center_vertical"
+    android:orientation="horizontal"
+    android:paddingStart="8dp"
+    android:paddingEnd="6dp">
+
+    <LinearLayout
+        android:layout_width="54dp"
+        android:layout_height="wrap_content"
+        android:orientation="vertical">
+
+        <TextView
+            android:id="@+id/time"
+            style="@style/Semi"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:fontFeatureSettings="tnum"
+            android:textSize="12sp" />
+
+        <TextView
+            android:id="@+id/day"
+            style="@style/Txt"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:textColor="@color/text_faint"
+            android:textSize="9sp" />
+    </LinearLayout>
+
+    <TextView
+        android:id="@+id/comp"
+        style="@style/Txt"
+        android:layout_width="100dp"
+        android:layout_height="wrap_content"
+        android:ellipsize="end"
+        android:singleLine="true"
+        android:textColor="@color/text_faint"
+        android:textSize="10sp" />
+
+    <include android:id="@+id/crestA" layout="@layout/item_crest" />
+
+    <TextView
+        android:id="@+id/teams"
+        style="@style/Medium"
+        android:layout_width="0dp"
+        android:layout_height="wrap_content"
+        android:layout_marginStart="6dp"
+        android:layout_marginEnd="6dp"
+        android:layout_weight="1"
+        android:ellipsize="end"
+        android:singleLine="true"
+        android:textSize="12sp" />
+
+    <include android:id="@+id/crestB" layout="@layout/item_crest" />
+
+    <LinearLayout
+        android:id="@+id/watch"
+        android:layout_width="wrap_content"
+        android:layout_height="24dp"
+        android:layout_marginStart="8dp"
+        android:background="@drawable/chip_small"
+        android:gravity="center_vertical"
+        android:orientation="horizontal"
+        android:paddingStart="3dp"
+        android:paddingEnd="9dp">
+
+        <ImageView
+            android:id="@+id/chLogo"
+            android:layout_width="26dp"
+            android:layout_height="18dp"
+            android:background="@drawable/logo_tile"
+            android:padding="2dp"
+            android:scaleType="fitCenter" />
+
+        <TextView
+            android:id="@+id/chName"
+            style="@style/Txt"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginStart="6dp"
+            android:ellipsize="end"
+            android:maxWidth="120dp"
+            android:singleLine="true"
+            android:textSize="10sp" />
+    </LinearLayout>
+</LinearLayout>

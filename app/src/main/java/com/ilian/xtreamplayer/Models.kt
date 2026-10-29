@@ -22,7 +22,13 @@ data class Item(
     val rating: String? = null,
     val tmdb: String? = null,
     /** Adresse directe (fichier téléchargé). Si null, l'adresse est construite depuis la source. */
-    val url: String? = null
+    val url: String? = null,
+    /** Numéro de chaîne donné par le fournisseur. */
+    val num: Int? = null,
+    /** Date d'ajout (ou de dernière mise à jour pour une série), en secondes. */
+    val added: Long = 0L,
+    /** Pour un épisode : identifiant de la série. */
+    val series: String? = null
 ) {
     val key: String get() = "${kind.name}:$id"
 
@@ -38,6 +44,9 @@ data class Item(
         put("rating", rating ?: "")
         put("tmdb", tmdb ?: "")
         put("url", url ?: "")
+        put("num", num ?: 0)
+        put("added", added)
+        put("series", series ?: "")
     }
 
     companion object {
@@ -52,12 +61,15 @@ data class Item(
             catId = o.optString("cat").ifBlank { null },
             rating = o.optString("rating").ifBlank { null },
             tmdb = o.optString("tmdb").ifBlank { null },
-            url = o.optString("url").ifBlank { null }
+            url = o.optString("url").ifBlank { null },
+            num = o.optInt("num", 0).takeIf { it > 0 },
+            added = o.optLong("added", 0L),
+            series = o.optString("series").ifBlank { null }
         )
     }
 }
 
-data class EpgEntry(val title: String, val start: Long, val end: Long)
+data class EpgEntry(val title: String, val start: Long, val end: Long, val desc: String = "")
 
 data class Season(val number: Int, val episodes: List<Item>)
 

@@ -38,7 +38,7 @@
 
             <EditText
                 android:id="@+id/etSearch"
-                android:layout_width="170dp"
+                android:layout_width="150dp"
                 android:layout_height="39dp"
                 android:background="@drawable/search_bg"
                 android:drawableStart="@drawable/ic_search_small"
@@ -71,6 +71,8 @@
                 <View android:layout_width="0dp" android:layout_height="1dp" android:layout_weight="1" />
                 <TextView android:id="@+id/tabLive" style="@style/Tab" android:text="Direct" />
                 <View android:layout_width="0dp" android:layout_height="1dp" android:layout_weight="1" />
+                <TextView android:id="@+id/tabSport" style="@style/Tab" android:text="Sport" />
+                <View android:id="@+id/tabSportGap" android:layout_width="0dp" android:layout_height="1dp" android:layout_weight="1" />
                 <TextView android:id="@+id/tabMovies" style="@style/Tab" android:text="Films" />
                 <View android:layout_width="0dp" android:layout_height="1dp" android:layout_weight="1" />
                 <TextView android:id="@+id/tabSeries" style="@style/Tab" android:text="Séries" />
@@ -132,6 +134,26 @@
             <include
                 android:id="@+id/homeView"
                 layout="@layout/view_home" />
+
+            <include
+                android:id="@+id/directView"
+                layout="@layout/view_direct"
+                android:visibility="gone" />
+
+            <include
+                android:id="@+id/sportView"
+                layout="@layout/view_sport"
+                android:visibility="gone" />
+
+            <include
+                android:id="@+id/moviesView"
+                layout="@layout/view_stream"
+                android:visibility="gone" />
+
+            <include
+                android:id="@+id/seriesView"
+                layout="@layout/view_stream"
+                android:visibility="gone" />
 
             <!-- Catalogues : catégories à gauche, éléments à droite -->
             <LinearLayout

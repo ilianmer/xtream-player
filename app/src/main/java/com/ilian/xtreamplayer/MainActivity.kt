@@ -5,6 +5,7 @@ import android.content.Intent
 import android.os.Bundle
 import android.text.Editable
 import android.text.TextWatcher
+import android.view.KeyEvent
 import android.view.View
 import android.widget.EditText
 import android.widget.ImageView
@@ -15,34 +16,50 @@ import androidx.recyclerview.widget.RecyclerView
 
 class MainActivity : Activity() {
 
-    enum class Tab { HOME, LIVE, MOVIE, SERIES, FAV, DL }
+    enum class Tab { HOME, LIVE, SPORT, MOVIE, SERIES, FAV, DL }
 
     private lateinit var src: Source
     private lateinit var api: XtreamApi
     private lateinit var tabViews: Map<Tab, TextView>
     private lateinit var root: View
     private lateinit var bgImage: ImageView
+    private lateinit var bgScrim: View
     private lateinit var homeView: View
+    private lateinit var directView: View
+    private lateinit var sportView: View
+    private lateinit var moviesView: View
+    private lateinit var seriesView: View
     private lateinit var catalogView: View
     private lateinit var rvCategories: RecyclerView
     private lateinit var rvItems: RecyclerView
     private lateinit var tvStatus: TextView
     private lateinit var etSearch: EditText
-    private lateinit var home: HomeScreen
     private lateinit var grid: GridLayoutManager
+
+    private lateinit var home: HomeScreen
+    private lateinit var direct: DirectScreen
+    private lateinit var sport: SportScreen
+    private lateinit var movies: StreamScreen
+    private lateinit var series: StreamScreen
 
     private val catAdapter = CategoryAdapter(R.layout.item_category, ::onCategoryFocus, ::onCategoryClick)
     private val itemAdapter = ItemAdapter(::onItemClick, ::onItemLongClick)
 
     private var tab = Tab.HOME
+    /** Films et Séries : grille classique (catégories + affiches) au lieu des rangées. */
+    private var gridMode = false
     private var groups: List<Group> = emptyList()
     private var dl: List<Downloads.Status> = emptyList()
     private var focusedCategory = -1
     private var ignoreSearch = false
+    private var ready = false
     private val selectFocusedCategory = Runnable {
         if (focusedCategory != catAdapter.selected) selectCategory(focusedCategory)
     }
-    private val applySearch = Runnable { reloadItems(resetScroll = true) }
+    private val applySearch = Runnable {
+        if (tab == Tab.LIVE) direct.setQuery(etSearch.text.toString().trim().ifBlank { null })
+        else if (catalogView.visibility == View.VISIBLE) reloadItems(resetScroll = true)
+    }
     private val refreshDownloads = object : Runnable {
         override fun run() {
             if (tab != Tab.DL || isDestroyed) return
@@ -66,7 +83,12 @@ class MainActivity : Activity() {
 
         root = findViewById(R.id.root)
         bgImage = findViewById(R.id.bgImage)
+        bgScrim = findViewById(R.id.bgScrim)
         homeView = findViewById(R.id.homeView)
+        directView = findViewById(R.id.directView)
+        sportView = findViewById(R.id.sportView)
+        moviesView = findViewById(R.id.moviesView)
+        seriesView = findViewById(R.id.seriesView)
         catalogView = findViewById(R.id.catalogView)
         rvCategories = findViewById(R.id.rvCategories)
         rvItems = findViewById(R.id.rvItems)
@@ -77,12 +99,17 @@ class MainActivity : Activity() {
         tabViews = mapOf(
             Tab.HOME to findViewById(R.id.tabHome),
             Tab.LIVE to findViewById(R.id.tabLive),
+            Tab.SPORT to findViewById(R.id.tabSport),
             Tab.MOVIE to findViewById(R.id.tabMovies),
             Tab.SERIES to findViewById(R.id.tabSeries),
             Tab.FAV to findViewById(R.id.tabFav),
             Tab.DL to findViewById(R.id.tabDl)
         )
         for ((t, v) in tabViews) v.setOnClickListener { showTab(t) }
+        if (!Prefs.showSport) {
+            tabViews[Tab.SPORT]?.visibility = View.GONE
+            findViewById<View>(R.id.tabSportGap).visibility = View.GONE
+        }
         findViewById<View>(R.id.btnSettings).setOnClickListener {
             startActivity(Intent(this, SettingsActivity::class.java))
         }
@@ -103,9 +130,14 @@ class MainActivity : Activity() {
             override fun onTextChanged(s: CharSequence?, start: Int, before: Int, count: Int) {}
             override fun afterTextChanged(s: Editable?) {
                 if (ignoreSearch) return
-                // Une recherche depuis l'accueil, les favoris ou les téléchargements part dans tous les films.
-                if (!s.isNullOrBlank() && (tab == Tab.HOME || tab == Tab.FAV || tab == Tab.DL)) {
-                    showTab(Tab.MOVIE, groupKey = ALL, keepSearch = true)
+                if (!s.isNullOrBlank()) {
+                    when {
+                        // Accueil, Sport, Favoris, Téléchargements : la recherche part dans tous les films.
+                        tab == Tab.HOME || tab == Tab.SPORT || tab == Tab.FAV || tab == Tab.DL ->
+                            showTab(Tab.MOVIE, groupKey = ALL, keepSearch = true)
+                        (tab == Tab.MOVIE || tab == Tab.SERIES) && !gridMode ->
+                            showTab(tab, groupKey = ALL, keepSearch = true)
+                    }
                 }
                 Bg.main.removeCallbacks(applySearch)
                 Bg.main.postDelayed(applySearch, 400)
@@ -122,6 +154,12 @@ class MainActivity : Activity() {
                 groupKey = key
             )
         }
+        direct = DirectScreen(this, directView, src, api)
+        sport = SportScreen(this, sportView, src, api)
+        movies = StreamScreen(this, moviesView, src, api, Kind.MOVIE, bgImage) { key -> showTab(Tab.MOVIE, groupKey = key) }
+        series = StreamScreen(this, seriesView, src, api, Kind.SERIES, bgImage) { key -> showTab(Tab.SERIES, groupKey = key) }
+        ready = true
+
         home.start()
         showTab(Tab.HOME)
         homeView.post { home.focusDefault() }
@@ -129,16 +167,27 @@ class MainActivity : Activity() {
 
     override fun onResume() {
         super.onResume()
-        if (!::home.isInitialized) return
-        if (tab == Tab.HOME) home.resume()
-        if (tab == Tab.DL) {
-            Bg.main.removeCallbacks(refreshDownloads)
-            Bg.main.postDelayed(refreshDownloads, 3_000)
+        if (!ready) return
+        when (tab) {
+            Tab.HOME -> home.resume()
+            Tab.LIVE -> direct.show()
+            Tab.SPORT -> sport.show()
+            Tab.DL -> {
+                Bg.main.removeCallbacks(refreshDownloads)
+                Bg.main.postDelayed(refreshDownloads, 3_000)
+            }
+            else -> Unit
         }
     }
 
     override fun onPause() {
-        if (::home.isInitialized) home.pause()
+        if (ready) {
+            home.pause()
+            direct.hide()
+            sport.hide()
+            movies.hide()
+            series.hide()
+        }
         Bg.main.removeCallbacks(refreshDownloads)
         super.onPause()
     }
@@ -146,47 +195,109 @@ class MainActivity : Activity() {
     override fun onRestart() {
         super.onRestart()
         // Retour du lecteur, d'une fiche ou des réglages : favoris, reprise et masquage ont pu changer.
-        if (tab == Tab.HOME) {
-            home.refresh()
-            return
+        when {
+            tab == Tab.HOME -> home.refresh()
+            tab == Tab.LIVE -> direct.refresh()
+            tab == Tab.SPORT -> Unit
+            (tab == Tab.MOVIE || tab == Tab.SERIES) && !gridMode -> screenFor(tab)?.refresh()
+            else -> {
+                val key = groups.getOrNull(catAdapter.selected)?.key
+                groups = buildGroups()
+                catAdapter.items = groups.map { Category(it.key, it.name) }
+                val i = groups.indexOfFirst { it.key == key }.let { if (it >= 0) it else defaultIndex() }
+                catAdapter.selected = i
+                reloadItems(resetScroll = false)
+            }
         }
-        val key = groups.getOrNull(catAdapter.selected)?.key
-        groups = buildGroups()
-        catAdapter.items = groups.map { Category(it.key, it.name) }
-        val i = groups.indexOfFirst { it.key == key }.let { if (it >= 0) it else defaultIndex() }
-        catAdapter.selected = i
-        reloadItems(resetScroll = false)
+    }
+
+    private fun screenFor(t: Tab): StreamScreen? = when (t) {
+        Tab.MOVIE -> movies
+        Tab.SERIES -> series
+        else -> null
     }
 
     // ---------- Onglets ----------
 
+    private fun showOnly(v: View?) {
+        for (x in listOf(homeView, directView, sportView, moviesView, seriesView, catalogView)) {
+            x.visibility = if (x === v) View.VISIBLE else View.GONE
+        }
+    }
+
     private fun showTab(t: Tab, groupKey: String? = null, keepSearch: Boolean = false) {
-        val changed = t != tab || catalogView.visibility != View.VISIBLE
+        val wasGrid = catalogView.visibility == View.VISIBLE
+        val changed = t != tab || !wasGrid
+        if (t != tab || groupKey == null) {
+            if (tab == Tab.LIVE && t != Tab.LIVE) direct.hide()
+            if (tab == Tab.SPORT && t != Tab.SPORT) sport.hide()
+            if (tab == Tab.HOME && t != Tab.HOME) home.pause()
+        }
+        movies.hide()
+        series.hide()
         tab = t
         tabViews.forEach { (k, v) -> v.isSelected = k == t }
         if (!keepSearch && etSearch.text.isNotEmpty()) {
             ignoreSearch = true
             etSearch.setText("")
             ignoreSearch = false
+            if (t == Tab.LIVE) direct.setQuery(null)
         }
         Bg.main.removeCallbacks(applySearch)
         Bg.main.removeCallbacks(refreshDownloads)
+        bgImage.animate().cancel()
 
-        if (t == Tab.HOME) {
-            catalogView.visibility = View.GONE
-            homeView.visibility = View.VISIBLE
-            root.setBackgroundResource(R.drawable.bg_home)
-            bgImage.visibility = View.VISIBLE
-            home.refresh()
-            home.resume()
-            return
+        when (t) {
+            Tab.HOME -> {
+                gridMode = false
+                showOnly(homeView)
+                root.setBackgroundResource(R.drawable.bg_home)
+                bgScrim.setBackgroundResource(R.drawable.scrim_home)
+                bgImage.visibility = View.VISIBLE
+                bgImage.alpha = 0f
+                home.refresh()
+                home.resume()
+                return
+            }
+            Tab.LIVE -> {
+                gridMode = false
+                showOnly(directView)
+                root.setBackgroundResource(R.drawable.bg_live)
+                bgScrim.setBackgroundResource(R.drawable.scrim_home)
+                bgImage.visibility = View.GONE
+                direct.show()
+                if (keepSearch) direct.setQuery(etSearch.text.toString().trim().ifBlank { null })
+                return
+            }
+            Tab.SPORT -> {
+                gridMode = false
+                showOnly(sportView)
+                root.setBackgroundResource(R.drawable.bg_live)
+                bgScrim.setBackgroundResource(R.drawable.scrim_home)
+                bgImage.visibility = View.GONE
+                sport.show()
+                return
+            }
+            Tab.MOVIE, Tab.SERIES -> if (groupKey == null && !keepSearch) {
+                gridMode = false
+                showOnly(if (t == Tab.MOVIE) moviesView else seriesView)
+                root.setBackgroundResource(R.drawable.bg_catalog)
+                bgScrim.setBackgroundResource(R.drawable.scrim_stream)
+                bgImage.visibility = View.VISIBLE
+                bgImage.alpha = 0f
+                screenFor(t)?.show()
+                return
+            } else {
+                gridMode = true
+            }
+            else -> gridMode = false
         }
-        home.pause()
-        homeView.visibility = View.GONE
-        catalogView.visibility = View.VISIBLE
-        bgImage.visibility = View.GONE
-        root.setBackgroundResource(if (t == Tab.LIVE) R.drawable.bg_live else R.drawable.bg_catalog)
 
+        // Grille classique : Favoris, Téléchargements, ou une catégorie de Films / Séries
+        showOnly(catalogView)
+        bgImage.visibility = View.GONE
+        bgScrim.setBackgroundResource(R.drawable.scrim_home)
+        root.setBackgroundResource(R.drawable.bg_catalog)
         if (changed || groupKey != null) {
             groups = buildGroups()
             catAdapter.items = groups.map { Category(it.key, it.name) }
@@ -194,10 +305,7 @@ class MainActivity : Activity() {
         val start = groupKey?.let { k -> groups.indexOfFirst { it.key == k }.takeIf { it >= 0 } } ?: defaultIndex()
         selectCategory(start, force = true)
         rvCategories.scrollToPosition(start)
-        if (groupKey != null && !keepSearch) {
-            // Arrivée depuis l'accueil : on va directement dans la grille.
-            rvItems.post { focusFirstItem() }
-        }
+        if (groupKey != null && !keepSearch) rvItems.post { focusFirstItem() }
         if (t == Tab.DL) Bg.main.postDelayed(refreshDownloads, 3_000)
     }
 
@@ -225,7 +333,7 @@ class MainActivity : Activity() {
                 g.add(Group(FAV_SERIES, "Séries", emptyList()))
             }
             Tab.DL -> g.add(Group(DL, "Tous les téléchargements", emptyList()))
-            Tab.HOME -> Unit
+            Tab.HOME, Tab.SPORT -> Unit
             else -> {
                 val kind = kindOfTab()
                 g.add(Group(FAV, "Favoris", emptyList()))
@@ -326,8 +434,8 @@ class MainActivity : Activity() {
                 itemAdapter.subtitle = { item -> byKey[item.key]?.label }
                 filtered(dl.map { it.row.item })
             }
-            ALL -> ItemList(Db.count(s, k, null, q)) { o, l -> Db.page(s, k, null, q, o, l) }
-            else -> ItemList(Db.count(s, k, g.catIds, q)) { o, l -> Db.page(s, k, g.catIds, q, o, l) }
+            ALL -> ItemList.query(s, k, null, q)
+            else -> ItemList.query(s, k, g.catIds, q)
         }
         itemAdapter.list = list
         if (resetScroll) rvItems.scrollToPosition(0)
@@ -394,17 +502,35 @@ class MainActivity : Activity() {
         else itemAdapter.notifyItemChanged(position)
     }
 
+    // ---------- Télécommande ----------
+
+    override fun dispatchKeyEvent(event: KeyEvent): Boolean {
+        // Chiffres de la télécommande dans le Direct : numéro de chaîne, comme sur un décodeur.
+        if (ready && tab == Tab.LIVE && event.action == KeyEvent.ACTION_DOWN && !etSearch.hasFocus()) {
+            val c = event.keyCode
+            if (c in KeyEvent.KEYCODE_0..KeyEvent.KEYCODE_9) return direct.typeDigit(c - KeyEvent.KEYCODE_0)
+            if (c in KeyEvent.KEYCODE_NUMPAD_0..KeyEvent.KEYCODE_NUMPAD_9) return direct.typeDigit(c - KeyEvent.KEYCODE_NUMPAD_0)
+        }
+        return super.dispatchKeyEvent(event)
+    }
+
     @Deprecated("Deprecated in Java")
     override fun onBackPressed() {
         val tabView = tabViews[tab]
+        val inTopBar = findViewById<View>(R.id.topBar).hasFocus()
         when {
             // Grille -> catégories
             catalogView.visibility == View.VISIBLE && rvItems.hasFocus() -> {
                 val v = rvCategories.findViewHolderForAdapterPosition(catAdapter.selected)?.itemView
                 if (v != null) v.requestFocus() else rvCategories.requestFocus()
             }
+            // Catégories de Films / Séries -> retour aux rangées
+            gridMode && !inTopBar -> {
+                showTab(tab)
+                screenFor(tab)?.focusDefault()
+            }
             // Contenu -> barre d'onglets
-            tabView != null && !findViewById<View>(R.id.topBar).hasFocus() -> tabView.requestFocus()
+            tabView != null && !inTopBar -> tabView.requestFocus()
             // Onglet -> Accueil
             tab != Tab.HOME -> {
                 showTab(Tab.HOME)
@@ -421,7 +547,11 @@ class MainActivity : Activity() {
         Bg.main.removeCallbacks(selectFocusedCategory)
         Bg.main.removeCallbacks(applySearch)
         Bg.main.removeCallbacks(refreshDownloads)
-        if (::home.isInitialized) home.pause()
+        if (ready) {
+            home.pause()
+            direct.hide()
+            sport.hide()
+        }
         super.onDestroy()
     }
 
