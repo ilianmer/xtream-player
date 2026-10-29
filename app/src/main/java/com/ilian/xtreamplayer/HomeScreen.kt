@@ -416,24 +416,7 @@ class HomeScreen(
         }
     }
 
-    private fun crest(v: View, s: Sport.Side) {
-        val bgd = GradientDrawable()
-        bgd.shape = GradientDrawable.OVAL
-        bgd.setColor(s.color ?: 0xFF3A3F55.toInt())
-        val text = v.findViewById<TextView>(R.id.crestText)
-        val img = v.findViewById<ImageView>(R.id.crestImg)
-        text.background = bgd
-        text.text = s.abbr.take(3)
-        img.tag = s.logo
-        val logo = s.logo ?: return
-        Img.fetch(logo, 80) { bmp ->
-            if (bmp != null && img.tag == logo) {
-                img.setImageBitmap(bmp)
-                text.text = ""
-                bgd.setColor(0x00000000)
-            }
-        }
-    }
+    private fun crest(v: View, s: Sport.Side) = Crest.bind(v, s, 80)
 
     // ---------- Reprendre la lecture ----------
 

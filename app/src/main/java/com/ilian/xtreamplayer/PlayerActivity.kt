@@ -62,6 +62,24 @@ class PlayerActivity : BaseActivity() {
     private lateinit var zapPanel: View
     private lateinit var zapRows: List<View>
     private lateinit var tvError: TextView
+    private lateinit var nextBox: View
+    private lateinit var nextTitle: TextView
+    private lateinit var btnNext: TextView
+    private lateinit var nextBar: ProgressBar
+
+    // ---------- Épisode suivant pendant le générique ----------
+    /** Bulle masquée avec Retour pour cet épisode : on laisse finir, l'enchaînement se fera à la toute fin. */
+    private var nextDismissed = false
+    /** Moment où la bulle est apparue (début du compte à rebours). */
+    private var nextShownAt = 0L
+    private val nextCountdownMs = 12_000L
+    private val nextWatch = object : Runnable {
+        override fun run() {
+            if (isFinishing) return
+            checkNextEpisode()
+            Bg.main.postDelayed(this, 250)
+        }
+    }
 
     private var player: ExoPlayer? = null
     private var index = 0
@@ -180,6 +198,11 @@ class PlayerActivity : BaseActivity() {
         zapRows[0].alpha = 0.8f
         zapRows[2].alpha = 0.8f
         tvError = findViewById(R.id.tvError)
+        nextBox = findViewById(R.id.nextBox)
+        nextTitle = findViewById(R.id.nextTitle)
+        btnNext = findViewById(R.id.btnNext)
+        nextBar = findViewById(R.id.nextBar)
+        btnNext.setOnClickListener { playNextEpisode() }
         ticker = findViewById(R.id.ticker)
 
         playerView.setShowBuffering(PlayerView.SHOW_BUFFERING_ALWAYS)
@@ -207,6 +230,8 @@ class PlayerActivity : BaseActivity() {
         if (list.size == 0) return
         initPlayer()
         play()
+        Bg.main.removeCallbacks(nextWatch)
+        Bg.main.postDelayed(nextWatch, 1_000)
         if (isLive && Prefs.sportTicker) {
             Bg.main.removeCallbacks(tickerRefresh)
             Bg.main.post(tickerRefresh)
@@ -221,6 +246,7 @@ class PlayerActivity : BaseActivity() {
         Bg.main.removeCallbacks(tickerRefresh)
         Bg.main.removeCallbacks(tickerRotate)
         Bg.main.removeCallbacks(endAlert)
+        Bg.main.removeCallbacks(nextWatch)
         player?.release()
         player = null
         Session.index = index
@@ -300,6 +326,8 @@ class PlayerActivity : BaseActivity() {
         if (item.kind == Kind.LIVE && format == "m3u8") builder.setMimeType(MimeTypes.APPLICATION_M3U8)
 
         tvError.visibility = View.GONE
+        hideNext()
+        nextDismissed = false
         val resume = if (item.kind == Kind.LIVE) 0L else Db.progress(src.id, item)?.takeIf { !it.finished }?.pos ?: 0L
         p.setMediaItem(builder.build(), resume)
         p.prepare()
@@ -531,6 +559,22 @@ class PlayerActivity : BaseActivity() {
     }
 
     override fun dispatchKeyEvent(event: KeyEvent): Boolean {
+        // Bulle « Épisode suivant » : OK lance, Retour la masque (on finit l'épisode normalement)
+        if (nextBox.visibility == View.VISIBLE) {
+            when (event.keyCode) {
+                KeyEvent.KEYCODE_DPAD_CENTER, KeyEvent.KEYCODE_ENTER, KeyEvent.KEYCODE_NUMPAD_ENTER -> {
+                    if (event.action == KeyEvent.ACTION_UP) playNextEpisode()
+                    return true
+                }
+                KeyEvent.KEYCODE_BACK -> {
+                    if (event.action == KeyEvent.ACTION_UP) {
+                        nextDismissed = true
+                        hideNext()
+                    }
+                    return true
+                }
+            }
+        }
         if (event.action == KeyEvent.ACTION_DOWN) {
             if (isLive) {
                 val c = event.keyCode
@@ -573,6 +617,65 @@ class PlayerActivity : BaseActivity() {
         return super.dispatchKeyEvent(event)
     }
 
+    /** Fin d'épisode : seuil d'apparition de la bulle (tout à la fin, pendant le générique). */
+    private fun nextThresholdMs(dur: Long): Long = (dur * 0.03).toLong().coerceIn(25_000L, 45_000L)
+
+    private fun checkNextEpisode() {
+        val item = current ?: return hideNext()
+        val p = player ?: return hideNext()
+        if (item.kind != Kind.EPISODE || index + 1 >= list.size) return hideNext()
+        val dur = p.duration
+        if (dur <= 0 || dur == C.TIME_UNSET || dur < 5 * 60_000L) return hideNext()
+        val left = dur - p.currentPosition
+        val threshold = nextThresholdMs(dur)
+        if (left > threshold + 5_000) {
+            // Retour en arrière : la bulle pourra réapparaître
+            nextDismissed = false
+            hideNext()
+            return
+        }
+        if (left > threshold || nextDismissed) return
+        if (nextBox.visibility != View.VISIBLE) showNext()
+        if (!p.isPlaying) {
+            // En pause : le compte à rebours attend
+            nextShownAt = System.currentTimeMillis() - (nextBar.progress * nextCountdownMs / 1000)
+            return
+        }
+        val elapsed = System.currentTimeMillis() - nextShownAt
+        val leftSec = ((nextCountdownMs - elapsed + 999) / 1000).coerceAtLeast(0)
+        btnNext.text = "Lecture  ·  $leftSec"
+        nextBar.progress = (elapsed * 1000 / nextCountdownMs).toInt().coerceIn(0, 1000)
+        if (elapsed >= nextCountdownMs) playNextEpisode()
+    }
+
+    private fun showNext() {
+        val next = list[index + 1] ?: return
+        val se = SE_LABEL.find(next.extra ?: "")?.let { "S${it.groupValues[1]} · É${it.groupValues[2]}  " } ?: ""
+        nextTitle.text = se + next.name
+        nextShownAt = System.currentTimeMillis()
+        nextBar.progress = 0
+        playerView.hideController()
+        overlay.visibility = View.GONE
+        nextBox.alpha = 0f
+        nextBox.translationY = 20 * resources.displayMetrics.density
+        nextBox.visibility = View.VISIBLE
+        nextBox.animate().alpha(1f).translationY(0f).setDuration(260).start()
+        btnNext.requestFocus()
+    }
+
+    private fun hideNext() {
+        if (::nextBox.isInitialized && nextBox.visibility == View.VISIBLE) nextBox.visibility = View.GONE
+    }
+
+    private fun playNextEpisode() {
+        val item = current ?: return
+        if (index + 1 >= list.size) return
+        markFinished(item)
+        hideNext()
+        index++
+        play()
+    }
+
     private fun markFinished(item: Item) {
         if (item.kind == Kind.MOVIE || item.kind == Kind.EPISODE) {
             Db.saveProgress(src.id, item, 0, player?.duration?.coerceAtLeast(0) ?: 0, true)
@@ -590,5 +693,9 @@ class PlayerActivity : BaseActivity() {
             pos >= dur - 60_000 -> markFinished(item)
             pos > 30_000 -> Db.saveProgress(src.id, item, pos, dur, false)
         }
+    }
+
+    companion object {
+        private val SE_LABEL = Regex("""Saison (\d+) · Épisode (\d+)""")
     }
 }

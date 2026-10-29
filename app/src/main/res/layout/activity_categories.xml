@@ -72,7 +72,7 @@
                 style="@style/Txt"
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
-                android:text="Chaque changement est enregistré tout de suite, pour ce profil uniquement."
+                android:text="Ces choix ne concernent que ce profil."
                 android:textColor="@color/text_faint"
                 android:textSize="11sp" />
 
@@ -83,7 +83,7 @@
                 android:layout_marginTop="10dp"
                 android:background="@drawable/btn_accent_bg"
                 android:drawableTint="@color/on_accent"
-                android:text="Terminé"
+                android:text="Enregistrer"
                 android:textColor="@color/on_accent" />
         </LinearLayout>
 

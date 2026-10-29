@@ -321,26 +321,7 @@ class SportScreen(
 
     // ---------- Affichage ----------
 
-    private fun crest(v: View, s: Sport.Side) {
-        val bg = GradientDrawable()
-        bg.shape = GradientDrawable.OVAL
-        bg.setColor(s.color ?: 0xFF3A3F55.toInt())
-        val text = v.findViewById<TextView>(R.id.crestText)
-        val img = v.findViewById<ImageView>(R.id.crestImg)
-        val tag = s.logo ?: s.abbr
-        text.background = bg
-        text.text = s.abbr.take(3)
-        img.tag = tag
-        img.setImageDrawable(null)
-        val logo = s.logo ?: return
-        Img.fetch(logo, 96) { bmp ->
-            if (bmp != null && img.tag == tag) {
-                img.setImageBitmap(bmp)
-                text.text = ""
-                bg.setColor(0x26FFFFFF)
-            }
-        }
-    }
+    private fun crest(v: View, s: Sport.Side) = Crest.bind(v, s, 96)
 
     private fun dayLabel(ms: Long): String {
         val c = Calendar.getInstance()

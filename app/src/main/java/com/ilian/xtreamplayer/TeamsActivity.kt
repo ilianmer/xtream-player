@@ -147,24 +147,7 @@ class TeamsActivity : BaseActivity() {
             val on = Sport.isFollowed(s)
             h.itemView.isSelected = on
             h.check.visibility = if (on) View.VISIBLE else View.GONE
-            val text = h.crest.findViewById<TextView>(R.id.crestText)
-            val img = h.crest.findViewById<ImageView>(R.id.crestImg)
-            val bg = GradientDrawable()
-            bg.shape = GradientDrawable.OVAL
-            bg.setColor(s.color ?: 0xFF3A3F55.toInt())
-            text.background = bg
-            text.text = s.abbr.take(3)
-            img.setImageDrawable(null)
-            img.tag = s.logo
-            s.logo?.let { url ->
-                Img.fetch(url, 128) { bmp ->
-                    if (bmp != null && img.tag == url) {
-                        img.setImageBitmap(bmp)
-                        text.text = ""
-                        bg.setColor(0x00000000)
-                    }
-                }
-            }
+            Crest.bind(h.crest, s, 128)
             h.itemView.setOnClickListener {
                 val added = Sport.toggleFollow(s)
                 h.itemView.isSelected = added

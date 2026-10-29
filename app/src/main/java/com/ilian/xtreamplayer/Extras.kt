@@ -194,14 +194,15 @@ object Tmdb {
         }
     }
 
-    private val PREFIX = Regex("""^\s*(\[[^\]]*]|\|[^|]*\||[A-Za-z]{2,3}\s*[-:|]\s+|[A-Za-z]{2,3}\|\s*)""")
+    // Préfixes de langue ou de fournisseur : « FR - », « -FR- - », « [FR] », « |FR| », « (FR) », « FR: », tirets restants
+    private val PREFIX = Regex("""^\s*(\[[^\]]*]|\|[^|]*\||-\s*[A-Za-z]{2,3}\s*-|\([A-Za-z]{2,3}\)|[A-Za-z]{2,3}\s*[-:|]\s+|[A-Za-z]{2,3}\|\s*|[A-Za-z]{2}:(?=\S)|[-–|:•★*]+\s*)""")
     private val YEAR = Regex("""\b(19|20)\d{2}\b""")
     private val NOISE = Regex("""(?i)\b(4k|uhd|fhd|hd|sd|vf|vff|vfq|vostfr|vo|multi|truefrench|french|hevc|x265|x264|1080p|720p|2160p|hdr)\b""")
 
     /** "FR - Le Film (2021) 4K" -> ("Le Film", "2021") */
     fun cleanTitle(raw: String): Pair<String, String?> {
         var s = raw
-        repeat(2) { s = s.replace(PREFIX, "") }
+        repeat(4) { s = s.replace(PREFIX, "") }
         val year = YEAR.findAll(s).lastOrNull()?.value
         if (year != null) s = s.replace(year, " ")
         s = NOISE.replace(s, " ")

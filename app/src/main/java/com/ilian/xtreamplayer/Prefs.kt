@@ -26,6 +26,11 @@ object Prefs {
         get() = sp.getLong("update_snooze", 0L)
         set(v) = sp.edit().putLong("update_snooze", v).apply()
 
+    /** Préréglages de langue passés en mode strict (migration faite une fois). */
+    var langsStrict: Boolean
+        get() = bool("langs_strict_v1", false)
+        set(v) = putBool("langs_strict_v1", v)
+
     var activeSourceId: Long
         get() = sp.getLong("active_source", -1L)
         set(v) = sp.edit().putLong("active_source", v).apply()
