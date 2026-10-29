@@ -21,18 +21,23 @@ jobs:
       # une version signée avec une autre clé : elle refuserait de s'installer par-dessus.
       - name: Préparer la clé de signature
         env:
-          SIGNING_PASSWORD: ${{ secrets.SIGNING_PASSWORD }}
+          RAW_PASSWORD: ${{ secrets.SIGNING_PASSWORD }}
         run: |
-          if [ -z "$SIGNING_PASSWORD" ]; then
+          # Espaces ou retour à la ligne collés avec le mot de passe : on les enlève.
+          PW="$(printf %s "$RAW_PASSWORD" | tr -d '[:space:]')"
+          echo "::add-mask::$PW"
+          if [ -z "$PW" ]; then
             echo "::error::Secret SIGNING_PASSWORD manquant : GitHub > Settings > Secrets and variables > Actions > New repository secret"
             exit 1
           fi
-          openssl enc -d -aes-256-cbc -md sha256 -pbkdf2 -iter 200000 -in signing/release.p12.enc -out "$RUNNER_TEMP/release.p12" -pass env:SIGNING_PASSWORD \
-            || { echo "::error::Le secret SIGNING_PASSWORD ne correspond pas à la clé"; exit 1; }
+          if ! PW="$PW" openssl enc -d -aes-256-cbc -md sha256 -pbkdf2 -iter 200000 -in signing/release.p12.enc -out "$RUNNER_TEMP/release.p12" -pass env:PW; then
+            # Diagnostic sans révéler le mot de passe : longueur et début de son empreinte
+            echo "::error::Mot de passe refusé (longueur ${#PW}, attendu 28 ; empreinte $(printf %s "$PW" | sha256sum | cut -c1-6), attendu d8b2fd)"
+            exit 1
+          fi
           echo "SIGNING_STORE=$RUNNER_TEMP/release.p12" >> "$GITHUB_ENV"
+          echo "SIGNING_PASSWORD=$PW" >> "$GITHUB_ENV"
       - name: Compiler l'APK
-        env:
-          SIGNING_PASSWORD: ${{ secrets.SIGNING_PASSWORD }}
         run: |
           chmod +x gradlew
           set -o pipefail
