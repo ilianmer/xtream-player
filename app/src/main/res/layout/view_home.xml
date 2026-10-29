@@ -1,0 +1,385 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:orientation="horizontal">
+
+    <!-- Colonne gauche -->
+    <LinearLayout
+        android:layout_width="225dp"
+        android:layout_height="match_parent"
+        android:orientation="vertical">
+
+        <LinearLayout
+            android:id="@+id/liveBox"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:background="@drawable/glass_panel"
+            android:orientation="vertical"
+            android:padding="11dp">
+
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:gravity="center_vertical"
+                android:orientation="horizontal">
+
+                <TextView
+                    style="@style/Section"
+                    android:layout_width="0dp"
+                    android:layout_height="wrap_content"
+                    android:layout_weight="1"
+                    android:text="En direct" />
+
+                <TextView
+                    android:id="@+id/liveHint"
+                    style="@style/Txt"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:textColor="@color/text_dim"
+                    android:textSize="12sp" />
+            </LinearLayout>
+
+            <FrameLayout
+                android:id="@+id/liveTile"
+                android:layout_width="match_parent"
+                android:layout_height="104dp"
+                android:layout_marginTop="9dp"
+                android:background="@drawable/poster_bg"
+                android:clickable="true"
+                android:focusable="true"
+                android:foreground="@drawable/focus_ring">
+
+                <ImageView
+                    android:id="@+id/liveTileBg"
+                    android:layout_width="match_parent"
+                    android:layout_height="match_parent"
+                    android:scaleType="centerCrop" />
+
+                <ImageView
+                    android:id="@+id/liveTileLogo"
+                    android:layout_width="96dp"
+                    android:layout_height="56dp"
+                    android:layout_gravity="center"
+                    android:layout_marginBottom="10dp"
+                    android:scaleType="fitCenter" />
+
+                <TextView
+                    style="@style/Semi"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:layout_margin="8dp"
+                    android:background="@drawable/live_pill"
+                    android:drawableStart="@drawable/live_dot"
+                    android:drawablePadding="5dp"
+                    android:gravity="center_vertical"
+                    android:letterSpacing="0.06"
+                    android:paddingStart="8dp"
+                    android:paddingTop="3dp"
+                    android:paddingEnd="8dp"
+                    android:paddingBottom="3dp"
+                    android:text="EN DIRECT"
+                    android:textColor="#FFFFFF"
+                    android:textSize="10sp" />
+
+                <LinearLayout
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_gravity="bottom"
+                    android:background="@drawable/overlay_grad"
+                    android:orientation="vertical"
+                    android:paddingStart="9dp"
+                    android:paddingTop="16dp"
+                    android:paddingEnd="9dp"
+                    android:paddingBottom="7dp">
+
+                    <TextView
+                        android:id="@+id/liveTileName"
+                        style="@style/Semi"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:ellipsize="end"
+                        android:singleLine="true"
+                        android:textColor="#FFFFFF"
+                        android:textSize="12sp" />
+
+                    <TextView
+                        android:id="@+id/liveTileProg"
+                        style="@style/Txt"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:ellipsize="end"
+                        android:singleLine="true"
+                        android:textColor="#D5D8DE"
+                        android:textSize="11sp"
+                        android:visibility="gone" />
+                </LinearLayout>
+            </FrameLayout>
+
+            <ProgressBar
+                android:id="@+id/liveBar"
+                style="?android:attr/progressBarStyleHorizontal"
+                android:layout_width="match_parent"
+                android:layout_height="3dp"
+                android:layout_marginTop="8dp"
+                android:max="1000"
+                android:progressDrawable="@drawable/thin_track"
+                android:visibility="gone" />
+
+            <LinearLayout
+                android:id="@+id/liveRows"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="vertical" />
+        </LinearLayout>
+
+        <LinearLayout
+            android:id="@+id/resumeBox"
+            android:layout_width="match_parent"
+            android:layout_height="0dp"
+            android:layout_marginTop="12dp"
+            android:layout_weight="1"
+            android:background="@drawable/glass_panel"
+            android:orientation="vertical"
+            android:padding="11dp">
+
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:gravity="center_vertical"
+                android:orientation="horizontal">
+
+                <TextView
+                    style="@style/Section"
+                    android:layout_width="0dp"
+                    android:layout_height="wrap_content"
+                    android:layout_weight="1"
+                    android:text="Reprendre" />
+
+                <TextView
+                    android:id="@+id/btnResumeAll"
+                    style="@style/Txt"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:background="@drawable/small_pill_bg"
+                    android:clickable="true"
+                    android:focusable="true"
+                    android:paddingStart="9dp"
+                    android:paddingTop="3dp"
+                    android:paddingEnd="9dp"
+                    android:paddingBottom="3dp"
+                    android:text="Tout voir"
+                    android:textColor="@color/btn_text"
+                    android:textSize="11sp" />
+            </LinearLayout>
+
+            <LinearLayout
+                android:id="@+id/resumeRows"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="4dp"
+                android:orientation="vertical" />
+
+            <TextView
+                android:id="@+id/resumeEmpty"
+                style="@style/Txt"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="8dp"
+                android:lineSpacingMultiplier="1.1"
+                android:text="Les films et épisodes que tu commences à regarder apparaîtront ici."
+                android:textColor="@color/text_dim"
+                android:textSize="12sp"
+                android:visibility="gone" />
+        </LinearLayout>
+    </LinearLayout>
+
+    <!-- Colonne principale -->
+    <LinearLayout
+        android:layout_width="0dp"
+        android:layout_height="match_parent"
+        android:layout_marginStart="13dp"
+        android:layout_weight="1"
+        android:orientation="vertical">
+
+        <FrameLayout
+            android:id="@+id/hero"
+            android:layout_width="match_parent"
+            android:layout_height="236dp"
+            android:background="@drawable/hero_bg"
+            android:foreground="@drawable/hero_frame">
+
+            <ImageView
+                android:id="@+id/heroBlur"
+                android:layout_width="match_parent"
+                android:layout_height="match_parent"
+                android:scaleType="centerCrop" />
+
+            <ImageView
+                android:id="@+id/heroBackdrop"
+                android:layout_width="match_parent"
+                android:layout_height="match_parent"
+                android:alpha="0"
+                android:scaleType="centerCrop" />
+
+            <ImageView
+                android:id="@+id/heroPoster"
+                android:layout_width="134dp"
+                android:layout_height="200dp"
+                android:layout_gravity="end|center_vertical"
+                android:layout_marginEnd="44dp"
+                android:background="@drawable/poster_bg"
+                android:elevation="10dp"
+                android:scaleType="centerCrop"
+                android:visibility="gone" />
+
+            <View
+                android:layout_width="match_parent"
+                android:layout_height="match_parent"
+                android:background="@drawable/scrim_left" />
+
+            <LinearLayout
+                android:layout_width="360dp"
+                android:layout_height="match_parent"
+                android:gravity="center_vertical"
+                android:orientation="vertical"
+                android:paddingStart="24dp"
+                android:paddingEnd="8dp">
+
+                <TextView
+                    style="@style/Medium"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:background="@drawable/glass_strong_pill"
+                    android:paddingStart="10dp"
+                    android:paddingTop="3dp"
+                    android:paddingEnd="10dp"
+                    android:paddingBottom="3dp"
+                    android:text="À la une"
+                    android:textSize="11sp" />
+
+                <TextView
+                    android:id="@+id/heroTitle"
+                    style="@style/Title"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="8dp"
+                    android:ellipsize="end"
+                    android:letterSpacing="0.05"
+                    android:lineSpacingMultiplier="0.9"
+                    android:maxLines="2"
+                    android:textSize="44sp" />
+
+                <TextView
+                    android:id="@+id/heroMeta"
+                    style="@style/Semi"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="6dp"
+                    android:singleLine="true"
+                    android:textColor="#E7E9ED"
+                    android:textSize="12sp" />
+
+                <TextView
+                    android:id="@+id/heroPlot"
+                    style="@style/Txt"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="5dp"
+                    android:ellipsize="end"
+                    android:lineSpacingMultiplier="1.1"
+                    android:maxLines="2"
+                    android:textColor="#C9CDD4"
+                    android:textSize="12sp" />
+
+                <LinearLayout
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="12dp"
+                    android:gravity="center_vertical"
+                    android:orientation="horizontal">
+
+                    <Button
+                        android:id="@+id/heroPlay"
+                        style="@style/Pill"
+                        android:layout_height="36dp"
+                        android:drawableStart="@drawable/ic_play_small"
+                        android:text="Regarder" />
+
+                    <ImageView
+                        android:id="@+id/heroInfo"
+                        style="@style/IconBtn"
+                        android:layout_width="36dp"
+                        android:layout_height="36dp"
+                        android:layout_marginEnd="8dp"
+                        android:contentDescription="Plus d'infos"
+                        android:src="@drawable/ic_info" />
+
+                    <ImageView
+                        android:id="@+id/heroFav"
+                        style="@style/IconBtn"
+                        android:layout_width="36dp"
+                        android:layout_height="36dp"
+                        android:layout_marginEnd="8dp"
+                        android:contentDescription="Favori"
+                        android:src="@drawable/ic_plus" />
+
+                    <ImageView
+                        android:id="@+id/heroDl"
+                        style="@style/IconBtn"
+                        android:layout_width="36dp"
+                        android:layout_height="36dp"
+                        android:contentDescription="Télécharger"
+                        android:src="@drawable/ic_download" />
+                </LinearLayout>
+            </LinearLayout>
+
+            <LinearLayout
+                android:id="@+id/heroDots"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_gravity="bottom|end"
+                android:layout_marginEnd="16dp"
+                android:layout_marginBottom="13dp"
+                android:orientation="horizontal" />
+
+            <TextView
+                android:id="@+id/heroEmpty"
+                style="@style/Txt"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_gravity="center"
+                android:text="Aucun film dans cette source."
+                android:textColor="@color/text_dim"
+                android:visibility="gone" />
+        </FrameLayout>
+
+        <LinearLayout
+            android:id="@+id/catsBox"
+            android:layout_width="match_parent"
+            android:layout_height="0dp"
+            android:layout_marginTop="12dp"
+            android:layout_weight="1"
+            android:background="@drawable/glass_panel"
+            android:orientation="vertical"
+            android:paddingStart="13dp"
+            android:paddingTop="11dp"
+            android:paddingEnd="13dp"
+            android:paddingBottom="13dp">
+
+            <TextView
+                style="@style/Section"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="Catégories pour toi" />
+
+            <LinearLayout
+                android:id="@+id/catTiles"
+                android:layout_width="match_parent"
+                android:layout_height="0dp"
+                android:layout_marginTop="9dp"
+                android:layout_weight="1"
+                android:orientation="horizontal" />
+        </LinearLayout>
+    </LinearLayout>
+</LinearLayout>

@@ -72,11 +72,18 @@ class ItemAdapter(
     /** Renseigné quand le préchargement de l'EPG est actif : le programme en cours s'affiche dans la liste. */
     var epgApi: XtreamApi? = null
 
+    /** Ligne sous le titre d'une affiche (état d'un téléchargement…). */
+    var subtitle: ((Item) -> String?)? = null
+
+    /** Avancement de lecture entre 0 et 1, affiché en bas de l'affiche. */
+    var progress: ((Item) -> Float?)? = null
+
     class VH(v: View) : RecyclerView.ViewHolder(v) {
         val img: ImageView? = v.findViewById(R.id.img)
         val name: TextView = v.findViewById(R.id.name)
         val sub: TextView? = v.findViewById(R.id.sub)
         val star: View? = v.findViewById(R.id.star)
+        val bar: ProgressBar? = v.findViewById(R.id.bar)
     }
 
     override fun getItemViewType(position: Int) = if (viewKind == Kind.LIVE) 0 else 1
@@ -84,8 +91,10 @@ class ItemAdapter(
     override fun onCreateViewHolder(parent: ViewGroup, viewType: Int): VH {
         val layout = if (viewType == 0) R.layout.item_live else R.layout.item_poster
         val v = LayoutInflater.from(parent.context).inflate(layout, parent, false)
+        v.findViewById<View>(R.id.frame)?.clipToOutline = true
+        val zoom = if (viewType == 0) 1.03f else 1.07f
         v.setOnFocusChangeListener { view, hasFocus ->
-            val s = if (hasFocus) 1.07f else 1f
+            val s = if (hasFocus) zoom else 1f
             view.animate().scaleX(s).scaleY(s).setDuration(120).start()
             view.elevation = if (hasFocus) 8f else 0f
         }
@@ -108,16 +117,31 @@ class ItemAdapter(
         if (item == null) {
             h.name.text = ""
             h.star?.visibility = View.GONE
+            h.bar?.visibility = View.GONE
             return
         }
         h.name.text = item.name
         h.star?.visibility = if (Db.isFav(sourceId, item)) View.VISIBLE else View.GONE
+        h.bar?.let { bar ->
+            val p = progress?.invoke(item)
+            if (p != null && p > 0f) {
+                bar.visibility = View.VISIBLE
+                bar.progress = (p * 1000).toInt().coerceIn(0, 1000)
+            } else {
+                bar.visibility = View.GONE
+            }
+        }
 
-        // Programme en cours sous le nom de la chaîne
+        // Programme en cours sous le nom de la chaîne, ou ligne d'info fournie par l'écran
         h.sub?.let { sub ->
             val api = epgApi
             sub.tag = item.id
-            if (api == null || item.kind != Kind.LIVE) {
+            val custom = subtitle
+            if (custom != null) {
+                val t = custom(item)
+                sub.text = t ?: ""
+                sub.visibility = if (t.isNullOrBlank()) View.GONE else View.VISIBLE
+            } else if (api == null || item.kind != Kind.LIVE) {
                 sub.visibility = View.GONE
             } else {
                 sub.visibility = View.VISIBLE
@@ -167,10 +191,13 @@ class EpisodeAdapter(
         val name: TextView = v.findViewById(R.id.name)
         val sub: TextView = v.findViewById(R.id.sub)
         val bar: ProgressBar = v.findViewById(R.id.bar)
+        val num: TextView = v.findViewById(R.id.num)
+        val seen: View = v.findViewById(R.id.seen)
     }
 
     override fun onCreateViewHolder(parent: ViewGroup, viewType: Int): VH {
         val v = LayoutInflater.from(parent.context).inflate(R.layout.item_episode, parent, false)
+        v.findViewById<View>(R.id.frame).clipToOutline = true
         v.setOnFocusChangeListener { view, hasFocus ->
             val s = if (hasFocus) 1.02f else 1f
             view.animate().scaleX(s).scaleY(s).setDuration(120).start()
@@ -184,15 +211,19 @@ class EpisodeAdapter(
         val e = items[position]
         val p = progress[e.id]
         h.name.text = e.name
-        h.sub.text = buildString {
-            append(e.extra ?: "")
-            if (p?.finished == true) append(" · Vu")
-            else if (p != null && p.pos > 0) append(" · Reprise à ").append(Ui.time(p.pos))
+        val extra = e.extra ?: ""
+        h.num.text = EPISODE.find(extra)?.groupValues?.get(1)?.let { "É$it" } ?: "É${position + 1}"
+        // "Saison 1 · Épisode 3 · 00:42:00" -> "42 min"
+        val duration = Meta.duration(extra.split(" · ").getOrNull(2))
+        h.sub.text = when {
+            p?.finished == true -> listOfNotNull(duration, "Vu").joinToString("  ·  ")
+            p != null && p.pos > 0 -> listOfNotNull(duration, "Reprise à ${Ui.time(p.pos)}").joinToString("  ·  ")
+            else -> duration ?: ""
         }
+        h.seen.visibility = if (p?.finished == true) View.VISIBLE else View.GONE
         if (p != null && !p.finished && p.dur > 0 && p.pos > 0) {
             h.bar.visibility = View.VISIBLE
-            h.bar.max = 1000
-            h.bar.progress = (p.pos * 1000 / p.dur).toInt()
+            h.bar.progress = (p.pos * 1000 / p.dur).toInt().coerceIn(0, 1000)
         } else {
             h.bar.visibility = View.GONE
         }
@@ -205,6 +236,49 @@ class EpisodeAdapter(
             val i = h.bindingAdapterPosition
             if (i != RecyclerView.NO_POSITION) onLongClick(i)
             true
+        }
+    }
+
+    companion object {
+        private val EPISODE = Regex("""Épisode (\d+)""")
+    }
+}
+
+/** Petites affiches en ligne (« Tu aimeras aussi »). */
+class SmallPosterAdapter(
+    private val onClick: (Item) -> Unit,
+    private val onFocus: (Item?) -> Unit
+) : RecyclerView.Adapter<SmallPosterAdapter.VH>() {
+
+    var items: List<Item> = emptyList()
+        set(v) {
+            field = v
+            notifyDataSetChanged()
+        }
+
+    class VH(v: View) : RecyclerView.ViewHolder(v) {
+        val img: ImageView = v.findViewById(R.id.img)
+        val name: TextView = v.findViewById(R.id.name)
+    }
+
+    override fun onCreateViewHolder(parent: ViewGroup, viewType: Int): VH {
+        val v = LayoutInflater.from(parent.context).inflate(R.layout.item_poster_small, parent, false)
+        v.clipToOutline = true
+        return VH(v)
+    }
+
+    override fun getItemCount() = items.size
+
+    override fun onBindViewHolder(h: VH, position: Int) {
+        val item = items[position]
+        h.name.text = item.name
+        h.name.visibility = if (item.icon.isNullOrBlank()) View.VISIBLE else View.GONE
+        Img.load(h.img, item.icon, R.drawable.ph_poster)
+        h.itemView.setOnClickListener { onClick(item) }
+        h.itemView.setOnFocusChangeListener { view, has ->
+            val s = if (has) 1.08f else 1f
+            view.animate().scaleX(s).scaleY(s).setDuration(120).start()
+            onFocus(if (has) item else null)
         }
     }
 }

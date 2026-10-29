@@ -24,6 +24,8 @@ import kotlin.concurrent.thread
 class PhoneInput(
     private val title: String,
     private val fields: List<Field>,
+    /** false : la page accepte plusieurs envois (ex. corriger un mot de passe refusé). */
+    private val once: Boolean = true,
     private val onSubmit: (Map<String, String>) -> Unit
 ) {
     class Field(val key: String, val label: String, val value: String = "", val password: Boolean = false, val hint: String = "")
@@ -103,7 +105,7 @@ class PhoneInput(
                 done -> message("C'est envoyé", "Les infos sont déjà sur ta TV. Tu peux fermer cette page.")
                 form["pin"]?.trim() != pin -> page(form, "Code incorrect. Recopie le code à 4 chiffres affiché sur la TV.")
                 else -> {
-                    done = true
+                    done = once
                     val values = form.filterKeys { it != "pin" }
                     Bg.main.post { onSubmit(values) }
                     message("C'est envoyé", "Regarde ta TV : les infos sont arrivées. Tu peux fermer cette page.")
@@ -159,16 +161,18 @@ class PhoneInput(
     private fun shell(body: String) = """<!doctype html><html lang="fr"><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1"><title>Xtream Player</title>
 <style>
-body{margin:0;background:#0E0F13;color:#F2F2F2;font:16px/1.45 system-ui,-apple-system,Roboto,sans-serif}
+body{margin:0;min-height:100vh;color:#F4F5F7;font:16px/1.45 system-ui,-apple-system,Roboto,sans-serif;
+background:radial-gradient(60% 40% at 20% 0%,rgba(240,163,94,.45),transparent 70%),radial-gradient(70% 50% at 90% 100%,rgba(91,72,128,.55),transparent 70%),#0B0D12}
 main{max-width:460px;margin:0 auto;padding:28px 18px 40px}
-h1{font-size:22px;margin:0 0 4px}p{color:#9AA0AA;margin:0 0 18px}
-label{display:block;font-size:14px;color:#9AA0AA;margin:16px 0 6px}
-input{width:100%;box-sizing:border-box;background:#1A1C23;border:2px solid #1A1C23;border-radius:10px;color:#F2F2F2;font-size:17px;padding:12px 14px;outline:0}
-input:focus{border-color:#F2C14E}
-.pin{letter-spacing:.3em;font-size:22px;text-align:center}
-button{margin-top:24px;width:100%;border:0;border-radius:10px;background:#F2C14E;color:#15161A;font-weight:700;font-size:17px;padding:14px}
+.card{background:rgba(255,255,255,.075);border:1px solid rgba(255,255,255,.13);border-radius:22px;padding:20px;backdrop-filter:blur(20px);-webkit-backdrop-filter:blur(20px)}
+h1{font-size:24px;margin:0 0 4px}p{color:#B4B9C3;margin:0 0 18px}
+label{display:block;font-size:14px;color:#B4B9C3;margin:16px 0 6px}
+input{width:100%;box-sizing:border-box;background:rgba(255,255,255,.06);border:1px solid rgba(255,255,255,.14);border-radius:14px;color:#F4F5F7;font-size:17px;padding:13px 14px;outline:0}
+input:focus{border-color:#FFFFFF;background:rgba(255,255,255,.12)}
+.pin{letter-spacing:.3em;font-size:24px;text-align:center;color:#F5C451}
+button{margin-top:24px;width:100%;border:0;border-radius:26px;background:#FFFFFF;color:#0B0D12;font-weight:700;font-size:17px;padding:15px}
 .err{color:#FF8A80;margin-top:14px}
-</style></head><body><main>$body</main></body></html>"""
+</style></head><body><main><div class="card">$body</div></main></body></html>"""
 
     private fun page(values: Map<String, String>, error: String?): String {
         val inputs = fields.joinToString("") { f ->

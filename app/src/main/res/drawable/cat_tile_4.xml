@@ -1,0 +1,5 @@
+<?xml version="1.0" encoding="utf-8"?>
+<layer-list xmlns:android="http://schemas.android.com/apk/res/android">
+    <item><shape><gradient android:angle="300" android:startColor="#2E7D5B" android:endColor="#0B2A26" /><corners android:radius="12dp" /></shape></item>
+    <item android:drawable="@drawable/cat_deco_4" android:gravity="top|end" />
+</layer-list>

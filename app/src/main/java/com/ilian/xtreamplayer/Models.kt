@@ -61,7 +61,18 @@ data class EpgEntry(val title: String, val start: Long, val end: Long)
 
 data class Season(val number: Int, val episodes: List<Item>)
 
-data class SeriesInfo(val name: String, val cover: String?, val plot: String?, val tmdb: String?, val seasons: List<Season>)
+data class SeriesInfo(
+    val name: String,
+    val cover: String?,
+    val plot: String?,
+    val tmdb: String?,
+    val seasons: List<Season>,
+    val backdrop: String? = null,
+    val genre: String? = null,
+    val year: String? = null,
+    val rating: String? = null,
+    val cast: String? = null
+)
 
 data class MovieInfo(
     val plot: String?,
@@ -72,7 +83,8 @@ data class MovieInfo(
     val cover: String?,
     val tmdb: String?,
     val director: String?,
-    val cast: String?
+    val cast: String?,
+    val backdrop: String? = null
 )
 
 data class AccountInfo(

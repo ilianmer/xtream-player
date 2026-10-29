@@ -3,12 +3,14 @@ package com.ilian.xtreamplayer
 import android.app.Activity
 import android.os.Bundle
 import android.view.View
+import android.widget.Button
 import android.widget.ImageView
 import android.widget.TextView
 import androidx.recyclerview.widget.LinearLayoutManager
 import androidx.recyclerview.widget.RecyclerView
 import org.json.JSONObject
 
+/** Fiche d'une série : saisons, épisodes, reprise. */
 class SeriesActivity : Activity() {
 
     private lateinit var src: Source
@@ -18,13 +20,20 @@ class SeriesActivity : Activity() {
     private lateinit var rvEpisodes: RecyclerView
     private lateinit var tvStatus: TextView
     private lateinit var tvPlot: TextView
+    private lateinit var tvMeta: TextView
+    private lateinit var tvCount: TextView
+    private lateinit var ivBg: ImageView
+    private lateinit var ivBackdrop: ImageView
     private lateinit var ivCover: ImageView
-    private lateinit var btnFav: TextView
+    private lateinit var btnFav: Button
+    private lateinit var btnResume: Button
 
     private val seasonAdapter = CategoryAdapter(R.layout.item_chip, ::selectSeason, ::onSeasonClick)
     private val episodeAdapter = EpisodeAdapter(::playEpisode, ::episodeMenu)
     private var info: SeriesInfo? = null
+    private var tmdb: Tmdb.Info? = null
     private var episodes: List<Item> = emptyList()
+    private var resumeTarget: Item? = null
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -40,21 +49,36 @@ class SeriesActivity : Activity() {
         series = Item.fromJson(JSONObject(raw))
         setContentView(R.layout.activity_series)
 
+        ivBg = findViewById(R.id.ivBg)
+        ivBackdrop = findViewById(R.id.ivBackdrop)
         ivCover = findViewById(R.id.ivCover)
+        ivCover.clipToOutline = true
         tvPlot = findViewById(R.id.tvPlot)
+        tvMeta = findViewById(R.id.tvMeta)
+        tvCount = findViewById(R.id.tvCount)
         tvStatus = findViewById(R.id.tvStatus)
         rvSeasons = findViewById(R.id.rvSeasons)
         rvEpisodes = findViewById(R.id.rvEpisodes)
         btnFav = findViewById(R.id.btnFav)
+        btnResume = findViewById(R.id.btnResume)
 
-        findViewById<TextView>(R.id.tvTitle).text = series.name
+        findViewById<TextView>(R.id.tvTitle).text = Tmdb.cleanTitle(series.name).first
+        val back = findViewById<TextView>(R.id.btnBack)
+        back.text = categoryLabel()
+        back.setOnClickListener { finish() }
         tvPlot.text = series.plot ?: ""
-        Img.load(ivCover, series.icon, R.drawable.ph_poster, 600)
+        Img.load(ivCover, series.icon, R.drawable.ph_poster, 400)
+        Img.blurred(ivBg, series.icon)
         paintFav()
         btnFav.setOnClickListener {
             val added = Db.toggleFav(src.id, series)
             Ui.toast(this, if (added) "Ajoutée aux favoris" else "Retirée des favoris")
             paintFav()
+        }
+        btnResume.setOnClickListener {
+            val target = resumeTarget ?: return@setOnClickListener
+            val all = allEpisodes()
+            playFrom(all, all.indexOfFirst { it.id == target.id }.coerceAtLeast(0))
         }
 
         rvSeasons.layoutManager = LinearLayoutManager(this, LinearLayoutManager.HORIZONTAL, false)
@@ -65,6 +89,7 @@ class SeriesActivity : Activity() {
         rvEpisodes.itemAnimator = null
 
         tvStatus.text = "Chargement des épisodes…"
+        btnFav.requestFocus()
         Bg.task(this, { api.seriesInfo(series.id) }) { r ->
             r.onSuccess { show(it) }.onFailure { tvStatus.text = Bg.err(it) }
         }
@@ -75,20 +100,55 @@ class SeriesActivity : Activity() {
         refreshProgress()
     }
 
+    private fun categoryLabel(): String {
+        val catId = series.catId ?: Db.find(src.id, Kind.SERIES, series.id)?.catId
+        val name = catId?.let { id -> Db.categories(src.id, Kind.SERIES).firstOrNull { it.first.id == id }?.first?.name }
+        return if (name != null) "Séries · ${Catalog.cleanName(name)}" else "Séries"
+    }
+
     private fun paintFav() {
-        btnFav.text = if (Db.isFav(src.id, series)) "★  Retirer des favoris" else "☆  Ajouter aux favoris"
+        val fav = Db.isFav(src.id, series)
+        btnFav.text = if (fav) "Dans tes favoris" else "Ajouter aux favoris"
+        btnFav.setCompoundDrawablesRelativeWithIntrinsicBounds(if (fav) R.drawable.ic_check_small else R.drawable.ic_plus_small, 0, 0, 0)
+    }
+
+    private fun paintMeta() {
+        val si = info
+        val t = tmdb
+        val n = si?.seasons?.size ?: 0
+        tvMeta.text = Meta.line(
+            listOf(
+                if (n > 0) (if (n == 1) "1 saison" else "$n saisons") else null,
+                Meta.firstGenre(si?.genre ?: t?.genres),
+                Meta.rating(si?.rating) ?: Meta.rating(series.rating) ?: Meta.rating(t?.rating),
+                si?.year ?: t?.year
+            ),
+            getColor(R.color.accent)
+        )
     }
 
     private fun show(si: SeriesInfo) {
         info = si
         if (!si.plot.isNullOrBlank()) tvPlot.text = si.plot
-        if (series.icon.isNullOrBlank() && si.cover != null) Img.load(ivCover, si.cover, R.drawable.ph_poster, 600)
-        if ((tvPlot.text.isNullOrBlank() || (series.icon.isNullOrBlank() && si.cover == null)) && Tmdb.enabled) {
+        if (series.icon.isNullOrBlank() && si.cover != null) {
+            Img.load(ivCover, si.cover, R.drawable.ph_poster, 400)
+            Img.blurred(ivBg, si.cover)
+        }
+        paintMeta()
+        si.backdrop?.let { showBackdrop(it) }
+        val needTmdb = Tmdb.enabled && (tvPlot.text.isNullOrBlank() || si.backdrop == null || (series.icon.isNullOrBlank() && si.cover == null))
+        if (needTmdb) {
             val forTmdb = series.copy(tmdb = si.tmdb ?: series.tmdb)
             Bg.task(this, { Tmdb.info(forTmdb) }) { t ->
                 val ti = t.getOrNull() ?: return@task
+                tmdb = ti
+                paintMeta()
                 if (tvPlot.text.isNullOrBlank() && ti.overview != null) tvPlot.text = ti.overview
-                if (series.icon.isNullOrBlank() && si.cover == null && ti.poster != null) Img.load(ivCover, ti.poster, R.drawable.ph_poster, 600)
+                if (series.icon.isNullOrBlank() && si.cover == null && ti.poster != null) {
+                    Img.load(ivCover, ti.poster, R.drawable.ph_poster, 400)
+                    Img.blurred(ivBg, ti.poster)
+                }
+                if (si.backdrop == null) ti.backdrop?.let { showBackdrop(it) }
             }
         }
         if (si.seasons.isEmpty()) {
@@ -97,8 +157,49 @@ class SeriesActivity : Activity() {
         }
         tvStatus.visibility = View.GONE
         seasonAdapter.items = si.seasons.map { Category(it.number.toString(), "Saison ${it.number}") }
-        selectSeason(0)
-        rvSeasons.post { rvSeasons.findViewHolderForAdapterPosition(0)?.itemView?.requestFocus() }
+        paintResume()
+        // On ouvre la saison où l'on s'était arrêté.
+        val start = resumeTarget?.let { t -> si.seasons.indexOfFirst { s -> s.episodes.any { it.id == t.id } } }?.takeIf { it >= 0 } ?: 0
+        selectSeason(start)
+        rvSeasons.scrollToPosition(start)
+        if (btnResume.visibility == View.VISIBLE) btnResume.requestFocus()
+        else rvSeasons.post { rvSeasons.findViewHolderForAdapterPosition(start)?.itemView?.requestFocus() }
+    }
+
+    private fun showBackdrop(url: String) {
+        Img.fetch(url, 1280) { bmp ->
+            if (bmp == null || isDestroyed) return@fetch
+            ivBackdrop.setImageBitmap(bmp)
+            ivBackdrop.animate().alpha(1f).setDuration(350).start()
+        }
+    }
+
+    private fun allEpisodes(): List<Item> = info?.seasons?.flatMap { it.episodes } ?: episodes
+
+    /** Bouton principal : reprendre l'épisode en cours, ou passer au suivant du dernier vu. */
+    private fun paintResume() {
+        val all = allEpisodes()
+        if (all.isEmpty()) {
+            btnResume.visibility = View.GONE
+            return
+        }
+        val prog = Db.progressMap(src.id, Kind.EPISODE, all.map { it.id })
+        val last = all.indexOfLast { prog[it.id]?.let { p -> p.finished || p.pos > 0 } == true }
+        val (target, verb) = when {
+            last < 0 -> all[0] to "Lecture"
+            prog[all[last].id]?.finished == true -> {
+                if (last + 1 < all.size) all[last + 1] to "Épisode suivant" else all[last] to "Revoir"
+            }
+            else -> all[last] to "Reprendre"
+        }
+        resumeTarget = target
+        btnResume.text = "$verb  ${shortLabel(target)}"
+        btnResume.visibility = View.VISIBLE
+    }
+
+    private fun shortLabel(e: Item): String {
+        val m = SE.find(e.extra ?: "") ?: return ""
+        return "S${m.groupValues[1]} · É${m.groupValues[2]}"
     }
 
     private fun selectSeason(position: Int) {
@@ -106,6 +207,7 @@ class SeriesActivity : Activity() {
         if (seasonAdapter.selected == position) return
         seasonAdapter.selected = position
         episodes = season.episodes
+        tvCount.text = if (episodes.size == 1) "1 épisode" else "${episodes.size} épisodes"
         episodeAdapter.set(episodes, Db.progressMap(src.id, Kind.EPISODE, episodes.map { it.id }))
         rvEpisodes.scrollToPosition(0)
     }
@@ -113,6 +215,7 @@ class SeriesActivity : Activity() {
     private fun refreshProgress() {
         if (episodes.isEmpty()) return
         episodeAdapter.set(episodes, Db.progressMap(src.id, Kind.EPISODE, episodes.map { it.id }))
+        paintResume()
     }
 
     private fun onSeasonClick(position: Int) {
@@ -120,10 +223,16 @@ class SeriesActivity : Activity() {
         rvEpisodes.post { rvEpisodes.getChildAt(0)?.requestFocus() }
     }
 
-    /** La liste de lecture dépend du réglage « Enchaînement des épisodes ». */
     private fun playEpisode(position: Int) {
         if (position !in episodes.indices) return
         val ep = episodes[position]
+        val all = allEpisodes()
+        playFrom(all, all.indexOfFirst { it.id == ep.id }.coerceAtLeast(0))
+    }
+
+    /** La liste de lecture dépend du réglage « Enchaînement des épisodes ». */
+    private fun playFrom(all: List<Item>, index: Int) {
+        val ep = all.getOrNull(index) ?: return
         val local = Downloads.find(this, src.id, ep)?.playable()
         if (local != null) {
             Ui.play(this, ItemList.of(listOf(local)), 0)
@@ -131,11 +240,11 @@ class SeriesActivity : Activity() {
         }
         when (Prefs.autoplay) {
             0 -> Ui.play(this, ItemList.of(listOf(ep)), 0)
-            1 -> Ui.play(this, ItemList.of(episodes), position)
-            else -> {
-                val all = info?.seasons?.flatMap { it.episodes } ?: episodes
-                Ui.play(this, ItemList.of(all), all.indexOf(ep).coerceAtLeast(0))
+            1 -> {
+                val season = info?.seasons?.firstOrNull { s -> s.episodes.any { it.id == ep.id } }?.episodes ?: listOf(ep)
+                Ui.play(this, ItemList.of(season), season.indexOfFirst { it.id == ep.id }.coerceAtLeast(0))
             }
+            else -> Ui.play(this, ItemList.of(all), index)
         }
     }
 
@@ -160,7 +269,7 @@ class SeriesActivity : Activity() {
                 }
                 1 -> if (dl == null) {
                     val err = Downloads.start(this, src.id, ep, api.streamUrl(ep, Prefs.liveFormat))
-                    Ui.toast(this, err ?: "Téléchargement lancé. Suis-le dans Réglages > Téléchargements.")
+                    Ui.toast(this, err ?: "Téléchargement lancé. Retrouve-le dans l'onglet Téléchargements.")
                 } else {
                     Downloads.remove(this, dl.row.dmId)
                     Ui.toast(this, "Téléchargement supprimé")
@@ -171,5 +280,9 @@ class SeriesActivity : Activity() {
                 }
             }
         }
+    }
+
+    companion object {
+        private val SE = Regex("""Saison (\d+) · Épisode (\d+)""")
     }
 }
