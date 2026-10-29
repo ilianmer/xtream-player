@@ -635,7 +635,7 @@ object SportChannels {
         return out.toList()
     }
 
-    private fun hit(title: String, toks: List<String>): Boolean {
+    fun hit(title: String, toks: List<String>): Boolean {
         val t = " " + normalize(title).replace(Regex("""[^a-z0-9 ]"""), " ").replace(Regex("""\s+"""), " ") + " "
         return toks.any { k -> t.contains(" $k ") || (k.length >= 6 && t.contains(k)) }
     }
@@ -649,6 +649,8 @@ object SportChannels {
 
     /** Meilleure chaîne pour ce match. Ne bloque pas : utilise seulement le guide déjà chargé. */
     fun pick(src: Long, m: Sport.Match, chans: List<Item>): Pick? {
+        // Recherche complète déjà faite (guide externe, diffuseur, qualité) : on la reprend
+        MatchFinder.cached(m)?.let { f -> f.list.firstOrNull()?.let { return Pick(it, f.sure, f.programme) } }
         Db.kvGet("sport:m:${m.key}")?.let { id -> Db.find(src, Kind.LIVE, id)?.let { return Pick(it, true, null) } }
         val ta = tokens(m.home)
         val tb = tokens(m.away)

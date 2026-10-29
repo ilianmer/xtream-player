@@ -729,6 +729,32 @@ object Db {
         db.delete("epg_map", "source_id=? AND gen=?", args(src, gen))
     }
 
+    /** Programmes du guide externe en cours à l'instant [t] (avec une marge avant pour les coups d'envoi). */
+    fun epgAt(src: Long, t: Long, aheadSec: Long = 0): List<Triple<String, String, String>> {
+        ensureEpg()
+        val gen = epgGen(src)
+        if (gen == 0) return emptyList()
+        return db.rawQuery(
+            "SELECT ch, title, descr FROM epg_prog WHERE source_id=? AND gen=? AND start<=? AND stop>?",
+            args(src, gen, t + aheadSec, t)
+        ).use { c ->
+            val out = ArrayList<Triple<String, String, String>>()
+            while (c.moveToNext()) out.add(Triple(c.str(0) ?: "", c.str(1) ?: "", c.str(2) ?: ""))
+            out
+        }
+    }
+
+    /** Flux de la liste rattachés à une chaîne du guide externe (toutes les qualités). */
+    fun epgStreams(src: Long, ch: String): List<String> {
+        ensureEpg()
+        val gen = epgGen(src)
+        return db.rawQuery("SELECT stream FROM epg_map WHERE source_id=? AND gen=? AND ch=?", args(src, gen, ch)).use { c ->
+            val out = ArrayList<String>()
+            while (c.moveToNext()) out.add(c.getString(0))
+            out
+        }
+    }
+
     /** Programmes d'une chaîne (identifiant du flux) depuis le guide externe. */
     fun epgFor(src: Long, stream: String, fromSec: Long, limit: Int = 40): List<EpgEntry> {
         ensureEpg()

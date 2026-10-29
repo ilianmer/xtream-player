@@ -98,11 +98,12 @@ object Ui {
      * Lance la lecture. Si la protection multi-écran est active, demande d'abord au serveur
      * combien d'écrans utilisent le compte (toutes applis et tous appareils confondus).
      */
-    fun play(act: Activity, list: ItemList, index: Int) {
+    fun play(act: Activity, list: ItemList, index: Int, autoFallback: Boolean = false) {
         val item = list[index] ?: return
         val go = {
             Session.playlist = list
             Session.index = index
+            Session.autoFallback = autoFallback
             act.startActivity(Intent(act, PlayerActivity::class.java))
         }
         // Juste après une lecture, le serveur compte encore l'ancienne connexion : on ne bloque pas.

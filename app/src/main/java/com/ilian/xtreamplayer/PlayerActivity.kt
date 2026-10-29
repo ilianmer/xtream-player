@@ -293,6 +293,13 @@ class PlayerActivity : BaseActivity() {
                     play(keepFormat = true)
                     return
                 }
+                // Match en direct : la chaîne ne passe pas, on essaie tout de suite la suivante
+                if (isLive && Session.autoFallback && index + 1 < list.size) {
+                    index++
+                    Ui.toast(this@PlayerActivity, "Chaîne indisponible, essai de ${current?.name ?: "la suivante"}…")
+                    play()
+                    return
+                }
                 showError("Lecture impossible (${error.errorCodeName}).\nEssaie une autre chaîne, ou change le format du direct ou le User Agent dans Réglages.")
             }
 

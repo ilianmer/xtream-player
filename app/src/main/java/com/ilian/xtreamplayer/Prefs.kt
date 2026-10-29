@@ -158,6 +158,8 @@ object Session {
     private var cachedApi: XtreamApi? = null
     private var cachedKey = ""
     var playlist: ItemList = ItemList.EMPTY
+    /** Direct sportif : si une chaîne ne marche pas, on passe toute seule à la suivante de la liste. */
+    var autoFallback = false
     var index = 0
     /** Moment où la dernière lecture s'est arrêtée (pour la protection multi-écran). */
     var lastStopAt = 0L

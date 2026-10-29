@@ -160,6 +160,8 @@ class SportScreen(
         Bg.task(act, {
             val matches = Sport.get(30_000L)
             val c = SportChannels.candidates(src.id)
+            // Recherche automatique de la chaîne de chaque match en cours ou imminent
+            MatchFinder.prepare(act, src.id, matches, c)
             matches to c
         }) { r ->
             loading = false
@@ -172,9 +174,15 @@ class SportScreen(
                 if (Prefs.epgEnabled && c.isNotEmpty()) {
                     SportChannels.warmUp(api, matches, c) {
                         guideReady = true
-                        if (!act.isDestroyed && visible) {
-                            computePicks()
-                            paint()
+                        // Le guide du fournisseur est chargé : on affine la recherche
+                        Bg.task(act, {
+                            for (m in matches) MatchFinder.forget(m)
+                            MatchFinder.prepare(act, src.id, matches, c)
+                        }) {
+                            if (!act.isDestroyed && visible) {
+                                computePicks()
+                                paint()
+                            }
                         }
                     }
                 }
@@ -236,9 +244,9 @@ class SportScreen(
 
     // ---------- Actions ----------
 
+    /** « Regarder le direct » : l'appli trouve la chaîne toute seule et la lance. */
     private fun watch(m: Sport.Match) {
-        val ch = picks[m.key]?.channel
-        if (ch != null) play(ch) else chooseChannel(m)
+        MatchFinder.watch(act, src.id, m, chans) { chooseChannel(m) }
     }
 
     private fun play(ch: Item) {
@@ -313,6 +321,7 @@ class SportScreen(
 
     private fun pickChannel(m: Sport.Match, ch: Item) {
         SportChannels.remember(m, ch)
+        MatchFinder.forget(m)
         picks[m.key] = SportChannels.Pick(ch, true, null)
         paint()
         if (m.live || m.start - System.currentTimeMillis() < 20 * 60_000L) play(ch)
@@ -395,19 +404,27 @@ class SportScreen(
         val brand = p?.broadcaster
         when {
             ch != null -> {
-                val label = if (short) ch.name else "Regarder sur ${ch.name}"
-                name.text = if (sure) label else "$label ?"
+                val label = when {
+                    short -> ch.name
+                    m.live -> "Regarder le direct · ${ch.name}"
+                    else -> "Sur ${ch.name}"
+                }
+                name.text = if (sure || m.live) label else "$label ?"
                 Img.load(logo, ch.icon, R.drawable.ph_live)
                 num?.text = ch.num?.let { "ch. $it" } ?: ""
             }
             brand != null -> {
-                name.text = if (short) brand else "Sur $brand · choisir la chaîne"
-                logo.setImageResource(R.drawable.ic_search_small)
+                name.text = when {
+                    short -> brand
+                    m.live -> "Regarder le direct · $brand"
+                    else -> "Sur $brand"
+                }
+                logo.setImageResource(if (m.live) R.drawable.ic_play_small else R.drawable.ic_search_small)
                 num?.text = ""
             }
             else -> {
-                name.text = if (!guideReady && Prefs.epgEnabled && chans.isNotEmpty()) "Recherche de la chaîne…" else "Choisir la chaîne"
-                logo.setImageResource(R.drawable.ic_search_small)
+                name.text = if (m.live) "Regarder le direct" else "Chaîne trouvée au coup d'envoi"
+                logo.setImageResource(if (m.live) R.drawable.ic_play_small else R.drawable.ic_search_small)
                 num?.text = ""
             }
         }
