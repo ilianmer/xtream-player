@@ -40,6 +40,55 @@ object Img {
         }
     }
 
+    /** Télécharge une image (avec cache) et la rend sur le fil principal, ou null en cas d'échec. */
+    fun fetch(url: String?, maxPx: Int, cb: (Bitmap?) -> Unit) {
+        if (url.isNullOrBlank() || !url.startsWith("http", ignoreCase = true)) {
+            cb(null)
+            return
+        }
+        val key = "$maxPx|$url"
+        cache.get(key)?.let {
+            cb(it)
+            return
+        }
+        pool.execute {
+            val bmp = try {
+                decode(Http.getBytes(url), maxPx)
+            } catch (_: Throwable) {
+                null
+            }
+            if (bmp != null) cache.put(key, bmp)
+            Bg.main.post { cb(bmp) }
+        }
+    }
+
+    /** Fond flouté : l'image est réduite puis floutée, l'agrandissement lisse le reste. */
+    fun blurred(iv: ImageView, url: String?, onDone: ((Boolean) -> Unit)? = null) {
+        iv.tag = "blur|$url"
+        if (url.isNullOrBlank()) {
+            onDone?.invoke(false)
+            return
+        }
+        val key = "blur|$url"
+        cache.get(key)?.let {
+            iv.setImageBitmap(it)
+            onDone?.invoke(true)
+            return
+        }
+        pool.execute {
+            val bmp = try {
+                decode(Http.getBytes(url), 200)?.let { Blur.apply(it, 72, 3) }
+            } catch (_: Throwable) {
+                null
+            }
+            if (bmp != null) cache.put(key, bmp)
+            Bg.main.post {
+                if (iv.tag == key && bmp != null) iv.setImageBitmap(bmp)
+                onDone?.invoke(bmp != null)
+            }
+        }
+    }
+
     private fun decode(bytes: ByteArray, maxPx: Int): Bitmap? {
         val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
         BitmapFactory.decodeByteArray(bytes, 0, bytes.size, bounds)

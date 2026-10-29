@@ -19,7 +19,7 @@ import java.util.Date
 import java.util.Locale
 
 object Ui {
-    val DIALOG = android.R.style.Theme_Material_Dialog_Alert
+    val DIALOG = R.style.GlassDialog
 
     fun toast(ctx: Context, s: String) {
         Toast.makeText(ctx, s, Toast.LENGTH_LONG).show()

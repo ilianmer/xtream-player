@@ -147,7 +147,8 @@ class XtreamApi(server: String, val user: String, val pass: String) {
             cover = i?.str("movie_image") ?: i?.str("cover_big"),
             tmdb = i?.str("tmdb_id"),
             director = i?.str("director"),
-            cast = i?.str("cast") ?: i?.str("actors")
+            cast = i?.str("cast") ?: i?.str("actors"),
+            backdrop = backdrop(i)
         )
     }
 
@@ -194,7 +195,24 @@ class XtreamApi(server: String, val user: String, val pass: String) {
         }
 
         val seasons = bySeason.map { (n, list) -> Season(n, list.sortedBy { it.first }.map { it.second }) }
-        return SeriesInfo(info?.str("name") ?: "", cover, info?.str("plot"), info?.str("tmdb") ?: info?.str("tmdb_id"), seasons)
+        return SeriesInfo(
+            info?.str("name") ?: "", cover, info?.str("plot"), info?.str("tmdb") ?: info?.str("tmdb_id"), seasons,
+            backdrop = backdrop(info),
+            genre = info?.str("genre"),
+            year = (info?.str("releaseDate") ?: info?.str("release_date") ?: info?.str("year"))?.take(4),
+            rating = info?.str("rating")?.takeIf { it != "0" },
+            cast = info?.str("cast")
+        )
+    }
+
+    /** Image de fond : souvent une liste d'adresses, parfois une seule chaîne. */
+    private fun backdrop(o: JSONObject?): String? {
+        if (o == null) return null
+        return when (val b = o.opt("backdrop_path")) {
+            is JSONArray -> (0 until b.length()).mapNotNull { b.optString(it).trim().ifBlank { null } }.firstOrNull { it.startsWith("http") }
+            is String -> b.trim().takeIf { it.startsWith("http") }
+            else -> null
+        }
     }
 
     /** Programme en cours et suivant d'une chaîne (titres encodés en base64 par l'API). */

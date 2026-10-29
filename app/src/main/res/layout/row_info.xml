@@ -3,27 +3,27 @@
     android:layout_width="match_parent"
     android:layout_height="wrap_content"
     android:orientation="horizontal"
-    android:paddingStart="16dp"
-    android:paddingTop="7dp"
-    android:paddingEnd="16dp"
-    android:paddingBottom="7dp">
+    android:paddingStart="13dp"
+    android:paddingTop="6dp"
+    android:paddingEnd="13dp"
+    android:paddingBottom="6dp">
 
     <TextView
         android:id="@+id/label"
+        style="@style/Txt"
         android:layout_width="0dp"
         android:layout_height="wrap_content"
         android:layout_weight="1"
-        android:textColor="@color/text_dim"
-        android:textSize="15sp" />
+        android:textColor="@color/text_faint"
+        android:textSize="13sp" />
 
     <TextView
         android:id="@+id/value"
+        style="@style/Semi"
         android:layout_width="wrap_content"
         android:layout_height="wrap_content"
         android:layout_marginStart="16dp"
         android:gravity="end"
-        android:maxWidth="380dp"
-        android:textColor="@color/text"
-        android:textSize="15sp"
-        android:textStyle="bold" />
+        android:maxWidth="360dp"
+        android:textSize="13sp" />
 </LinearLayout>

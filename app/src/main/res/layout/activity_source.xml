@@ -1,59 +1,159 @@
 <?xml version="1.0" encoding="utf-8"?>
-<ScrollView xmlns:android="http://schemas.android.com/apk/res/android"
+<FrameLayout xmlns:android="http://schemas.android.com/apk/res/android"
     android:layout_width="match_parent"
     android:layout_height="match_parent"
-    android:fillViewport="true">
+    android:background="@drawable/bg_home">
 
     <LinearLayout
         android:layout_width="match_parent"
-        android:layout_height="wrap_content"
-        android:gravity="center"
-        android:orientation="vertical"
-        android:padding="28dp">
+        android:layout_height="match_parent"
+        android:orientation="horizontal"
+        android:paddingStart="42dp"
+        android:paddingTop="32dp"
+        android:paddingEnd="42dp"
+        android:paddingBottom="28dp">
 
+        <!-- Gauche : logo + saisie par téléphone -->
         <LinearLayout
-            android:layout_width="560dp"
-            android:layout_height="wrap_content"
+            android:layout_width="0dp"
+            android:layout_height="match_parent"
+            android:layout_marginEnd="30dp"
+            android:layout_weight="1"
             android:orientation="vertical">
+
+            <include layout="@layout/include_brand" />
 
             <TextView
                 android:id="@+id/tvTitle"
+                style="@style/Semi"
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
-                android:textColor="@color/text"
-                android:textSize="28sp"
-                android:textStyle="bold" />
+                android:layout_marginTop="20dp"
+                android:text="Ajoute ta source IPTV"
+                android:textSize="30sp" />
 
             <TextView
+                style="@style/Txt"
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
-                android:layout_marginBottom="4dp"
-                android:text="Le plus simple : saisis tout depuis ton téléphone. Tu peux aussi coller le lien M3U complet dans le champ serveur."
-                android:textColor="@color/text_dim"
+                android:layout_marginTop="6dp"
+                android:lineSpacingMultiplier="1.15"
+                android:maxWidth="440dp"
+                android:text="Le plus simple : scanne le QR code avec ton téléphone et remplis les champs au clavier. Ils arrivent directement sur la TV."
+                android:textColor="#C9CDD4"
                 android:textSize="14sp" />
 
-            <Button
-                android:id="@+id/btnPhone"
-                style="@style/Btn"
-                android:text="Saisir depuis le téléphone" />
+            <LinearLayout
+                android:id="@+id/phoneBox"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="20dp"
+                android:background="@drawable/glass_panel"
+                android:gravity="center_vertical"
+                android:orientation="horizontal"
+                android:padding="16dp">
 
-            <EditText android:id="@+id/etName" style="@style/Field" android:hint="Nom de la source (ex : Maison)" android:inputType="text" />
-            <EditText android:id="@+id/etServer" style="@style/Field" android:hint="Serveur (ex : http://exemple.com:8080)" android:inputType="textUri" />
-            <EditText android:id="@+id/etUser" style="@style/Field" android:hint="Nom d'utilisateur" android:inputType="text" />
-            <EditText android:id="@+id/etPass" style="@style/Field" android:hint="Mot de passe" android:imeOptions="actionDone" android:inputType="textPassword" />
+                <ImageView
+                    android:id="@+id/qr"
+                    android:layout_width="148dp"
+                    android:layout_height="148dp"
+                    android:background="@drawable/qr_bg"
+                    android:padding="7dp"
+                    android:scaleType="fitCenter" />
+
+                <LinearLayout
+                    android:layout_width="0dp"
+                    android:layout_height="wrap_content"
+                    android:layout_marginStart="20dp"
+                    android:layout_weight="1"
+                    android:orientation="vertical">
+
+                    <LinearLayout style="@style/StepRow">
+                        <TextView style="@style/StepNum" android:text="1" />
+                        <TextView android:id="@+id/step1" style="@style/StepText" android:text="Scanne le QR code avec ton téléphone" />
+                    </LinearLayout>
+
+                    <LinearLayout style="@style/StepRow" android:layout_marginTop="10dp">
+                        <TextView style="@style/StepNum" android:text="2" />
+                        <TextView style="@style/StepText" android:text="Remplis le serveur, l’identifiant et le mot de passe, ou colle ton lien M3U" />
+                    </LinearLayout>
+
+                    <LinearLayout style="@style/StepRow" android:layout_marginTop="10dp" android:gravity="center_vertical">
+                        <TextView style="@style/StepNum" android:text="3" />
+                        <TextView style="@style/StepText" android:layout_width="wrap_content" android:layout_weight="0" android:text="Saisis ce code" />
+                        <TextView
+                            android:id="@+id/pin"
+                            style="@style/Txt"
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:layout_marginStart="12dp"
+                            android:fontFamily="@font/outfit_bold"
+                            android:letterSpacing="0.28"
+                            android:textColor="@color/accent"
+                            android:textSize="26sp" />
+                    </LinearLayout>
+                </LinearLayout>
+            </LinearLayout>
+
+            <View
+                android:layout_width="match_parent"
+                android:layout_height="0dp"
+                android:layout_weight="1" />
+
+            <TextView
+                style="@style/Txt"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:drawableStart="@drawable/ic_lock_small"
+                android:drawablePadding="8dp"
+                android:gravity="center_vertical"
+                android:text="Ton téléphone doit être sur le même Wi-Fi que la TV. Tes identifiants restent enregistrés sur le stick."
+                android:textColor="@color/text_faint"
+                android:textSize="12sp" />
+        </LinearLayout>
+
+        <!-- Droite : saisie à la télécommande -->
+        <LinearLayout
+            android:layout_width="330dp"
+            android:layout_height="wrap_content"
+            android:layout_gravity="center_vertical"
+            android:background="@drawable/glass_panel"
+            android:orientation="vertical"
+            android:padding="20dp">
+
+            <TextView
+                style="@style/Semi"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="Ou à la télécommande"
+                android:textSize="16sp" />
+
+            <TextView style="@style/FieldLabel" android:layout_marginTop="6dp" android:text="Nom de la source" />
+            <EditText android:id="@+id/etName" style="@style/Field" android:hint="Maison" android:inputType="text" />
+            <TextView style="@style/FieldLabel" android:text="Serveur ou lien M3U complet" />
+            <EditText android:id="@+id/etServer" style="@style/Field" android:hint="http://exemple.com:8080" android:inputType="textUri" />
+            <TextView style="@style/FieldLabel" android:text="Nom d’utilisateur" />
+            <EditText android:id="@+id/etUser" style="@style/Field" android:inputType="text" />
+            <TextView style="@style/FieldLabel" android:text="Mot de passe" />
+            <EditText android:id="@+id/etPass" style="@style/Field" android:imeOptions="actionDone" android:inputType="textPassword" />
 
             <Button
                 android:id="@+id/btnSave"
                 style="@style/Btn"
-                android:text="Enregistrer" />
+                android:layout_marginTop="16dp"
+                android:text="Se connecter" />
 
             <TextView
                 android:id="@+id/tvStatus"
+                style="@style/Txt"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
-                android:layout_marginTop="14dp"
-                android:textColor="@color/accent"
-                android:textSize="15sp" />
+                android:layout_marginTop="8dp"
+                android:gravity="center"
+                android:maxLines="3"
+                android:text="Tu pourras ajouter d’autres sources plus tard dans Réglages."
+                android:textColor="@color/text_faint"
+                android:textSize="12sp" />
         </LinearLayout>
     </LinearLayout>
-</ScrollView>
+</FrameLayout>

@@ -26,6 +26,11 @@ class SettingsActivity : Activity() {
     private val sections = listOf(
         "Sources IPTV", "Réglages IPTV", "Interface", "Protection multi-écran", "Lecteur vidéo", "Téléchargements"
     )
+    private val icons = listOf(
+        R.drawable.ic_menu_sources, R.drawable.ic_menu_iptv, R.drawable.ic_menu_ui,
+        R.drawable.ic_menu_shield, R.drawable.ic_menu_player, R.drawable.ic_download
+    )
+    private lateinit var tvSection: TextView
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -33,12 +38,27 @@ class SettingsActivity : Activity() {
         menu = findViewById(R.id.menu)
         content = findViewById(R.id.content)
         scroll = findViewById(R.id.scroll)
+        tvSection = findViewById(R.id.tvSection)
         rows = Rows(this, content)
+        findViewById<TextView>(R.id.tvVersion).text = try {
+            "Xtream Player " + packageManager.getPackageInfo(packageName, 0).versionName
+        } catch (_: Exception) {
+            "Xtream Player"
+        }
 
         val inf = LayoutInflater.from(this)
+        val iconPx = (18 * resources.displayMetrics.density).toInt()
         sections.forEachIndexed { i, name ->
             val tv = inf.inflate(R.layout.item_category, menu, false) as TextView
             tv.text = name
+            val pad = (11 * resources.displayMetrics.density).toInt()
+            tv.setPadding(tv.paddingStart, pad, tv.paddingEnd, pad)
+            getDrawable(icons[i])?.mutate()?.let { d ->
+                d.setBounds(0, 0, iconPx, iconPx)
+                tv.setCompoundDrawablesRelative(d, null, null, null)
+                tv.compoundDrawablePadding = (10 * resources.displayMetrics.density).toInt()
+                tv.compoundDrawableTintList = getColorStateList(R.color.cat_text)
+            }
             tv.setOnFocusChangeListener { _, has -> if (has) show(i) }
             tv.setOnClickListener {
                 show(i)
@@ -81,6 +101,7 @@ class SettingsActivity : Activity() {
     private fun show(i: Int) {
         if (i == section) return
         section = i
+        tvSection.text = sections.getOrNull(i) ?: ""
         menuViews.forEachIndexed { j, tv -> tv.isSelected = j == i }
         Bg.main.removeCallbacks(refreshDownloads)
         rows.clear()

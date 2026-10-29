@@ -9,58 +9,276 @@
         android:layout_width="match_parent"
         android:layout_height="match_parent" />
 
-    <LinearLayout
+    <FrameLayout
         android:id="@+id/overlay"
         android:layout_width="match_parent"
-        android:layout_height="wrap_content"
-        android:layout_gravity="bottom"
-        android:background="@drawable/overlay_grad"
-        android:orientation="vertical"
-        android:paddingStart="48dp"
-        android:paddingTop="60dp"
-        android:paddingEnd="48dp"
-        android:paddingBottom="36dp"
+        android:layout_height="match_parent"
         android:visibility="gone">
 
-        <TextView
-            android:id="@+id/ovTitle"
+        <View
             android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:singleLine="true"
-            android:ellipsize="end"
-            android:textColor="@color/text"
-            android:textSize="26sp"
-            android:textStyle="bold" />
+            android:layout_height="240dp"
+            android:layout_gravity="bottom"
+            android:background="@drawable/scrim_player" />
 
         <TextView
-            android:id="@+id/ovNow"
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:layout_marginTop="6dp"
-            android:singleLine="true"
-            android:ellipsize="end"
-            android:textColor="@color/accent"
-            android:textSize="17sp" />
+            android:id="@+id/ovClock"
+            style="@style/Semi"
+            android:layout_width="wrap_content"
+            android:layout_height="33dp"
+            android:layout_marginStart="27dp"
+            android:layout_marginTop="24dp"
+            android:background="@drawable/glass_dark"
+            android:fontFeatureSettings="tnum"
+            android:gravity="center"
+            android:paddingStart="14dp"
+            android:paddingEnd="14dp"
+            android:textSize="14sp" />
 
-        <TextView
-            android:id="@+id/ovNext"
+        <!-- Zapping : chaîne suivante, actuelle, précédente -->
+        <LinearLayout
+            android:id="@+id/zapPanel"
+            android:layout_width="225dp"
+            android:layout_height="wrap_content"
+            android:layout_gravity="top|end"
+            android:layout_marginTop="24dp"
+            android:layout_marginEnd="24dp"
+            android:background="@drawable/glass_dark"
+            android:orientation="vertical"
+            android:padding="7dp"
+            android:visibility="gone">
+
+            <TextView
+                style="@style/Txt"
+                android:layout_width="match_parent"
+                android:layout_height="20dp"
+                android:drawableStart="@drawable/ic_chevron_up_small"
+                android:drawablePadding="5dp"
+                android:drawableTint="#C3C7CF"
+                android:gravity="center"
+                android:text="Chaîne suivante"
+                android:textColor="#C3C7CF"
+                android:textSize="10sp" />
+
+            <include android:id="@+id/zapNext" layout="@layout/item_zap_row" />
+            <include android:id="@+id/zapCur" layout="@layout/item_zap_row" />
+            <include android:id="@+id/zapPrev" layout="@layout/item_zap_row" />
+
+            <TextView
+                style="@style/Txt"
+                android:layout_width="match_parent"
+                android:layout_height="22dp"
+                android:layout_marginTop="2dp"
+                android:drawableStart="@drawable/ic_chevron_down_small"
+                android:drawablePadding="5dp"
+                android:drawableTint="#C3C7CF"
+                android:gravity="center"
+                android:text="Chaîne précédente"
+                android:textColor="#C3C7CF"
+                android:textSize="10sp" />
+        </LinearLayout>
+
+        <!-- Bandeau d'infos -->
+        <LinearLayout
+            android:id="@+id/band"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:layout_marginTop="2dp"
-            android:singleLine="true"
-            android:ellipsize="end"
-            android:textColor="@color/text_dim"
-            android:textSize="15sp" />
-    </LinearLayout>
+            android:layout_gravity="bottom"
+            android:layout_marginStart="27dp"
+            android:layout_marginEnd="27dp"
+            android:layout_marginBottom="24dp"
+            android:background="@drawable/glass_dark"
+            android:gravity="center_vertical"
+            android:orientation="horizontal"
+            android:paddingStart="18dp"
+            android:paddingTop="15dp"
+            android:paddingEnd="18dp"
+            android:paddingBottom="15dp">
+
+            <ImageView
+                android:id="@+id/ovLogo"
+                android:layout_width="69dp"
+                android:layout_height="52dp"
+                android:layout_marginEnd="18dp"
+                android:background="@drawable/logo_tile"
+                android:padding="6dp"
+                android:scaleType="fitCenter" />
+
+            <LinearLayout
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_weight="1"
+                android:orientation="vertical">
+
+                <LinearLayout
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:gravity="center_vertical"
+                    android:orientation="horizontal">
+
+                    <TextView
+                        android:id="@+id/ovTitle"
+                        style="@style/Semi"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:maxWidth="430dp"
+                        android:ellipsize="end"
+                        android:singleLine="true"
+                        android:textSize="19sp" />
+
+                    <TextView
+                        android:id="@+id/ovLive"
+                        style="@style/Semi"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:layout_marginStart="10dp"
+                        android:background="@drawable/live_pill_soft"
+                        android:drawableStart="@drawable/live_dot"
+                        android:drawablePadding="5dp"
+                        android:gravity="center_vertical"
+                        android:letterSpacing="0.06"
+                        android:paddingStart="8dp"
+                        android:paddingTop="3dp"
+                        android:paddingEnd="8dp"
+                        android:paddingBottom="3dp"
+                        android:text="EN DIRECT"
+                        android:textColor="#FFB3B5"
+                        android:textSize="10sp" />
+
+                    <ImageView
+                        android:id="@+id/ovStar"
+                        android:layout_width="16dp"
+                        android:layout_height="16dp"
+                        android:layout_marginStart="9dp"
+                        android:src="@drawable/ic_star"
+                        android:tint="@color/accent"
+                        android:visibility="gone" />
+                </LinearLayout>
+
+                <TextView
+                    android:id="@+id/ovNow"
+                    style="@style/Txt"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="5dp"
+                    android:ellipsize="end"
+                    android:singleLine="true"
+                    android:textSize="14sp" />
+
+                <LinearLayout
+                    android:id="@+id/ovProgress"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="6dp"
+                    android:gravity="center_vertical"
+                    android:orientation="horizontal">
+
+                    <TextView
+                        android:id="@+id/ovStart"
+                        style="@style/Txt"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:fontFeatureSettings="tnum"
+                        android:textColor="#C3C7CF"
+                        android:textSize="11sp" />
+
+                    <ProgressBar
+                        android:id="@+id/ovBar"
+                        style="?android:attr/progressBarStyleHorizontal"
+                        android:layout_width="0dp"
+                        android:layout_height="4dp"
+                        android:layout_marginStart="9dp"
+                        android:layout_marginEnd="9dp"
+                        android:layout_weight="1"
+                        android:max="1000"
+                        android:progressDrawable="@drawable/thin_track" />
+
+                    <TextView
+                        android:id="@+id/ovEnd"
+                        style="@style/Txt"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:fontFeatureSettings="tnum"
+                        android:textColor="#C3C7CF"
+                        android:textSize="11sp" />
+                </LinearLayout>
+
+                <TextView
+                    android:id="@+id/ovNext"
+                    style="@style/Txt"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="5dp"
+                    android:ellipsize="end"
+                    android:singleLine="true"
+                    android:textColor="#C3C7CF"
+                    android:textSize="12sp" />
+            </LinearLayout>
+
+            <LinearLayout
+                android:id="@+id/tracksBox"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_marginStart="16dp"
+                android:gravity="end"
+                android:orientation="vertical"
+                android:visibility="gone">
+
+                <TextView
+                    android:id="@+id/ovAudio"
+                    style="@style/Medium"
+                    android:layout_width="wrap_content"
+                    android:layout_height="30dp"
+                    android:background="@drawable/chip_small"
+                    android:drawableStart="@drawable/ic_audio_small"
+                    android:drawablePadding="7dp"
+                    android:gravity="center_vertical"
+                    android:maxWidth="190dp"
+                    android:paddingStart="12dp"
+                    android:paddingEnd="12dp"
+                    android:singleLine="true"
+                    android:textSize="11sp" />
+
+                <TextView
+                    android:id="@+id/ovSubs"
+                    style="@style/Medium"
+                    android:layout_width="wrap_content"
+                    android:layout_height="30dp"
+                    android:layout_marginTop="6dp"
+                    android:background="@drawable/chip_small"
+                    android:drawableStart="@drawable/ic_subs_small"
+                    android:drawablePadding="7dp"
+                    android:gravity="center_vertical"
+                    android:maxWidth="190dp"
+                    android:paddingStart="12dp"
+                    android:paddingEnd="12dp"
+                    android:singleLine="true"
+                    android:textSize="11sp" />
+
+                <TextView
+                    style="@style/Txt"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="5dp"
+                    android:text="OK : changer"
+                    android:textColor="#A9AEB8"
+                    android:textSize="10sp" />
+            </LinearLayout>
+        </LinearLayout>
+    </FrameLayout>
 
     <TextView
         android:id="@+id/tvError"
+        style="@style/Txt"
         android:layout_width="wrap_content"
         android:layout_height="wrap_content"
         android:layout_gravity="center"
-        android:background="#CC000000"
+        android:layout_marginStart="60dp"
+        android:layout_marginEnd="60dp"
+        android:background="@drawable/glass_dark"
+        android:gravity="center"
+        android:lineSpacingMultiplier="1.15"
         android:padding="18dp"
-        android:textColor="@color/text"
-        android:textSize="18sp"
+        android:textSize="15sp"
         android:visibility="gone" />
 </FrameLayout>

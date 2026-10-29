@@ -269,6 +269,12 @@ object Db {
         }
     }
 
+    /** Un élément du catalogue par son identifiant (null s'il n'existe plus). */
+    fun find(src: Long, kind: Kind, id: String): Item? =
+        db.rawQuery("SELECT $ITEM_COLS FROM items WHERE source_id=? AND kind=? AND id=?", args(src, kind.name, id)).use { c ->
+            if (c.moveToFirst()) item(c) else null
+        }
+
     fun countAll(src: Long, kind: Kind): Int =
         db.rawQuery("SELECT COUNT(*) FROM items WHERE source_id=? AND kind=?", args(src, kind.name)).use { c -> if (c.moveToFirst()) c.getInt(0) else 0 }
 
@@ -370,6 +376,22 @@ object Db {
     ).use { c ->
         val out = ArrayList<Item>()
         while (c.moveToNext()) out.add(Item(kind, c.getString(0), c.str(1) ?: "?", c.str(2), c.str(3), extra = c.str(4)))
+        out
+    }
+
+    data class Resume(val item: Item, val pos: Long, val dur: Long)
+
+    /** Films et épisodes commencés, tous types confondus, du plus récent au plus ancien. */
+    fun resume(src: Long, limit: Int): List<Resume> = db.rawQuery(
+        "SELECT kind, id, name, icon, ext, extra, pos, dur FROM progress WHERE source_id=? AND finished=0 AND pos > 0 " +
+            "AND kind IN ('MOVIE','EPISODE') ORDER BY updated DESC LIMIT $limit",
+        args(src)
+    ).use { c ->
+        val out = ArrayList<Resume>()
+        while (c.moveToNext()) {
+            val item = Item(Kind.valueOf(c.getString(0)), c.getString(1), c.str(2) ?: "?", c.str(3), c.str(4), extra = c.str(5))
+            out.add(Resume(item, c.getLong(6), c.getLong(7)))
+        }
         out
     }
 
