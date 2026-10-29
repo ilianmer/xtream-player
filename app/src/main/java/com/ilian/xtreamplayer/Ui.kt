@@ -104,6 +104,7 @@ object Ui {
             Session.playlist = list
             Session.index = index
             Session.autoFallback = autoFallback
+            if (!autoFallback) Session.sportMatchKey = null
             act.startActivity(Intent(act, PlayerActivity::class.java))
         }
         // Juste après une lecture, le serveur compte encore l'ancienne connexion : on ne bloque pas.

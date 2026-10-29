@@ -241,6 +241,7 @@ class PlayerActivity : BaseActivity() {
     }
 
     override fun onStop() {
+        learnMatchChannel()
         savePosition()
         Bg.main.removeCallbacks(hideOverlay)
         Bg.main.removeCallbacks(zapNow)
@@ -324,10 +325,22 @@ class PlayerActivity : BaseActivity() {
         player = p
     }
 
+    /** Début de lecture de la chaîne en cours (pour retenir la bonne chaîne d'un match). */
+    private var channelStartAt = 0L
+
+    /** Resté plus d'une minute sur cette chaîne pendant un match : c'est la bonne, pour ce match seulement. */
+    private fun learnMatchChannel() {
+        val key = Session.sportMatchKey ?: return
+        val item = current ?: return
+        if (!isLive || channelStartAt == 0L) return
+        if (System.currentTimeMillis() - channelStartAt >= 60_000L) MatchFinder.learn(key, item)
+    }
+
     private fun play(keepFormat: Boolean = false) {
         val item = current ?: return finish()
         val p = player ?: return
         if (!keepFormat) useAltFormat = false
+        if (!keepFormat) channelStartAt = System.currentTimeMillis()
 
         val format = if (useAltFormat) (if (Prefs.liveFormat == "ts") "m3u8" else "ts") else Prefs.liveFormat
         val url = api.streamUrl(item, format)
@@ -517,6 +530,7 @@ class PlayerActivity : BaseActivity() {
     private fun zap(step: Int) {
         val n = list.size
         if (n <= 1) return
+        learnMatchChannel()
         index = ((index + step) % n + n) % n
         current?.let { showInfo(it, withEpg = false) }
         Bg.main.removeCallbacks(zapNow)

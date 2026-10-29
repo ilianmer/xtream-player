@@ -729,6 +729,20 @@ object Db {
         db.delete("epg_map", "source_id=? AND gen=?", args(src, gen))
     }
 
+    /** Chaînes du direct dont le nom contient [q], catégories masquées comprises (chaînes « événement »). */
+    fun liveByName(src: Long, q: String, limit: Int = 60): List<Item> {
+        val t = normalize(q).trim()
+        if (t.length < 2) return emptyList()
+        return db.rawQuery(
+            "SELECT $ITEM_COLS FROM items WHERE source_id=? AND kind='LIVE' AND norm LIKE ? ESCAPE '\\' LIMIT ?",
+            arrayOf(src.toString(), "%" + escapeLike(t) + "%", limit.toString())
+        ).use { c ->
+            val out = ArrayList<Item>()
+            while (c.moveToNext()) out.add(item(c))
+            out
+        }
+    }
+
     /** Programmes du guide externe en cours à l'instant [t] (avec une marge avant pour les coups d'envoi). */
     fun epgAt(src: Long, t: Long, aheadSec: Long = 0): List<Triple<String, String, String>> {
         ensureEpg()

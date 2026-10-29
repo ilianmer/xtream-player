@@ -23,6 +23,8 @@ object XmlTv {
     const val PROVIDER = 2
     const val BOTH = 3
     const val CUSTOM = 4
+    /** Version du format enregistré (2 : sous-titres et genres en plus) : un changement relance l'import. */
+    private const val FORMAT = 2
 
     val CHOICES = listOf(
         FRANCE to "France (xmltvfr.fr)",
@@ -58,7 +60,8 @@ object XmlTv {
     fun refreshIfNeeded(src: Source, api: XtreamApi) {
         if (Prefs.epgSource == OFF || !Prefs.epgEnabled || running) return
         val at = Db.kvGet("epg_at_${src.id}")?.toLongOrNull() ?: 0L
-        if (System.currentTimeMillis() - at < 12 * 3_600_000L) return
+        val upToDate = Db.kvGet("epg_format_${src.id}") == FORMAT.toString()
+        if (upToDate && System.currentTimeMillis() - at < 12 * 3_600_000L) return
         try {
             import(src, api) {}
         } catch (_: Exception) {
@@ -144,6 +147,7 @@ object XmlTv {
             Db.epgCommit(src.id, gen)
             val channels = mapped.values.toSet().size
             Db.kvPut("epg_at_${src.id}", System.currentTimeMillis().toString())
+            Db.kvPut("epg_format_${src.id}", FORMAT.toString())
             Db.kvPut("epg_n_${src.id}", mapped.size.toString())
             Epg.clear()
             return Result(mapped.size.coerceAtLeast(channels), programmes)
@@ -190,6 +194,8 @@ object XmlTv {
             var progStop = 0L
             var title: String? = null
             var desc: String? = null
+            var sub: String? = null
+            var cat: String? = null
 
             // Les identifiants sont préfixés par le numéro du fichier : deux guides ne se mélangent pas
             val ns = "$step|"
@@ -234,9 +240,14 @@ object XmlTv {
                             }
                             title = null
                             desc = null
+                            sub = null
+                            cat = null
                         }
                         "title" -> if (progCh != null && title == null) title = p.nextText().trim()
                         "desc" -> if (progCh != null && desc == null) desc = p.nextText().trim().take(400)
+                        // Sous-titre (« 2e tour : Fils / Michelsen », « PSG / OM ») et genre : précieux pour retrouver un match
+                        "sub-title" -> if (progCh != null && sub == null) sub = p.nextText().trim().take(160)
+                        "category" -> if (progCh != null && cat == null) cat = p.nextText().trim().take(40)
                     }
                     XmlPullParser.END_TAG -> when (p.name) {
                         "channel" -> {
@@ -250,7 +261,9 @@ object XmlTv {
                             val ch = progCh
                             if (ch != null) {
                                 val stop = if (progStop > progStart) progStop else progStart + 1800
-                                batch.add(arrayOf(ns + ch, progStart, stop, title ?: "", desc ?: ""))
+                                val full = listOfNotNull(sub?.takeIf { it.isNotEmpty() }, desc?.takeIf { it.isNotEmpty() }, cat?.takeIf { it.isNotEmpty() })
+                                    .joinToString(" · ")
+                                batch.add(arrayOf(ns + ch, progStart, stop, title ?: "", full))
                                 count++
                                 if (batch.size >= 2_000) {
                                     Db.epgInsert(src, gen, batch)

@@ -160,6 +160,8 @@ object Session {
     var playlist: ItemList = ItemList.EMPTY
     /** Direct sportif : si une chaîne ne marche pas, on passe toute seule à la suivante de la liste. */
     var autoFallback = false
+    /** Match lancé avec « Regarder le direct » : la chaîne regardée longtemps lui est retenue (à lui seul). */
+    var sportMatchKey: String? = null
     var index = 0
     /** Moment où la dernière lecture s'est arrêtée (pour la protection multi-écran). */
     var lastStopAt = 0L
