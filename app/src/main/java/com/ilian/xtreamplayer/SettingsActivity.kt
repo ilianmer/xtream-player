@@ -517,6 +517,7 @@ class SettingsActivity : BaseActivity() {
             10, 120, 5, { "$it secondes" }, { Prefs.maxBufferSec }, { Prefs.maxBufferSec = it }
         )
         rows.note("Les réglages du tampon s'appliquent à la prochaine lecture.")
+        LightsSettings.section(this, rows) { reshow() }
     }
 
     // ---------- Téléchargements ----------

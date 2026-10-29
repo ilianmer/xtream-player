@@ -95,6 +95,21 @@ object Prefs {
         get() = bool("screen_protect", false)
         set(v) = putBool("screen_protect", v)
 
+    /** Spots LED connectés qui suivent la musique (voir LightSync). */
+    var lightsOn: Boolean
+        get() = bool("lights_on", false)
+        set(v) = putBool("lights_on", v)
+
+    /** Retard des spots sur l'analyse du son, pour coller à ce qu'on entend (ms). */
+    var lightsDelayMs: Int
+        get() = int("lights_delay", 150)
+        set(v) = putInt("lights_delay", v)
+
+    /** Spots choisis (liste JSON, voir Lamps). */
+    var lightsDevices: String
+        get() = str("lights_devices", "[]")
+        set(v) = putStr("lights_devices", v)
+
     /** 0 petite, 1 normale, 2 grande, 3 très grande. */
     var subtitleSize: Int
         get() = int("sub_size", 1)

@@ -431,6 +431,50 @@ object Db {
         }
     }
 
+    /** Éléments visibles (catégories affichées) parmi des identifiants, dans l'ordre donné. */
+    fun findMany(src: Long, kind: Kind, ids: List<String>): List<Item> {
+        if (ids.isEmpty()) return emptyList()
+        val a = ArrayList<String>()
+        val w = where(src, kind, null, null, a)
+        val chunk = ids.take(400)
+        a.addAll(chunk)
+        val byId = db.rawQuery("SELECT $ITEM_COLS FROM items WHERE $w AND id IN (${chunk.joinToString(",") { "?" }})", a.toTypedArray()).use { c ->
+            val m = HashMap<String, Item>()
+            while (c.moveToNext()) item(c).let { m[it.id] = it }
+            m
+        }
+        return chunk.mapNotNull { byId[it] }
+    }
+
+    /** Éléments visibles qui portent ces identifiants TMDB (le premier trouvé pour chacun). */
+    fun byTmdbVisible(src: Long, kind: Kind, tmdbIds: Collection<String>): Map<String, Item> {
+        if (tmdbIds.isEmpty()) return emptyMap()
+        val a = ArrayList<String>()
+        val w = where(src, kind, null, null, a)
+        val list = tmdbIds.take(400)
+        a.addAll(list)
+        return db.rawQuery("SELECT $ITEM_COLS FROM items WHERE $w AND tmdb IN (${list.joinToString(",") { "?" }}) ORDER BY pos", a.toTypedArray()).use { c ->
+            val m = HashMap<String, Item>()
+            while (c.moveToNext()) item(c).let { if (it.tmdb != null && !m.containsKey(it.tmdb)) m[it.tmdb] = it }
+            m
+        }
+    }
+
+    /** Les mieux notés selon la note donnée par le fournisseur (sans clé TMDB). */
+    fun topByRating(src: Long, kind: Kind, limit: Int): List<Item> {
+        val a = ArrayList<String>()
+        val w = where(src, kind, null, null, a)
+        a.add((limit * 3).toString())
+        return db.rawQuery(
+            "SELECT $ITEM_COLS FROM items WHERE $w AND CAST(rating AS REAL) BETWEEN 7.0 AND 9.6 ORDER BY CAST(rating AS REAL) DESC, added DESC LIMIT ?",
+            a.toTypedArray()
+        ).use { c ->
+            val out = ArrayList<Item>()
+            while (c.moveToNext()) out.add(item(c))
+            out
+        }
+    }
+
     /** Les plus récents d'abord (date d'ajout du fournisseur), hors catégories masquées. */
     fun latest(src: Long, kind: Kind, limit: Int): List<Item> {
         val a = ArrayList<String>()

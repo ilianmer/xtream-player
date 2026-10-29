@@ -107,6 +107,27 @@ object Tmdb {
         return JSONObject(Http.getText(sb.toString(), headers))
     }
 
+    /** Un titre du classement TMDB « les mieux notés ». */
+    class Top(val id: String, val title: String, val original: String, val year: String?, val vote: Double)
+
+    /** Classement TMDB des films (ou séries) les mieux notés, [pages] × 20 titres. Bloquant. */
+    fun topRated(tv: Boolean, pages: Int = 5): List<Top> {
+        val out = ArrayList<Top>()
+        for (page in 1..pages) {
+            val o = get(if (tv) "/tv/top_rated" else "/movie/top_rated", mapOf("page" to page.toString()))
+            val arr = o.optJSONArray("results") ?: break
+            for (i in 0 until arr.length()) {
+                val r = arr.optJSONObject(i) ?: continue
+                val id = r.optLong("id", 0).takeIf { it > 0 }?.toString() ?: continue
+                val title = r.str(if (tv) "name" else "title") ?: continue
+                val original = r.str(if (tv) "original_name" else "original_title") ?: title
+                val year = r.str(if (tv) "first_air_date" else "release_date")?.take(4)
+                out.add(Top(id, title, original, year, r.optDouble("vote_average", 0.0)))
+            }
+        }
+        return out
+    }
+
     /** Vérifie la clé. Renvoie null si elle fonctionne, sinon le message d'erreur. */
     fun test(): String? = try {
         get("/configuration")
