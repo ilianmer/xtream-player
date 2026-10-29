@@ -40,6 +40,12 @@ class SportScreen(
     private var filter = "Tout"
     private var loading = false
     private var visible = false
+    private var pendingSport: String? = null
+    private val switchSport = Runnable {
+        val g = pendingSport ?: return@Runnable
+        if (visible && g != filter && chips.findViewWithTag<View>(g)?.hasFocus() == true) setFilter(g)
+    }
+
     private var chans: List<Item> = emptyList()
     private var guideReady = false
     private val picks = HashMap<String, SportChannels.Pick?>()
@@ -72,23 +78,42 @@ class SportScreen(
         rvResults.itemAnimator = null
         resultsEmpty.text = "Aucun résultat pour l'instant."
         for (g in Sport.GROUPS) {
-            val tv = act.layoutInflater.inflate(R.layout.item_sport_chip, chips, false) as TextView
+            val tv = act.layoutInflater.inflate(R.layout.item_sport_tab, chips, false) as TextView
             tv.text = g
             tv.tag = g
             tv.isSelected = g == filter
-            tv.setOnClickListener { setFilter(g) }
+            // Comme les onglets du haut : on change de sport en passant dessus, OK descend dans la liste.
+            tv.setOnFocusChangeListener { _, has ->
+                Bg.main.removeCallbacks(switchSport)
+                if (has && g != filter) {
+                    pendingSport = g
+                    Bg.main.postDelayed(switchSport, 450)
+                }
+            }
+            tv.setOnClickListener {
+                Bg.main.removeCallbacks(switchSport)
+                if (g == "Mes équipes" && Sport.followed().isEmpty()) {
+                    act.startActivity(Intent(act, TeamsActivity::class.java))
+                    return@setOnClickListener
+                }
+                if (g != filter) setFilter(g)
+                (rvLive.getChildAt(0) ?: rvUpcoming.getChildAt(0))?.requestFocus()
+            }
             chips.addView(tv)
         }
         btnTeams.setOnClickListener { act.startActivity(Intent(act, TeamsActivity::class.java)) }
+        // En arrivant sur la barre des sports depuis ailleurs, on se pose sur le sport en cours.
+        root.viewTreeObserver.addOnGlobalFocusChangeListener { old, new ->
+            if (new != null && new.parent === chips && (old == null || old.parent !== chips) && new.tag != filter) {
+                chips.findViewWithTag<View>(filter)?.requestFocus()
+            }
+        }
     }
 
     private fun setFilter(g: String) {
         filter = g
         for (i in 0 until chips.childCount) chips.getChildAt(i).let { c -> c.isSelected = c.tag == g }
         onTheme(theme())
-        if (g == "Mes équipes" && Sport.followed().isEmpty()) {
-            act.startActivity(Intent(act, TeamsActivity::class.java))
-        }
         paint()
     }
 
@@ -117,6 +142,7 @@ class SportScreen(
     fun hide() {
         visible = false
         Bg.main.removeCallbacks(refresh)
+        Bg.main.removeCallbacks(switchSport)
     }
 
     fun focusDefault() {

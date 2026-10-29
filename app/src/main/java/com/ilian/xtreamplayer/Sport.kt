@@ -485,7 +485,7 @@ object Sport {
 
     // ---------- Équipes suivies ----------
 
-    fun followed(): Set<String> = Db.kvGet("sport:teams")?.let { s ->
+    fun followed(): Set<String> = Db.kvGet(Db.pkey("sport:teams"))?.let { s ->
         try {
             val a = JSONArray(s)
             (0 until a.length()).map { a.getString(it) }.toSet()
@@ -497,7 +497,7 @@ object Sport {
     /** Équipes suivies avec leur nom et leur logo, pour les afficher. */
     fun followedSides(): List<Side> {
         val info = try {
-            JSONObject(Db.kvGet("sport:teaminfo") ?: "{}")
+            JSONObject(Db.kvGet(Db.pkey("sport:teaminfo")) ?: "{}")
         } catch (_: Exception) {
             JSONObject()
         }
@@ -520,15 +520,15 @@ object Sport {
             set.add(k)
             true
         }
-        Db.kvPut("sport:teams", JSONArray(set.toList()).toString())
+        Db.kvPut(Db.pkey("sport:teams"), JSONArray(set.toList()).toString())
         val info = try {
-            JSONObject(Db.kvGet("sport:teaminfo") ?: "{}")
+            JSONObject(Db.kvGet(Db.pkey("sport:teaminfo")) ?: "{}")
         } catch (_: Exception) {
             JSONObject()
         }
         if (added) info.put(k, JSONObject().put("name", side.name).put("short", side.short).put("abbr", side.abbr).put("logo", side.logo ?: ""))
         else info.remove(k)
-        Db.kvPut("sport:teaminfo", info.toString())
+        Db.kvPut(Db.pkey("sport:teaminfo"), info.toString())
         return added
     }
 

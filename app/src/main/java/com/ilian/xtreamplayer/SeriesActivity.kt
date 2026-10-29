@@ -16,7 +16,7 @@ class SeriesActivity : BaseActivity() {
     private lateinit var src: Source
     private lateinit var api: XtreamApi
     private lateinit var series: Item
-    private lateinit var rvSeasons: RecyclerView
+    private lateinit var btnSeason: Button
     private lateinit var rvEpisodes: RecyclerView
     private lateinit var tvStatus: TextView
     private lateinit var tvPlot: TextView
@@ -28,7 +28,7 @@ class SeriesActivity : BaseActivity() {
     private lateinit var btnFav: Button
     private lateinit var btnResume: Button
 
-    private val seasonAdapter = CategoryAdapter(R.layout.item_chip, ::selectSeason, ::onSeasonClick)
+    private var season = -1
     private val episodeAdapter = EpisodeAdapter(::playEpisode, ::episodeMenu)
     private var info: SeriesInfo? = null
     private var tmdb: Tmdb.Info? = null
@@ -57,7 +57,8 @@ class SeriesActivity : BaseActivity() {
         tvMeta = findViewById(R.id.tvMeta)
         tvCount = findViewById(R.id.tvCount)
         tvStatus = findViewById(R.id.tvStatus)
-        rvSeasons = findViewById(R.id.rvSeasons)
+        btnSeason = findViewById(R.id.btnSeason)
+        btnSeason.setOnClickListener { chooseSeason() }
         rvEpisodes = findViewById(R.id.rvEpisodes)
         btnFav = findViewById(R.id.btnFav)
         btnResume = findViewById(R.id.btnResume)
@@ -81,22 +82,17 @@ class SeriesActivity : BaseActivity() {
             playFrom(all, all.indexOfFirst { it.id == target.id }.coerceAtLeast(0))
         }
 
-        rvSeasons.layoutManager = LinearLayoutManager(this, LinearLayoutManager.HORIZONTAL, false)
-        rvSeasons.adapter = seasonAdapter
-        rvSeasons.itemAnimator = null
-        // Saisons : gauche / droite restent dans la rangée et la font défiler (plus de saut vers le bouton retour)
-        Fx.lockRow(rvSeasons)
         rvEpisodes.layoutManager = LinearLayoutManager(this)
         rvEpisodes.adapter = episodeAdapter
         rvEpisodes.itemAnimator = null
-        // Haut depuis le premier épisode : la saison sélectionnée
+        // Haut depuis le premier épisode : le choix de la saison
         rvEpisodes.addOnChildAttachStateChangeListener(object : RecyclerView.OnChildAttachStateChangeListener {
             override fun onChildViewAttachedToWindow(view: View) {
                 view.setOnKeyListener { v, code, e ->
                     if (e.action == android.view.KeyEvent.ACTION_DOWN && code == android.view.KeyEvent.KEYCODE_DPAD_UP &&
-                        rvEpisodes.getChildAdapterPosition(v) == 0 && seasonAdapter.itemCount > 0
+                        rvEpisodes.getChildAdapterPosition(v) == 0 && btnSeason.visibility == View.VISIBLE
                     ) {
-                        Fx.focusAt(rvSeasons, seasonAdapter.selected.coerceAtLeast(0))
+                        btnSeason.requestFocus()
                         true
                     } else false
                 }
@@ -184,15 +180,12 @@ class SeriesActivity : BaseActivity() {
             return
         }
         tvStatus.visibility = View.GONE
-        seasonAdapter.items = si.seasons.map { Category(it.number.toString(), "Saison ${it.number}") }
-        rvSeasons.setOnFocusChangeListener(null)
+        btnSeason.visibility = View.VISIBLE
         paintResume()
         // On ouvre la saison où l'on s'était arrêté.
         val start = resumeTarget?.let { t -> si.seasons.indexOfFirst { s -> s.episodes.any { it.id == t.id } } }?.takeIf { it >= 0 } ?: 0
         selectSeason(start)
-        rvSeasons.scrollToPosition(start)
-        if (btnResume.visibility == View.VISIBLE) btnResume.requestFocus()
-        else rvSeasons.post { rvSeasons.findViewHolderForAdapterPosition(start)?.itemView?.requestFocus() }
+        if (btnResume.visibility == View.VISIBLE) btnResume.requestFocus() else btnSeason.requestFocus()
     }
 
     private fun showBackdrop(url: String) {
@@ -231,11 +224,36 @@ class SeriesActivity : BaseActivity() {
         return "S${m.groupValues[1]} · É${m.groupValues[2]}"
     }
 
+    private fun seasonName(s: Season): String = if (s.number <= 0) "Épisodes spéciaux" else "Saison ${s.number}"
+
+    /** Liste déroulante : toutes les saisons dans l'ordre, avec le nombre d'épisodes et ce qui a été vu. */
+    private fun chooseSeason() {
+        val list = info?.seasons ?: return
+        val prog = Db.progressMap(src.id, Kind.EPISODE, list.flatMap { s -> s.episodes.map { it.id } })
+        val labels = list.map { s ->
+            val n = s.episodes.size
+            val seen = s.episodes.count { prog[it.id]?.finished == true }
+            buildString {
+                append(seasonName(s)).append("  ·  ").append(if (n == 1) "1 épisode" else "$n épisodes")
+                if (seen == n && n > 0) append("  ·  vue") else if (seen > 0) append("  ·  $seen/$n vus")
+            }
+        }.toTypedArray()
+        android.app.AlertDialog.Builder(this, Ui.DIALOG)
+            .setTitle(Tmdb.cleanTitle(series.name).first)
+            .setSingleChoiceItems(labels, season.coerceAtLeast(0)) { d, w ->
+                d.dismiss()
+                selectSeason(w)
+                rvEpisodes.post { rvEpisodes.getChildAt(0)?.requestFocus() }
+            }
+            .show()
+    }
+
     private fun selectSeason(position: Int) {
-        val season = info?.seasons?.getOrNull(position) ?: return
-        if (seasonAdapter.selected == position) return
-        seasonAdapter.selected = position
-        episodes = season.episodes
+        val s = info?.seasons?.getOrNull(position) ?: return
+        if (season == position) return
+        season = position
+        btnSeason.text = seasonName(s)
+        episodes = s.episodes
         tvCount.text = if (episodes.size == 1) "1 épisode" else "${episodes.size} épisodes"
         episodeAdapter.set(episodes, Db.progressMap(src.id, Kind.EPISODE, episodes.map { it.id }))
         rvEpisodes.scrollToPosition(0)
@@ -245,11 +263,6 @@ class SeriesActivity : BaseActivity() {
         if (episodes.isEmpty()) return
         episodeAdapter.set(episodes, Db.progressMap(src.id, Kind.EPISODE, episodes.map { it.id }))
         paintResume()
-    }
-
-    private fun onSeasonClick(position: Int) {
-        selectSeason(position)
-        rvEpisodes.post { rvEpisodes.getChildAt(0)?.requestFocus() }
     }
 
     private fun playEpisode(position: Int) {

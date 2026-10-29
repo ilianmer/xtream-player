@@ -73,6 +73,54 @@ object Sounds {
         }
     }
 
+    /** Son d'ouverture : deux notes graves et rondes (« ta-dum »), joué une fois au lancement. */
+    fun intro(ctx: Context) {
+        if (Prefs.navSound == 0) return
+        try {
+            val f = File(ctx.cacheDir, "intro_v1.wav")
+            if (!f.exists()) writeIntro(f)
+            val mp = android.media.MediaPlayer()
+            mp.setAudioAttributes(
+                AudioAttributes.Builder().setUsage(AudioAttributes.USAGE_MEDIA).setContentType(AudioAttributes.CONTENT_TYPE_SONIFICATION).build()
+            )
+            mp.setDataSource(f.path)
+            mp.setVolume(0.55f, 0.55f)
+            mp.setOnCompletionListener { it.release() }
+            mp.prepare()
+            mp.start()
+        } catch (_: Exception) {
+        }
+    }
+
+    private fun writeIntro(f: File) {
+        val rate = 44_100
+        val n = rate * 1300 / 1000
+        val pcm = ByteBuffer.allocate(n * 2).order(ByteOrder.LITTLE_ENDIAN)
+        fun hit(t: Double, start: Double, freq: Double, decay: Double): Double {
+            if (t < start) return 0.0
+            val x = t - start
+            val env = (1 - exp(-x * 220)) * exp(-x * decay)
+            return env * (sin(2 * PI * freq * x) * 0.75 + sin(2 * PI * freq * 2 * x) * 0.22 + sin(2 * PI * freq * 3 * x) * 0.06)
+        }
+        for (i in 0 until n) {
+            val t = i.toDouble() / rate
+            val s = hit(t, 0.0, 98.0, 9.0) * 0.8 + hit(t, 0.24, 146.8, 3.2)
+            pcm.putShort((s.coerceIn(-1.0, 1.0) * 0.6 * Short.MAX_VALUE).toInt().toShort())
+        }
+        writeWav(f, pcm.array(), rate)
+    }
+
+    private fun writeWav(f: File, data: ByteArray, rate: Int) {
+        val h = ByteBuffer.allocate(44).order(ByteOrder.LITTLE_ENDIAN)
+        h.put("RIFF".toByteArray()).putInt(36 + data.size).put("WAVE".toByteArray())
+        h.put("fmt ".toByteArray()).putInt(16).putShort(1).putShort(1).putInt(rate).putInt(rate * 2).putShort(2).putShort(16)
+        h.put("data".toByteArray()).putInt(data.size)
+        FileOutputStream(f).use {
+            it.write(h.array())
+            it.write(data)
+        }
+    }
+
     /** 28 ms, 1 400 Hz qui s'éteint vite : un « tic » feutré plutôt qu'un clic sec. */
     private fun writeTick(f: File) {
         val rate = 44_100

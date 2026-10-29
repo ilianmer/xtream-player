@@ -161,15 +161,24 @@ class HomeScreen(
     private fun loadFeatured() {
         val slot = Recommender.slot()
         featuredSlot = slot
-        Bg.task(act, { Recommender.featured(src.id, 8) }) { r ->
-            val list = r.getOrNull().orEmpty()
+        // Déjà préparée pendant l'animation d'ouverture : affichage instantané.
+        Preload.featuredNow()?.takeIf { it.isNotEmpty() }?.let {
+            Preload.featured = null
+            applyFeatured(it, slot)
+            return
+        }
+        Bg.task(act, { Recommender.featured(src.id, 8) }) { r -> applyFeatured(r.getOrNull().orEmpty(), slot) }
+    }
+
+    private fun applyFeatured(list: List<Item>, slot: Recommender.Slot) {
+        run {
             featured = list
             heroDots.removeAllViews()
             if (list.isEmpty()) {
                 heroEmpty.visibility = View.VISIBLE
                 (heroEmpty as TextView).text = "Aucun film ni série dans cette source."
                 heroButtons.visibility = View.GONE
-                return@task
+                return
             }
             heroEmpty.visibility = View.GONE
             heroButtons.visibility = View.VISIBLE

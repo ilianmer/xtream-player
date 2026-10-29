@@ -50,6 +50,9 @@ class MainActivity : BaseActivity() {
     private var dl: List<Downloads.Status> = emptyList()
     private var focusedCategory = -1
     private var ready = false
+    /** Profil et catégories masquées au moment où l'écran a été construit. */
+    private var seenProfile = 0L
+    private var seenHidden = 0
     private var pendingTab: Tab? = null
     private val tabSwitch = Runnable {
         val t = pendingTab ?: return@Runnable
@@ -94,7 +97,7 @@ class MainActivity : BaseActivity() {
         rvCategories = findViewById(R.id.rvCategories)
         rvItems = findViewById(R.id.rvItems)
         tvStatus = findViewById(R.id.tvStatus)
-        findViewById<TextView>(R.id.tvSource).text = src.name
+        paintProfile()
 
         tabViews = mapOf(
             Tab.HOME to findViewById(R.id.tabHome),
@@ -116,6 +119,15 @@ class MainActivity : BaseActivity() {
                 }
             }
         }
+        // En remontant du contenu vers la barre d'onglets, on arrive toujours sur l'onglet en cours
+        // (et pas sur l'onglet voisin, qui changerait l'écran tout seul).
+        val tabsBar = findViewById<View>(R.id.tabsBar)
+        root.viewTreeObserver.addOnGlobalFocusChangeListener { old, new ->
+            if (ready && new != null && new.parent === tabsBar && old != null && !isInside(old, topBar)) {
+                val cur = tabViews[tab]
+                if (cur != null && cur !== new && cur.visibility == View.VISIBLE && !gridMode) cur.requestFocus()
+            }
+        }
         if (!Prefs.showSport) {
             tabViews[Tab.SPORT]?.visibility = View.GONE
             findViewById<View>(R.id.tabSportGap).visibility = View.GONE
@@ -126,7 +138,7 @@ class MainActivity : BaseActivity() {
         findViewById<View>(R.id.btnSearch).setOnClickListener {
             startActivity(Intent(this, SearchActivity::class.java))
         }
-        findViewById<View>(R.id.sourceChip).setOnClickListener { chooseSource() }
+        findViewById<View>(R.id.sourceChip).setOnClickListener { profileMenu() }
 
         rvCategories.layoutManager = LinearLayoutManager(this)
         rvCategories.adapter = catAdapter
@@ -145,9 +157,18 @@ class MainActivity : BaseActivity() {
         series = StreamScreen(this, seriesView, src, api, Kind.SERIES, bgImage) { key, title -> openGrid(Tab.SERIES, key, title) }
         ready = true
 
+        seenProfile = Db.profile
+        seenHidden = Db.hiddenVersion
         home.start()
-        showTab(Tab.HOME)
-        homeView.post { home.focusDefault() }
+        val start = savedInstanceState?.getString(KEY_TAB)?.let { n -> Tab.values().firstOrNull { it.name == n } }
+            ?.takeIf { tabViews[it]?.visibility == View.VISIBLE } ?: Tab.HOME
+        showTab(start)
+        if (start == Tab.HOME) homeView.post { home.focusDefault() } else tabViews[start]?.post { tabViews[start]?.requestFocus() }
+    }
+
+    override fun onSaveInstanceState(outState: Bundle) {
+        super.onSaveInstanceState(outState)
+        outState.putString(KEY_TAB, tab.name)
     }
 
     override fun onResume() {
@@ -179,6 +200,12 @@ class MainActivity : BaseActivity() {
 
     override fun onRestart() {
         super.onRestart()
+        // Changement de profil ou de catégories affichées : on reconstruit tout l'écran (même onglet).
+        if (ready && (Db.profile != seenProfile || Db.hiddenVersion != seenHidden)) {
+            recreate()
+            return
+        }
+        if (ready) paintProfile()
         // Retour du lecteur, d'une fiche ou des réglages : favoris, reprise et masquage ont pu changer.
         when {
             tab == Tab.HOME -> home.refresh()
@@ -326,6 +353,42 @@ class MainActivity : BaseActivity() {
             }
         }
         return g
+    }
+
+    private fun isInside(v: View, parent: View): Boolean {
+        var p: Any? = v
+        while (p is View) {
+            if (p === parent) return true
+            p = p.parent
+        }
+        return false
+    }
+
+    /** Chip du haut : avatar et nom du profil en cours (et la source s'il y en a plusieurs). */
+    private fun paintProfile() {
+        val p = Session.profile()
+        val av = findViewById<TextView>(R.id.profileAvatar)
+        val tv = findViewById<TextView>(R.id.tvSource)
+        if (p == null) {
+            tv.text = src.name
+            av.visibility = View.GONE
+            return
+        }
+        av.background = Profiles.avatar(p, 8f, resources.displayMetrics.density)
+        av.text = Profiles.initial(p)
+        tv.text = if (Db.sources().size > 1) "${p.name} · ${src.name}" else p.name
+    }
+
+    private fun profileMenu() {
+        val many = Db.profiles(src.id).size > 1
+        val opts = arrayListOf(if (many) "Changer de profil" else "Ajouter un profil", "Gérer les profils", "Changer de source")
+        Ui.choose(this, Session.profile()?.name ?: src.name, opts) { w ->
+            when (w) {
+                0 -> startActivity(Intent(this, ProfilesActivity::class.java))
+                1 -> startActivity(Intent(this, ProfilesActivity::class.java).putExtra(ProfilesActivity.EXTRA_MANAGE, true))
+                2 -> chooseSource()
+            }
+        }
     }
 
     private fun chooseSource() {
@@ -551,6 +614,7 @@ class MainActivity : BaseActivity() {
 
     companion object {
         const val EXTRA_ITEM = "item"
+        private const val KEY_TAB = "tab"
         const val FAV = "__fav"
         const val FAV_LIVE = "__fav_live"
         const val FAV_MOVIE = "__fav_movie"
