@@ -33,7 +33,15 @@ open class BaseActivity : Activity() {
     /** Le zoom de sélection déborde un peu : les panneaux ne le coupent plus dans leur marge intérieure. */
     override fun onContentChanged() {
         super.onContentChanged()
-        (findViewById<View>(android.R.id.content) as? ViewGroup)?.let { Fx.relaxClipping(it) }
+        (findViewById<View>(android.R.id.content) as? ViewGroup)?.let { content ->
+            Fx.relaxClipping(content)
+            val root = content.getChildAt(0)
+            if (root?.background != null) {
+                // L'écran peint déjà tout son fond (opaque) : inutile que la fenêtre en dessine un dessous
+                window.setBackgroundDrawable(null)
+                Backgrounds.bake(root)
+            }
+        }
     }
 
     override fun dispatchKeyEvent(event: KeyEvent): Boolean {
@@ -184,8 +192,19 @@ object Fx {
      */
     fun relaxClipping(root: ViewGroup) {
         if (!isScroller(root)) root.clipToPadding = false
-        if (root is RecyclerView) return
+        if (root is RecyclerView) {
+            // Liste de taille fixe à l'écran : son contenu qui change ne force pas à remesurer tout l'écran
+            val lp = root.layoutParams
+            if (lp != null && lp.width != ViewGroup.LayoutParams.WRAP_CONTENT && lp.height != ViewGroup.LayoutParams.WRAP_CONTENT) root.setHasFixedSize(true)
+            return
+        }
         for (i in 0 until root.childCount) (root.getChildAt(i) as? ViewGroup)?.let { relaxClipping(it) }
+    }
+
+    private var dens = 0f
+    private fun density(v: View): Float {
+        if (dens == 0f) dens = v.resources.displayMetrics.density
+        return dens
     }
 
     /** Zoom doux et ombre quand un élément prend le focus. */
@@ -201,10 +220,14 @@ object Fx {
             }
         }
         v.animate().cancel()
+        // withLayer : pendant le zoom, la carte est dessinée une fois dans une texture puis agrandie
+        // (au lieu d'être entièrement redessinée à chaque image)
         v.animate().scaleX(if (has) scale else 1f).scaleY(if (has) scale else 1f)
-            .translationZ(if (has) v.resources.displayMetrics.density * 10 else 0f)
+            .translationZ(if (has) density(v) * 10 else 0f)
             .setInterpolator(if (has) grow else shrink)
-            .setDuration(if (has) 220 else 160).start()
+            .setDuration(if (has) 220 else 160)
+            .withLayer()
+            .start()
     }
 
     /**

@@ -47,7 +47,7 @@ object Downloads {
         if (ctx.getExternalFilesDir(Environment.DIRECTORY_MOVIES) == null) return "Stockage indisponible sur cet appareil."
         if (freeSpace(ctx) < 500_000_000L) return "Moins de 500 Mo libres sur le stick. Supprime des téléchargements d'abord."
         val ext = item.ext ?: "mp4"
-        val safe = item.name.replace(Regex("""[^\p{L}\p{N} ._-]"""), "").trim().take(70).ifBlank { "video" }
+        val safe = item.name.replace(Rx.FILE_UNSAFE, "").trim().take(70).ifBlank { "video" }
         val req = DownloadManager.Request(Uri.parse(url))
             .setTitle(item.name)
             .setDescription("Xtream Player")

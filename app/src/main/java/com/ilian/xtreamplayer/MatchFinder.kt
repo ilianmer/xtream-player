@@ -60,7 +60,7 @@ object MatchFinder {
 
     /** Nom ramené à du texte simple (les « ᴴᴰ », « ʀᴀᴡ »… deviennent « hd », « raw »). */
     private fun plain(s: String): String =
-        Regex("\\p{M}+").replace(Normalizer.normalize(s, Normalizer.Form.NFKD), "").lowercase(Locale.ROOT)
+        Rx.MARKS.replace(Normalizer.normalize(s, Normalizer.Form.NFKD), "").lowercase(Locale.ROOT)
 
     private val R4K = Regex("""(^|[^a-z0-9])(4k|uhd|2160p?)([^a-z0-9]|$)""")
     private val RFHD = Regex("""(^|[^a-z0-9])(fhd|1080[pi]?|full ?hd)([^a-z0-9]|$)""")
@@ -91,7 +91,7 @@ object MatchFinder {
     // ---------- Textes ----------
 
     private fun clean(s: String): String =
-        " " + normalize(s).replace(Regex("[^a-z0-9+ ]"), " ").replace(Regex("\\s+"), " ").trim() + " "
+        " " + normalize(s).replace(Rx.NON_ALNUM_PLUS_SPACE, " ").replace(Rx.SPACES, " ").trim() + " "
 
     private fun has(text: String, words: Collection<String>): Boolean =
         words.any { w -> text.contains(" $w ") || (w.length >= 7 && text.contains(w)) }
@@ -255,7 +255,7 @@ object MatchFinder {
         if (m.league.sport == "mma") {
             // Soirées UFC : « UFC 310 », « UFC Fight Night »
             val ev = clean(m.round ?: "").trim()
-            Regex("""ufc ?(\d{3})""").find(ev)?.let { r ->
+            Rx.UFC_NUM.find(ev)?.let { r ->
                 for (ch in Db.liveByName(src, "ufc ${r.groupValues[1]}", 30) + Db.liveByName(src, "ufc${r.groupValues[1]}", 30)) offer(ch, 120, ch.name)
             }
         }
@@ -337,8 +337,8 @@ object MatchFinder {
 
     /** Mot le plus parlant du nom d'une chaîne, pour retrouver ses autres versions. */
     private fun baseQuery(name: String): String {
-        val words = plain(name).replace(Regex("""^[^a-z0-9]*[a-z]{2,3}\s*[|:]\s*"""), "")
-            .split(Regex("[^a-z0-9+]+")).filter { it.length >= 2 && it !in setOf("hd", "fhd", "uhd", "sd", "4k", "raw", "vip", "hevc", "fr") }
+        val words = plain(name).replace(Rx.LANG_PREFIX, "")
+            .split(Rx.NON_ALNUM_PLUS_RUN).filter { it.length >= 2 && it !in setOf("hd", "fhd", "uhd", "sd", "4k", "raw", "vip", "hevc", "fr") }
         return words.take(2).joinToString(" ").ifBlank { name }
     }
 

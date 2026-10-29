@@ -67,7 +67,7 @@ object Http {
 }
 
 object Bg {
-    private val pool = Executors.newFixedThreadPool(4)
+    private val pool = Pools.fixed(4, "taches")
     val main = Handler(Looper.getMainLooper())
 
     /** Lance [work] en arrière-plan, puis [done] sur le thread principal si l'écran existe encore. */
@@ -75,7 +75,14 @@ object Bg {
         pool.execute {
             val r = runCatching { work() }
             main.post {
-                if (!owner.isFinishing && !owner.isDestroyed) done(r)
+                if (!owner.isFinishing && !owner.isDestroyed) {
+                    // Une erreur dans l'affichage d'un résultat ne doit jamais fermer l'appli
+                    try {
+                        done(r)
+                    } catch (e: Exception) {
+                        Crash.nonFatal(e)
+                    }
+                }
             }
         }
     }

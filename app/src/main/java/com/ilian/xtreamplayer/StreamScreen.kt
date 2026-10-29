@@ -49,6 +49,11 @@ class StreamScreen(
 
     private val rails = ArrayList<Rail>()
     private val adapter = RailAdapter()
+    private val cardPool = RecyclerView.RecycledViewPool().apply {
+        setMaxRecycledViews(0, 48)
+        setMaxRecycledViews(1, 6)
+    }
+    private var preloadToken = 0
     private var hero: Item? = null
     private var heroRail: Rail? = null
     private var pending: Pair<Item, Rail>? = null
@@ -69,6 +74,7 @@ class StreamScreen(
         rvRails.layoutManager = LinearLayoutManager(act)
         rvRails.adapter = adapter
         rvRails.itemAnimator = null
+        rvRails.setItemViewCacheSize(4)
     }
 
     fun show() {
@@ -116,6 +122,7 @@ class StreamScreen(
             rails.add(Rail(g.key, Catalog.cleanName(g.name), emptyList(), loader = { Db.page(src.id, kind, g.catIds, null, 0, 30) }, seeAll = g.key))
         }
         adapter.notifyDataSetChanged()
+        preloadRails()
         val first = rails.firstOrNull { it.key == "latest" } ?: rails.firstOrNull()
         val item = first?.let { r -> r.items.firstOrNull() ?: r.loader?.invoke()?.also { r.items = it }?.firstOrNull() }
         if (item != null && first != null) setHero(item, first) else {
@@ -123,6 +130,34 @@ class StreamScreen(
             heroPlot.text = "Cette source ne contient rien dans cette rubrique."
         }
         loadTrending()
+    }
+
+    /**
+     * Les rangées de catégories se remplissent en arrière-plan (sinon chaque nouvelle rangée
+     * interroge la base pendant le défilement et provoque un à-coup).
+     */
+    private fun preloadRails() {
+        val token = ++preloadToken
+        val todo = rails.filter { it.items.isEmpty() && it.loader != null }
+        if (todo.isEmpty()) return
+        Thread {
+            for (r in todo) {
+                if (token != preloadToken) return@Thread
+                val l = try {
+                    r.loader?.invoke()
+                } catch (_: Exception) {
+                    null
+                } ?: continue
+                Bg.main.post {
+                    if (token != preloadToken || r.items.isNotEmpty()) return@post
+                    // Rangée encore hors de l'écran : elle sera prête quand on y arrivera
+                    r.items = l
+                }
+            }
+        }.apply {
+            isDaemon = true
+            priority = Thread.MIN_PRIORITY
+        }.start()
     }
 
     /** Retour sur l'onglet : la reprise et Ma liste ont pu changer. */
@@ -400,10 +435,15 @@ class StreamScreen(
         override fun onCreateViewHolder(parent: ViewGroup, viewType: Int): VH {
             val v = LayoutInflater.from(parent.context).inflate(R.layout.item_rail, parent, false)
             val h = VH(v)
-            h.list.layoutManager = LinearLayoutManager(act, LinearLayoutManager.HORIZONTAL, false)
+            h.list.layoutManager = LinearLayoutManager(act, LinearLayoutManager.HORIZONTAL, false).apply {
+                // Les premières cartes d'une rangée sont prêtes avant qu'elle n'arrive à l'écran
+                initialPrefetchItemCount = 8
+            }
             h.list.adapter = h.cards
             h.list.itemAnimator = null
             h.list.setHasFixedSize(true)
+            // Toutes les rangées se partagent les mêmes cartes : moins de créations de vues en défilant
+            h.list.setRecycledViewPool(cardPool)
             return h
         }
 

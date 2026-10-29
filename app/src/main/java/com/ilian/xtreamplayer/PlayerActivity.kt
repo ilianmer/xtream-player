@@ -250,6 +250,7 @@ class PlayerActivity : BaseActivity() {
         Bg.main.removeCallbacks(tickerRotate)
         Bg.main.removeCallbacks(endAlert)
         Bg.main.removeCallbacks(nextWatch)
+        Bg.main.removeCallbacks(retry)
         player?.release()
         player = null
         Session.index = index
@@ -301,11 +302,25 @@ class PlayerActivity : BaseActivity() {
                     play()
                     return
                 }
+                // Coupure passagère (réseau, serveur saturé) : on se reconnecte tout seul avant d'abandonner
+                if (retries < RETRY_DELAYS.size) {
+                    val delay = RETRY_DELAYS[retries]
+                    retries++
+                    retryAt = if (isLive) 0L else (player?.currentPosition ?: 0L)
+                    tvError.text = "Connexion perdue, reconnexion…"
+                    tvError.visibility = View.VISIBLE
+                    Bg.main.removeCallbacks(retry)
+                    Bg.main.postDelayed(retry, delay)
+                    return
+                }
                 showError("Lecture impossible (${error.errorCodeName}).\nEssaie une autre chaîne, ou change le format du direct ou le User Agent dans Réglages.")
             }
 
             override fun onPlaybackStateChanged(state: Int) {
-                if (state == Player.STATE_READY) tvError.visibility = View.GONE
+                if (state == Player.STATE_READY) {
+                    tvError.visibility = View.GONE
+                    retries = 0
+                }
                 if (state != Player.STATE_ENDED) return
                 val item = current ?: return
                 if (item.kind == Kind.LIVE) {
@@ -323,6 +338,16 @@ class PlayerActivity : BaseActivity() {
         })
         playerView.player = p
         player = p
+    }
+
+    /** Reconnexions automatiques après une coupure (remis à zéro dès que la lecture repart). */
+    private var retries = 0
+    private var retryAt = 0L
+    private val retry = Runnable {
+        if (isFinishing) return@Runnable
+        // On repart du format habituel ; l'autre sera retenté juste après si besoin
+        useAltFormat = false
+        play(keepFormat = true)
     }
 
     /** Début de lecture de la chaîne en cours (pour retenir la bonne chaîne d'un match). */
@@ -350,12 +375,18 @@ class PlayerActivity : BaseActivity() {
         tvError.visibility = View.GONE
         hideNext()
         nextDismissed = false
-        val resume = if (item.kind == Kind.LIVE) 0L else Db.progress(src.id, item)?.takeIf { !it.finished }?.pos ?: 0L
+        if (!keepFormat) retries = 0
+        val fromRetry = retryAt > 0
+        val resume = when {
+            item.kind == Kind.LIVE -> 0L
+            retryAt > 0 -> retryAt.also { retryAt = 0L }
+            else -> Db.progress(src.id, item)?.takeIf { !it.finished }?.pos ?: 0L
+        }
         p.setMediaItem(builder.build(), resume)
         p.prepare()
         p.playWhenReady = true
         showInfo(item, withEpg = true)
-        if (resume > 0) Ui.toast(this, "Reprise à ${Ui.time(resume)}")
+        if (resume > 0 && !fromRetry) Ui.toast(this, "Reprise à ${Ui.time(resume)}")
     }
 
     private fun showInfo(item: Item, withEpg: Boolean) {
@@ -719,6 +750,7 @@ class PlayerActivity : BaseActivity() {
     }
 
     companion object {
+        private val RETRY_DELAYS = longArrayOf(1_500L, 3_000L, 6_000L)
         private val SE_LABEL = Regex("""Saison (\d+) · Épisode (\d+)""")
     }
 }

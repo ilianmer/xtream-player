@@ -410,6 +410,19 @@ class SettingsActivity : BaseActivity() {
         )
         rows.header("Application")
         rows.info("Version installée", Updater.installedLabel(this))
+        Crash.last(this)?.let { log ->
+            rows.action("Dernier incident", log.lineSequence().firstOrNull()?.take(60) ?: "") {
+                android.app.AlertDialog.Builder(this, Ui.DIALOG)
+                    .setTitle("Dernier incident")
+                    .setMessage(log.take(3_000))
+                    .setPositiveButton("Fermer", null)
+                    .setNeutralButton("Effacer") { _, _ ->
+                        Crash.clear(this)
+                        reshow()
+                    }
+                    .show()
+            }
+        }
         rows.action("Rechercher une mise à jour", "L'appli télécharge la nouvelle version ; il ne reste qu'à confirmer l'installation. Tes données sont conservées.") {
             Updater.checkNow(this)
         }
