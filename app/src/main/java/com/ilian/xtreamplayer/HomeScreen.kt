@@ -406,6 +406,7 @@ class HomeScreen(
         Bg.task(act, {
             val m = Sport.get(60_000L)
             if (chans.isEmpty()) chans = SportChannels.candidates(src.id)
+            MatchFinder.prepare(act, src.id, m, chans)
             m
         }) { r ->
             val all = r.getOrNull()
@@ -451,12 +452,15 @@ class HomeScreen(
             val sure = pick?.sure == true
             val brand = pick?.broadcaster
             v.findViewById<TextView>(R.id.channel).text = when {
-                ch != null -> "${if (sure) "" else "Peut-être "}${ch.name}${ch.num?.let { " · ch. $it" } ?: ""}"
+                m.live && ch != null -> "▶ Regarder le direct · ${ch.name}"
+                m.live -> "▶ Regarder le direct" + (brand?.let { " · $it" } ?: "")
+                ch != null -> "${if (sure) "Sur " else "Sans doute sur "}${ch.name}"
                 brand != null -> "Sur $brand"
-                else -> "Chaîne à choisir dans Sport"
+                else -> "Chaîne trouvée au coup d'envoi"
             }
             v.setOnFocusChangeListener { view, has -> Fx.focus(view, has, 1.03f) }
-            v.setOnClickListener { if (ch != null) Ui.play(act, ItemList.of(listOf(ch)), 0) else openSport() }
+            // L'appli trouve la chaîne et lance le direct, sans rien chercher à la main
+            v.setOnClickListener { MatchFinder.watch(act, src.id, m, chans) { openSport() } }
             sportList.addView(v)
         }
     }
