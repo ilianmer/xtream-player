@@ -40,7 +40,7 @@ class SettingsActivity : BaseActivity() {
         tvSection = findViewById(R.id.tvSection)
         rows = Rows(this, content)
         findViewById<TextView>(R.id.tvVersion).text = try {
-            "Xtream Player " + packageManager.getPackageInfo(packageName, 0).versionName
+            "Xtream Player " + Updater.installedLabel(this)
         } catch (_: Exception) {
             "Xtream Player"
         }
@@ -72,6 +72,7 @@ class SettingsActivity : BaseActivity() {
 
     override fun onResume() {
         super.onResume()
+        Updater.resume(this)
         if (firstResume) {
             firstResume = false
             return
@@ -320,6 +321,11 @@ class SettingsActivity : BaseActivity() {
             listOf(1 to "Doux", 2 to "Plus marqué", 0 to "Aucun"),
             { Prefs.navSound }, { Prefs.navSound = it }
         )
+        rows.header("Application")
+        rows.info("Version installée", Updater.installedLabel(this))
+        rows.action("Rechercher une mise à jour", "L'appli télécharge la nouvelle version ; il ne reste qu'à confirmer l'installation. Tes données sont conservées.") {
+            Updater.checkNow(this)
+        }
     }
 
     // ---------- Sport ----------

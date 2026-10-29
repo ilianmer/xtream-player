@@ -21,6 +21,11 @@ object Prefs {
     private fun str(k: String, d: String) = sp.getString(k, d) ?: d
     private fun putStr(k: String, v: String) = sp.edit().putString(k, v).apply()
 
+    /** « Plus tard » sur la proposition de mise à jour : on ne redemande pas avant cette date. */
+    var updateSnoozeUntil: Long
+        get() = sp.getLong("update_snooze", 0L)
+        set(v) = sp.edit().putLong("update_snooze", v).apply()
+
     var activeSourceId: Long
         get() = sp.getLong("active_source", -1L)
         set(v) = sp.edit().putLong("active_source", v).apply()

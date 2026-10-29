@@ -164,6 +164,8 @@ class MainActivity : BaseActivity() {
             ?.takeIf { tabViews[it]?.visibility == View.VISIBLE } ?: Tab.HOME
         showTab(start)
         if (start == Tab.HOME) homeView.post { home.focusDefault() } else tabViews[start]?.post { tabViews[start]?.requestFocus() }
+        // Nouvelle version publiée ? (une fois par lancement, après l'arrivée sur l'accueil)
+        Bg.main.postDelayed({ if (!isFinishing && !isDestroyed) Updater.checkOnLaunch(this) }, 1_800)
     }
 
     override fun onSaveInstanceState(outState: Bundle) {
@@ -173,6 +175,7 @@ class MainActivity : BaseActivity() {
 
     override fun onResume() {
         super.onResume()
+        Updater.resume(this)
         if (!ready) return
         when (tab) {
             Tab.HOME -> home.resume()
