@@ -292,11 +292,32 @@ object Fx {
     /** Petit rebond : on ne peut pas aller plus loin dans cette direction. */
     fun bump(v: View?, dx: Int, dy: Int) {
         v ?: return
-        val d = v.resources.displayMetrics.density * 7
+        val d = v.resources.displayMetrics.density * 10
         v.animate().translationX(dx * d).translationY(dy * d).setInterpolator(DecelerateInterpolator()).setDuration(70)
             .withEndAction {
                 v.animate().translationX(0f).translationY(0f).setInterpolator(OvershootInterpolator(3f)).setDuration(220).start()
             }.start()
+    }
+
+    /**
+     * Colonne : bas sur le dernier élément = rebond sur place (filet de sécurité en plus de la règle générale).
+     */
+    fun lockColumn(rv: RecyclerView) {
+        rv.addOnChildAttachStateChangeListener(object : RecyclerView.OnChildAttachStateChangeListener {
+            override fun onChildViewAttachedToWindow(view: View) {
+                view.setOnKeyListener { v, code, e ->
+                    if (e.action != KeyEvent.ACTION_DOWN || code != KeyEvent.KEYCODE_DPAD_DOWN) return@setOnKeyListener false
+                    val pos = rv.getChildAdapterPosition(v)
+                    val count = rv.adapter?.itemCount ?: 0
+                    if (pos != RecyclerView.NO_POSITION && pos >= count - 1) {
+                        if (e.repeatCount % 3 == 0) bump(v, 0, 1)
+                        true
+                    } else false
+                }
+            }
+
+            override fun onChildViewDetachedFromWindow(view: View) {}
+        })
     }
 
     /** Donne le focus à l'élément [pos] d'une liste, en la faisant défiler si besoin. */

@@ -76,6 +76,8 @@ class SportScreen(
         rvResults.layoutManager = LinearLayoutManager(act)
         rvResults.adapter = resultAdapter
         rvResults.itemAnimator = null
+        Fx.lockColumn(rvResults)
+        Fx.lockColumn(rvUpcoming)
         resultsEmpty.text = "Aucun résultat pour l'instant."
         for (g in Sport.GROUPS) {
             val tv = act.layoutInflater.inflate(R.layout.item_sport_tab, chips, false) as TextView
