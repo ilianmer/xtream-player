@@ -252,6 +252,20 @@ class SettingsActivity : BaseActivity() {
             listOf(0 to "Manuelle", 1 to "Chaque jour", 3 to "Tous les 3 jours", 7 to "Tous les 7 jours", 14 to "Tous les 14 jours"),
             { Prefs.updateDays }, { Prefs.updateDays = it }
         )
+        val src = Session.source()
+        if (src != null) {
+            rows.action("Catégorie du Direct à l'ouverture", "Catégorie affichée en arrivant sur le Direct (aussi : appui long dans la liste des catégories).", LiveDefault.label(src.id)) { v ->
+                val groups = listOf<Group?>(null) + LiveDefault.groups(src.id)
+                val cur = LiveDefault.get()
+                Ui.choose(this, "Catégorie du Direct", groups.map { g ->
+                    val name = g?.name ?: "Première catégorie (par défaut)"
+                    if ((g?.key) == cur) "★  $name" else name
+                }) { w ->
+                    LiveDefault.set(groups[w]?.key)
+                    rows.value(v).text = LiveDefault.label(src.id)
+                }
+            }
+        }
         rows.toggle("Activer l'EPG", { if (it) "Le guide TV est activé." else "Le guide TV est désactivé." }, { Prefs.epgEnabled }, { Prefs.epgEnabled = it })
         rows.toggle(
             "Précharger l'EPG",

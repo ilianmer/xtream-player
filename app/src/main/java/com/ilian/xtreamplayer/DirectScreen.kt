@@ -116,16 +116,13 @@ class DirectScreen(
         btnWatch.setOnClickListener { if (current >= 0) watch(current) }
         btnChanFav.setOnClickListener { toggleFav(current) }
         groups = buildGroups()
-        groupIndex = groups.indexOfFirst { it.key.startsWith("c:") || it.key.startsWith("m:") }.coerceAtLeast(0)
+        // Catégorie choisie « par défaut » pour ce profil, sinon la première catégorie
+        val def = LiveDefault.get()
+        groupIndex = groups.indexOfFirst { it.key == def }.takeIf { it >= 0 }
+            ?: groups.indexOfFirst { it.key.startsWith("c:") || it.key.startsWith("m:") }.coerceAtLeast(0)
     }
 
-    private fun buildGroups(): List<Group> {
-        val g = ArrayList<Group>()
-        g.add(Group(MainActivity.FAV, "Chaînes favorites", emptyList()))
-        g.add(Group(MainActivity.ALL, "Toutes les chaînes", emptyList()))
-        g.addAll(Catalog.groups(src.id, Kind.LIVE))
-        return g
-    }
+    private fun buildGroups(): List<Group> = LiveDefault.groups(src.id)
 
     // ---------- Cycle de vie ----------
 
@@ -199,12 +196,39 @@ class DirectScreen(
         if (list.size == 0) clearInfo()
     }
 
+    /** Liste des catégories : OK pour ouvrir, appui long pour en faire la catégorie par défaut (★). */
     private fun chooseGroup() {
-        Ui.choose(act, "Catégorie", groups.map { it.name }) { w ->
-            groupIndex = w
-            reload()
-            focusDefault()
+        val def = LiveDefault.get()
+        val labels = groups.map { if (it.key == def) "★  ${it.name}" else it.name }
+        val dlg = android.app.AlertDialog.Builder(act, Ui.DIALOG)
+            .setTitle("Catégorie")
+            .setItems(labels.toTypedArray()) { _, w ->
+                groupIndex = w
+                reload()
+                focusDefault()
+            }
+            .setNegativeButton("Annuler", null)
+            .create()
+        dlg.setOnShowListener {
+            val lv = dlg.listView ?: return@setOnShowListener
+            lv.setSelection(groupIndex)
+            lv.setOnItemLongClickListener { _, _, w, _ ->
+                val g = groups.getOrNull(w) ?: return@setOnItemLongClickListener true
+                dlg.dismiss()
+                if (g.key == LiveDefault.get()) {
+                    LiveDefault.set(null)
+                    Ui.toast(act, "Plus de catégorie par défaut : le Direct s'ouvrira sur la première catégorie.")
+                } else {
+                    LiveDefault.set(g.key)
+                    Ui.toast(act, "« ${g.name} » s'affichera à chaque ouverture du Direct.")
+                }
+                groupIndex = w
+                reload()
+                focusDefault()
+                true
+            }
         }
+        dlg.show()
     }
 
     // ---------- Sélection ----------
@@ -472,5 +496,24 @@ class DirectScreen(
                 }
             }
         }
+    }
+}
+
+/** Catégorie du Direct affichée à l'ouverture, propre à chaque profil. */
+object LiveDefault {
+    fun get(): String? = Db.kvGet(Db.pkey("live_default"))
+    fun set(key: String?) = Db.kvPut(Db.pkey("live_default"), key)
+
+    fun groups(src: Long): List<Group> {
+        val g = ArrayList<Group>()
+        g.add(Group(MainActivity.FAV, "Chaînes favorites", emptyList()))
+        g.add(Group(MainActivity.ALL, "Toutes les chaînes", emptyList()))
+        g.addAll(Catalog.groups(src, Kind.LIVE))
+        return g
+    }
+
+    fun label(src: Long): String {
+        val k = get() ?: return "Première catégorie"
+        return groups(src).firstOrNull { it.key == k }?.name ?: "Première catégorie"
     }
 }
