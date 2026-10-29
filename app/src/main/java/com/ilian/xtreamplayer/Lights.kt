@@ -217,7 +217,7 @@ object Lamps {
                     }
                     try {
                         val d = JSONObject(String(p.data, 0, p.length)).optJSONObject("msg")?.optJSONObject("data") ?: continue
-                        val ip = d.optString("ip").ifBlank { p.address.hostAddress ?: continue }
+                        val ip = d.optString("ip").takeIf { it.isNotBlank() } ?: p.address.hostAddress ?: continue
                         found.putIfAbsent(ip, Lamp(GOVEE, ip, d.optString("device").ifBlank { ip }))
                     } catch (_: Exception) {
                     }
