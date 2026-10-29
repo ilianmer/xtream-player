@@ -34,7 +34,7 @@ object FreeMeta {
 
     private fun enc(s: String) = URLEncoder.encode(s, "UTF-8")
 
-    private fun stripHtml(s: String?): String? = s?.replace(Regex("<[^>]+>"), "")?.replace("&amp;", "&")?.trim()?.ifBlank { null }
+    private fun stripHtml(s: String?): String? = s?.replace(Rx.HTML_TAG, "")?.replace("&amp;", "&")?.trim()?.ifBlank { null }
 
     /** Série : TVmaze. Bloquant. */
     fun series(item: Item): Info? {

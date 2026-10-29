@@ -102,7 +102,7 @@ object XmlTv {
         s = PREFIX.replace(s, "")
         s = BRACKETS.replace(s, " ")
         s = s.replace("+", " plus ").replace("&", " et ")
-        val words = s.split(Regex("""[^a-z0-9]+""")).filter { it.isNotEmpty() && it !in NOISE }
+        val words = s.split(Rx.NON_ALNUM_RUN).filter { it.isNotEmpty() && it !in NOISE }
         return words.joinToString("")
     }
 

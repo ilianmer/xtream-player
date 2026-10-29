@@ -840,6 +840,20 @@ object Db {
             if (c.moveToFirst()) (c.str(0) ?: "{}") to c.getLong(1) else null
         }
 
+    /**
+     * Ménage de fond (au démarrage, en arrière-plan) : les tables qui grossissent avec le temps restent petites.
+     * - fiches TMDB / métadonnées de plus de 120 jours (elles se rechargent si besoin)
+     * - chaînes retenues pour d'anciens matchs
+     */
+    fun housekeeping() {
+        try {
+            db.delete("tmdb", "fetched < ?", args(System.currentTimeMillis() - 120L * 86_400_000L))
+            val n = db.rawQuery("SELECT COUNT(*) FROM kv WHERE key LIKE 'sport:m:%'", null).use { c -> if (c.moveToFirst()) c.getInt(0) else 0 }
+            if (n > 400) db.delete("kv", "key LIKE 'sport:m:%'", null)
+        } catch (_: Exception) {
+        }
+    }
+
     fun tmdbPut(key: String, json: String) {
         db.insertWithOnConflict("tmdb", null, ContentValues().apply {
             put("key", key)

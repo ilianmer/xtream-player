@@ -10,9 +10,7 @@ import java.util.concurrent.LinkedBlockingQueue
 import java.util.concurrent.ThreadPoolExecutor
 import java.util.concurrent.TimeUnit
 
-private fun smallPool(queue: Int, threads: Int = 2) = ThreadPoolExecutor(
-    threads, threads, 30, TimeUnit.SECONDS, LinkedBlockingQueue(queue), ThreadPoolExecutor.DiscardOldestPolicy()
-)
+private fun smallPool(queue: Int, threads: Int = 2) = Pools.bounded(queue, threads, "guide")
 
 /** Guide TV : cache du programme en cours, chargé à la demande ou en avance (préchargement). */
 object Epg {
@@ -34,6 +32,9 @@ object Epg {
     /** Après une mise à jour du guide externe. */
     fun clear() = cache.clear()
 
+    /** Mémoire basse : on oublie le guide gardé en mémoire (il se recharge à la demande). */
+    fun trim() = cache.clear()
+
     /** Bloquant : guide externe (XMLTV) d'abord, sinon le guide court du fournisseur. */
     fun load(api: XtreamApi, id: String): List<EpgEntry> {
         cached(id)?.let { return it }
@@ -44,6 +45,8 @@ object Epg {
                 emptyList()
             }
         }
+        // Mémoire bornée même après des heures de zapping
+        if (cache.size > 2_500) cache.clear()
         cache[id] = Entry(System.currentTimeMillis(), list)
         return list
     }
@@ -211,7 +214,7 @@ object Tmdb {
         val year = YEAR.findAll(s).lastOrNull()?.value
         if (year != null) s = s.replace(year, " ")
         s = NOISE.replace(s, " ")
-        s = s.replace(Regex("""[\[\]()|_.]+"""), " ").replace(Regex("""\s{2,}"""), " ").trim().trimEnd('-', ':').trim()
+        s = s.replace(Rx.TITLE_PUNCT, " ").replace(Rx.SPACES2, " ").trim().trimEnd('-', ':').trim()
         return (s.ifBlank { raw.trim() }) to year
     }
 

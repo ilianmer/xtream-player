@@ -79,16 +79,39 @@ class ItemList(
     private val pages = object : LinkedHashMap<Int, List<Item>>(16, 0.75f, true) {
         override fun removeEldestEntry(eldest: MutableMap.MutableEntry<Int, List<Item>>?): Boolean = this.size > 24
     }
+    private val loading = HashSet<Int>()
 
     operator fun get(i: Int): Item? {
         if (i < 0 || i >= size) return null
         val p = i / PAGE
-        val page = pages[p] ?: loader(p * PAGE, PAGE).also { pages[p] = it }
-        return page.getOrNull(i - p * PAGE)
+        val page = synchronized(pages) { pages[p] } ?: loader(p * PAGE, PAGE).also { l -> synchronized(pages) { pages[p] = l } }
+        // La page suivante (ou précédente) se charge en arrière-plan avant d'être atteinte : défilement sans à-coups
+        val off = i - p * PAGE
+        if (off > PAGE - 60) prefetch(p + 1) else if (off < 60 && p > 0) prefetch(p - 1)
+        return page.getOrNull(off)
+    }
+
+    private fun prefetch(p: Int) {
+        if (p < 0 || p * PAGE >= size) return
+        synchronized(pages) {
+            if (pages.containsKey(p) || !loading.add(p)) return
+        }
+        PREFETCH.execute {
+            val l = try {
+                loader(p * PAGE, PAGE)
+            } catch (_: Exception) {
+                null
+            }
+            synchronized(pages) {
+                if (l != null) pages[p] = l
+                loading.remove(p)
+            }
+        }
     }
 
     companion object {
         const val PAGE = 150
+        private val PREFETCH = Pools.single("pages")
         val EMPTY = ItemList(0) { _, _ -> emptyList() }
 
         fun of(list: List<Item>) = ItemList(list.size, { n -> list.indexOfFirst { it.num == n }.takeIf { it >= 0 } }) { o, l ->

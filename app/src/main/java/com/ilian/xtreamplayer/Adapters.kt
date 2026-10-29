@@ -94,22 +94,24 @@ class ItemAdapter(
         v.findViewById<View>(R.id.frame)?.clipToOutline = true
         val zoom = if (viewType == 0) 1.03f else 1.08f
         v.setOnFocusChangeListener { view, hasFocus -> Fx.focus(view, hasFocus, zoom) }
-        return VH(v)
+        val h = VH(v)
+        // Écouteurs posés une fois pour toutes (et non à chaque affichage d'une carte)
+        v.setOnClickListener {
+            val p = h.bindingAdapterPosition
+            if (p != RecyclerView.NO_POSITION) onClick(p)
+        }
+        v.setOnLongClickListener {
+            val p = h.bindingAdapterPosition
+            if (p != RecyclerView.NO_POSITION) onLongClick(p)
+            true
+        }
+        return h
     }
 
     override fun getItemCount() = list.size
 
     override fun onBindViewHolder(h: VH, position: Int) {
         val item = list[position]
-        h.itemView.setOnClickListener {
-            val p = h.bindingAdapterPosition
-            if (p != RecyclerView.NO_POSITION) onClick(p)
-        }
-        h.itemView.setOnLongClickListener {
-            val p = h.bindingAdapterPosition
-            if (p != RecyclerView.NO_POSITION) onLongClick(p)
-            true
-        }
         if (item == null) {
             h.name.text = ""
             h.star?.visibility = View.GONE

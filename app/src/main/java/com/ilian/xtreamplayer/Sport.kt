@@ -188,7 +188,7 @@ object Sport {
     )
 
     private const val BASE = "https://site.api.espn.com/apis/site/v2/sports"
-    private val pool = Executors.newFixedThreadPool(6)
+    private val pool = Pools.fixed(6, "sport")
 
     /** Matchs d'hier soir à demain, toutes compétitions (ou seulement [leagues]). Bloquant. */
     fun load(leagues: List<League> = LEAGUES): List<Match> {
@@ -550,8 +550,8 @@ object SportChannels {
      */
     data class Pick(val channel: Item?, val sure: Boolean, val programme: String?, val broadcaster: String? = null)
 
-    private val pool = Executors.newFixedThreadPool(2)
-    private val workers = Executors.newFixedThreadPool(4)
+    private val pool = Pools.fixed(2, "sport-chaines")
+    private val workers = Pools.fixed(4, "sport-guide")
     private val HINTS = listOf(
         "bein", "canal", "rmc", "dazn", "eurosport", "equipe", "prime", "foot", "ligue 1", "sport", "arryadia", "ssc",
         "espn", "nba", "ufc", "rugby", "tennis", "tf1", "m6", "france 2", "france 3", "disney", "aoula", "2m"
@@ -576,7 +576,7 @@ object SportChannels {
         fun score(i: Item): Int {
             val n = normalize(i.name)
             var s = 0
-            if (Regex("""\b(fr|france|french)\b""").containsMatchIn(n) || n.startsWith("fr")) s += 6
+            if (Rx.FR_WORD.containsMatchIn(n) || n.startsWith("fr")) s += 6
             if (n.contains("hd") || n.contains("fhd")) s += 1
             if (NOISE.containsMatchIn(n)) s -= 5
             return s
@@ -621,8 +621,8 @@ object SportChannels {
     fun tokens(s: Sport.Side): List<String> {
         val out = LinkedHashSet<String>()
         for (n in listOf(s.name, s.short)) {
-            val base = normalize(n).replace(Regex("""[^a-z0-9 ]"""), " ").replace(Regex("""\s+"""), " ").trim()
-            val t = STOP.replace(base, " ").replace(Regex("""\s+"""), " ").trim()
+            val base = normalize(n).replace(Rx.NON_ALNUM_SPACE, " ").replace(Rx.SPACES, " ").trim()
+            val t = STOP.replace(base, " ").replace(Rx.SPACES, " ").trim()
             if (t.length >= 4) out.add(t)
             t.split(' ').filter { it.length >= 5 }.maxByOrNull { it.length }?.let { out.add(it) }
         }
@@ -636,7 +636,7 @@ object SportChannels {
     }
 
     fun hit(title: String, toks: List<String>): Boolean {
-        val t = " " + normalize(title).replace(Regex("""[^a-z0-9 ]"""), " ").replace(Regex("""\s+"""), " ") + " "
+        val t = " " + normalize(title).replace(Rx.NON_ALNUM_SPACE, " ").replace(Rx.SPACES, " ") + " "
         return toks.any { k -> t.contains(" $k ") || (k.length >= 6 && t.contains(k)) }
     }
 
@@ -702,7 +702,7 @@ object OddsApi {
     private class Ev(val home: String, val away: String, val books: List<Sport.Book>)
     private val cache = java.util.concurrent.ConcurrentHashMap<String, Pair<Long, List<Ev>>>()
 
-    private fun key(n: String) = normalize(n).replace(Regex("[^a-z0-9]"), "")
+    private fun key(n: String) = normalize(n).replace(Rx.NON_ALNUM, "")
 
     private fun same(a: String, b: String): Boolean {
         val x = key(a)

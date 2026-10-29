@@ -156,7 +156,7 @@ class MainActivity : BaseActivity() {
 
         home = HomeScreen(this, homeView, src, api, bgImage) { showTab(Tab.SPORT) }
         direct = DirectScreen(this, directView, src, api)
-        sport = SportScreen(this, sportView, src, api) { res -> if (tab == Tab.SPORT) root.setBackgroundResource(res) }
+        sport = SportScreen(this, sportView, src, api) { res -> if (tab == Tab.SPORT) Backgrounds.set(root, res) }
         movies = StreamScreen(this, moviesView, src, api, Kind.MOVIE, bgImage) { key, title -> openGrid(Tab.MOVIE, key, title) }
         series = StreamScreen(this, seriesView, src, api, Kind.SERIES, bgImage) { key, title -> openGrid(Tab.SERIES, key, title) }
         ready = true
@@ -263,7 +263,7 @@ class MainActivity : BaseActivity() {
         when (t) {
             Tab.HOME -> {
                 showOnly(homeView)
-                root.setBackgroundResource(R.drawable.bg_home)
+                Backgrounds.set(root, R.drawable.bg_home)
                 bgScrim.setBackgroundResource(R.drawable.scrim_home)
                 bgImage.visibility = View.VISIBLE
                 bgImage.alpha = 0f
@@ -272,21 +272,21 @@ class MainActivity : BaseActivity() {
             }
             Tab.LIVE -> {
                 showOnly(directView)
-                root.setBackgroundResource(R.drawable.bg_live)
+                Backgrounds.set(root, R.drawable.bg_live)
                 bgScrim.setBackgroundResource(R.drawable.scrim_home)
                 bgImage.visibility = View.GONE
                 direct.show()
             }
             Tab.SPORT -> {
                 showOnly(sportView)
-                root.setBackgroundResource(sport.theme())
+                Backgrounds.set(root, sport.theme())
                 bgScrim.setBackgroundResource(R.drawable.scrim_home)
                 bgImage.visibility = View.GONE
                 sport.show()
             }
             Tab.MOVIE, Tab.SERIES -> {
                 showOnly(if (t == Tab.MOVIE) moviesView else seriesView)
-                root.setBackgroundResource(R.drawable.bg_catalog)
+                Backgrounds.set(root, R.drawable.bg_catalog)
                 bgScrim.setBackgroundResource(R.drawable.scrim_stream)
                 bgImage.visibility = View.VISIBLE
                 bgImage.alpha = 0f
@@ -310,7 +310,7 @@ class MainActivity : BaseActivity() {
         showOnly(catalogView)
         bgImage.visibility = View.GONE
         bgScrim.setBackgroundResource(R.drawable.scrim_home)
-        root.setBackgroundResource(R.drawable.bg_catalog)
+        Backgrounds.set(root, R.drawable.bg_catalog)
         // Pleine page : pas de colonne de catégories, juste le titre et toutes les affiches.
         val full = gridMode
         catPanel.visibility = if (full) View.GONE else View.VISIBLE
