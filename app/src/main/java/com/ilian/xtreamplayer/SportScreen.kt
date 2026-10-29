@@ -371,6 +371,16 @@ class SportScreen(
                     options(m)
                     true
                 }
+            } else {
+                // Résultats : on peut s'y déplacer ; la carte sélectionnée se déroule, OK ouvre le détail
+                val more = v.findViewById<TextView>(R.id.more)
+                more.text = resultDetails(m)
+                v.setOnFocusChangeListener { view, has ->
+                    more.visibility = if (has && more.text.isNotBlank()) View.VISIBLE else View.GONE
+                    Fx.focus(view, has, 1.03f)
+                }
+                more.visibility = if (v.hasFocus() && more.text.isNotBlank()) View.VISIBLE else View.GONE
+                v.setOnClickListener { resultDialog(m) }
             }
         }
     }
@@ -441,6 +451,30 @@ class SportScreen(
         crest(v.findViewById(R.id.crestA), m.home)
         crest(v.findViewById(R.id.crestB), m.away)
         bindWatch(v, m, short = true)
+    }
+
+    private fun resultDetails(m: Sport.Match): String {
+        val f = SimpleDateFormat("HH:mm", Locale.FRANCE)
+        return listOfNotNull(
+            "${dayLabel(m.start)} à ${f.format(Date(m.start))}",
+            m.round?.takeIf { it.isNotBlank() },
+            m.detail?.takeIf { it.isNotBlank() }
+        ).joinToString("\n")
+    }
+
+    private fun resultDialog(m: Sport.Match) {
+        val score = "${m.home.name}  ${m.home.score ?: "–"}\n${m.away.name}  ${m.away.score ?: "–"}"
+        val msg = listOfNotNull(
+            compLabel(m).takeIf { it.isNotBlank() },
+            score,
+            m.status.takeIf { it.isNotBlank() },
+            resultDetails(m)
+        ).joinToString("\n\n")
+        android.app.AlertDialog.Builder(act, Ui.DIALOG)
+            .setTitle(m.title)
+            .setMessage(msg)
+            .setPositiveButton("Fermer", null)
+            .show()
     }
 
     private fun bindResult(v: View, m: Sport.Match) {

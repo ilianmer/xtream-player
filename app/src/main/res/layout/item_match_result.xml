@@ -4,6 +4,8 @@
     android:layout_height="wrap_content"
     android:layout_marginBottom="6dp"
     android:background="@drawable/result_bg"
+    android:clickable="true"
+    android:focusable="true"
     android:orientation="vertical"
     android:paddingStart="10dp"
     android:paddingTop="7dp"
@@ -85,4 +87,16 @@
             android:fontFeatureSettings="tnum"
             android:textSize="12sp" />
     </LinearLayout>
+
+    <!-- Se déroule quand le résultat est sélectionné : date, tour, détail (sets, buteur…) -->
+    <TextView
+        android:id="@+id/more"
+        style="@style/Txt"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="5dp"
+        android:lineSpacingMultiplier="1.1"
+        android:textColor="@color/text_dim"
+        android:textSize="10sp"
+        android:visibility="gone" />
 </LinearLayout>
