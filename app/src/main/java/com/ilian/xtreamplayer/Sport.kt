@@ -132,46 +132,38 @@ object Sport {
 
     fun cachedAge(): Long = if (cachedAt == 0L) Long.MAX_VALUE else System.currentTimeMillis() - cachedAt
 
-    /** Matchs à jour : réutilise le cache s'il a moins de [maxAgeMs]. Bloquant. */
+    @Volatile
+    private var fullAt = 0L
+
+    /**
+     * Matchs à jour : réutilise le cache s'il a moins de [maxAgeMs]. Bloquant.
+     * Entre deux chargements complets (toutes les 10 minutes), seules les compétitions
+     * qui ont un match en cours ou qui commence bientôt sont rechargées.
+     */
+    @Synchronized
     fun get(maxAgeMs: Long = 60_000L): List<Match> {
         if (cachedAge() < maxAgeMs) return cache
-        val l = load()
-        val withOdds = if (Prefs.oddsEnabled) OddsApi.attach(l) else l
+        val now = System.currentTimeMillis()
+        val fresh = if (cache.isEmpty() || now - fullAt > 10 * 60_000L) {
+            fullAt = now
+            load()
+        } else {
+            val hot = cache.filter { it.live || (it.state == "pre" && it.start - now < 2 * 3_600_000L) }.map { it.league.path }.toSet()
+            if (hot.isEmpty()) cache else {
+                val updated = load(LEAGUES.filter { it.path in hot })
+                val byKey = updated.associateBy { it.key }
+                (cache.filter { it.league.path !in hot } + cache.filter { it.league.path in hot }.map { byKey[it.key] ?: it } +
+                    updated.filter { u -> cache.none { it.key == u.key } }).sortedBy { it.start }
+            }
+        }
+        val withOdds = if (Prefs.oddsEnabled) OddsApi.attach(fresh) else fresh
         cache = withOdds
         cachedAt = System.currentTimeMillis()
         return withOdds
     }
 
-    val LEAGUES = listOf(
-        League("soccer", "fra.1", "Ligue 1", "Football"),
-        League("soccer", "uefa.champions", "Ligue des champions", "Football"),
-        League("soccer", "uefa.europa", "Ligue Europa", "Football"),
-        League("soccer", "uefa.europa.conf", "Ligue Conférence", "Football"),
-        League("soccer", "eng.1", "Premier League", "Football"),
-        League("soccer", "esp.1", "LaLiga", "Football"),
-        League("soccer", "ita.1", "Serie A", "Football"),
-        League("soccer", "ger.1", "Bundesliga", "Football"),
-        League("soccer", "fra.2", "Ligue 2", "Football"),
-        League("soccer", "fra.coupe_de_france", "Coupe de France", "Football"),
-        League("soccer", "mar.1", "Botola Pro", "Football"),
-        League("soccer", "caf.nations", "Coupe d'Afrique", "Football"),
-        League("soccer", "uefa.nations", "Ligue des nations", "Football"),
-        League("soccer", "fifa.worldq.uefa", "Qualif. Coupe du monde", "Football"),
-        League("soccer", "fifa.friendly", "Match amical", "Football"),
-        League("basketball", "nba", "NBA", "Basket"),
-        League("rugby", "270559", "Top 14", "Rugby"),
-        League("rugby", "271937", "Champions Cup", "Rugby"),
-        League("rugby", "180659", "Six Nations", "Rugby"),
-        League("tennis", "atp", "ATP", "Tennis"),
-        League("tennis", "wta", "WTA", "Tennis"),
-        League("mma", "ufc", "UFC", "Combat")
-    )
-
-    private const val BASE = "https://site.api.espn.com/apis/site/v2/sports"
-    private val pool = Executors.newFixedThreadPool(6)
-
-    /** Matchs d'hier soir à demain, toutes compétitions. Bloquant. */
-    fun load(): List<Match> {
+    /** Matchs d'hier soir à demain, toutes compétitions (ou seulement [leagues]). Bloquant. */
+    fun load(leagues: List<League> = LEAGUES): List<Match> {
         val paris = TimeZone.getTimeZone("Europe/Paris")
         val f = SimpleDateFormat("yyyyMMdd", Locale.US).apply { timeZone = paris }
         val cal = Calendar.getInstance(paris)
@@ -182,7 +174,7 @@ object Sport {
         val yesterday = f.format(cal.time)
 
         val jobs = ArrayList<Callable<List<Match>>>()
-        for (l in LEAGUES) {
+        for (l in leagues) {
             val days = when (l.sport) {
                 "tennis", "mma" -> listOf<String?>(null)
                 // Les matchs américains de la nuit sont rangés à la date de la veille, heure de New York.

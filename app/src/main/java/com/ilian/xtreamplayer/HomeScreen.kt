@@ -147,8 +147,11 @@ class HomeScreen(
         Bg.main.removeCallbacks(sportTick)
     }
 
+    /** Au démarrage la sélection arrive un peu après : le focus ira sur « Regarder » dès qu'elle est prête. */
+    private var wantFocus = false
+
     fun focusDefault() {
-        if (featured.isNotEmpty()) heroPlay.requestFocus() else rvResume.getChildAt(0)?.requestFocus()
+        if (featured.isNotEmpty()) heroPlay.requestFocus() else wantFocus = true
     }
 
     // ---------- À la une ----------
@@ -179,6 +182,10 @@ class HomeScreen(
             }
             heroTag.text = "À la une · ${slot.label.lowercase(Locale.FRANCE)}"
             showHero(0, animate = false)
+            if (wantFocus) {
+                wantFocus = false
+                heroPlay.requestFocus()
+            }
         }
     }
 
