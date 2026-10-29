@@ -26,6 +26,11 @@ import androidx.media3.datasource.DefaultHttpDataSource
 import androidx.media3.exoplayer.DefaultLoadControl
 import androidx.media3.exoplayer.DefaultRenderersFactory
 import androidx.media3.exoplayer.ExoPlayer
+import androidx.media3.common.audio.AudioProcessor
+import androidx.media3.exoplayer.audio.AudioSink
+import androidx.media3.exoplayer.audio.DefaultAudioSink
+import androidx.media3.exoplayer.audio.TeeAudioProcessor
+import android.content.Context
 import androidx.media3.exoplayer.source.DefaultMediaSourceFactory
 import androidx.media3.extractor.DefaultExtractorsFactory
 import androidx.media3.extractor.ts.DefaultTsPayloadReaderFactory
@@ -252,6 +257,8 @@ class PlayerActivity : BaseActivity() {
         Bg.main.removeCallbacks(nextWatch)
         Bg.main.removeCallbacks(retry)
         player?.release()
+        lightSync?.release()
+        lightSync = null
         player = null
         Session.index = index
         Session.lastStopAt = System.currentTimeMillis()
@@ -280,7 +287,24 @@ class PlayerActivity : BaseActivity() {
             DefaultTsPayloadReaderFactory.FLAG_ALLOW_NON_IDR_KEYFRAMES or
                 DefaultTsPayloadReaderFactory.FLAG_DETECT_ACCESS_UNITS
         )
-        val renderers = DefaultRenderersFactory(this).setEnableDecoderFallback(true)
+        // Spots LED : le son passe aussi par LightSync (seulement si l'option est activée)
+        lightSync?.release()
+        val sync = if (Prefs.lightsOn) {
+            val app = applicationContext
+            LightSync({ Lamps.output(app) }, Prefs.lightsDelayMs)
+        } else null
+        lightSync = sync
+        val renderers = (if (sync == null) DefaultRenderersFactory(this) else object : DefaultRenderersFactory(this) {
+            override fun buildAudioSink(context: Context, enableFloatOutput: Boolean, enableAudioTrackPlaybackParams: Boolean): AudioSink {
+                // Builder() sans contexte : pas de passthrough AC3 / E-AC3 vers l'ampli, le son reste en PCM et peut être analysé
+                @Suppress("DEPRECATION")
+                return DefaultAudioSink.Builder()
+                    .setEnableFloatOutput(enableFloatOutput)
+                    .setEnableAudioTrackPlaybackParams(enableAudioTrackPlaybackParams)
+                    .setAudioProcessors(arrayOf<AudioProcessor>(TeeAudioProcessor(sync)))
+                    .build()
+            }
+        }).setEnableDecoderFallback(true)
 
         val p = ExoPlayer.Builder(this, renderers)
             .setMediaSourceFactory(DefaultMediaSourceFactory(dataSource, extractors))
@@ -288,6 +312,10 @@ class PlayerActivity : BaseActivity() {
             .build()
         p.setAudioAttributes(AudioAttributes.DEFAULT, true)
         p.addListener(object : Player.Listener {
+            override fun onIsPlayingChanged(isPlaying: Boolean) {
+                lightSync?.setPlaying(isPlaying)
+            }
+
             override fun onPlayerError(error: PlaybackException) {
                 // En direct, si le format choisi ne passe pas, on tente l'autre (TS <-> HLS) une fois.
                 if (isLive && !useAltFormat) {
@@ -339,6 +367,9 @@ class PlayerActivity : BaseActivity() {
         playerView.player = p
         player = p
     }
+
+    /** Spots LED sur la musique (null si l'option est désactivée). */
+    private var lightSync: LightSync? = null
 
     /** Reconnexions automatiques après une coupure (remis à zéro dès que la lecture repart). */
     private var retries = 0

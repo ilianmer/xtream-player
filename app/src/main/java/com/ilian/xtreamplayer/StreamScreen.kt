@@ -118,6 +118,8 @@ class StreamScreen(
             )
         }
         favRail()?.let { rails.add(it) }
+        // Les mieux notés (classement TMDB retrouvé dans ton catalogue, ou note du fournisseur)
+        rails.add(Rail("toprated", "Les mieux notés", emptyList(), loader = { TopRated.items(src.id, kind) }))
         for (g in Catalog.groups(src.id, kind)) {
             rails.add(Rail(g.key, Catalog.cleanName(g.name), emptyList(), loader = { Db.page(src.id, kind, g.catIds, null, 0, 30) }, seeAll = g.key))
         }
@@ -130,6 +132,23 @@ class StreamScreen(
             heroPlot.text = "Cette source ne contient rien dans cette rubrique."
         }
         loadTrending()
+        refreshTopRated()
+    }
+
+    /** Classement TMDB recalculé en arrière-plan (au plus une fois par jour), puis la rangée est mise à jour. */
+    private fun refreshTopRated() {
+        if (!Tmdb.enabled || !TopRated.stale(src.id, kind)) return
+        Bg.task(act, {
+            if (TopRated.refresh(src.id, kind)) TopRated.items(src.id, kind) else null
+        }) { r ->
+            val list = r.getOrNull() ?: return@task
+            val i = rails.indexOfFirst { it.key == "toprated" }
+            if (i < 0 || list.isEmpty()) return@task
+            // On ne touche pas à la rangée si on est en train de la parcourir
+            if (activeRail == i && rvRails.hasFocus()) return@task
+            rails[i].items = list
+            adapter.notifyItemChanged(i)
+        }
     }
 
     /**
