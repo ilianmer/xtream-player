@@ -5,3 +5,7 @@ local.properties
 .idea/
 *.iml
 .DS_Store
+*.p12
+*.jks
+*.keystore
+!signing/release.p12.enc
