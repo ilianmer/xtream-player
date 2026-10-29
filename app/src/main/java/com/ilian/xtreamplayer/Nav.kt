@@ -27,6 +27,9 @@ import kotlin.math.sin
  * avec un léger délai entre deux sons quand on maintient une flèche.
  */
 open class BaseActivity : Activity() {
+    /** Rebond en bout de liste (désactivé dans le lecteur, qui gère ses flèches lui-même). */
+    protected open val edgeBump = true
+
     /** Le zoom de sélection déborde un peu : les panneaux ne le coupent plus dans leur marge intérieure. */
     override fun onContentChanged() {
         super.onContentChanged()
@@ -34,6 +37,19 @@ open class BaseActivity : Activity() {
     }
 
     override fun dispatchKeyEvent(event: KeyEvent): Boolean {
+        // Bas sur la dernière ligne d'une liste : on reste dedans, avec un petit rebond (comme les plateformes de streaming)
+        if (edgeBump && event.action == KeyEvent.ACTION_DOWN && event.keyCode == KeyEvent.KEYCODE_DPAD_DOWN && Fx.atListBottom(currentFocus)) {
+            if (event.repeatCount % 3 == 0) Fx.bump(Fx.listItemOf(currentFocus) ?: currentFocus, 0, 1)
+            return true
+        }
+        // Ailleurs : bas (ou haut) qui ferait sauter le focus dans l'autre sens, ou nulle part -> rebond sur place
+        if (edgeBump && event.action == KeyEvent.ACTION_DOWN &&
+            (event.keyCode == KeyEvent.KEYCODE_DPAD_DOWN || event.keyCode == KeyEvent.KEYCODE_DPAD_UP) &&
+            Fx.wrongWay(currentFocus, event.keyCode == KeyEvent.KEYCODE_DPAD_DOWN)
+        ) {
+            if (event.repeatCount % 3 == 0) Fx.bump(currentFocus, 0, if (event.keyCode == KeyEvent.KEYCODE_DPAD_DOWN) 1 else -1)
+            return true
+        }
         val nav = event.action == KeyEvent.ACTION_DOWN && event.keyCode in NAV_KEYS
         val before = if (nav) currentFocus else null
         val handled = super.dispatchKeyEvent(event)
@@ -209,8 +225,14 @@ object Fx {
                     val count = rv.adapter?.itemCount ?: 0
                     if (pos == RecyclerView.NO_POSITION) return@setOnKeyListener false
                     val target = pos + step
-                    if (target < 0) return@setOnKeyListener !escapeLeft
-                    if (target >= count) return@setOnKeyListener !escapeRight
+                    if (target < 0) {
+                        if (!escapeLeft && e.repeatCount % 3 == 0) bump(v, -1, 0)
+                        return@setOnKeyListener !escapeLeft
+                    }
+                    if (target >= count) {
+                        if (!escapeRight && e.repeatCount % 3 == 0) bump(v, 1, 0)
+                        return@setOnKeyListener !escapeRight
+                    }
                     focusAt(rv, target)
                     true
                 }
@@ -218,6 +240,63 @@ object Fx {
 
             override fun onChildViewDetachedFromWindow(view: View) {}
         })
+    }
+
+    /** Liste verticale qui contient [v] (en sautant les rangées horizontales), et l'élément de cette liste. */
+    private fun verticalList(v: View?): Pair<RecyclerView, View>? {
+        var child: View = v ?: return null
+        var p = child.parent
+        while (p is View) {
+            if (p is RecyclerView) {
+                val lm = p.layoutManager
+                if (lm is LinearLayoutManager && lm.orientation == RecyclerView.VERTICAL) return p to child
+            }
+            child = p
+            p = p.parent
+        }
+        return null
+    }
+
+    fun listItemOf(v: View?): View? = verticalList(v)?.second
+
+    /** Vrai si [v] est sur la dernière ligne d'une liste verticale (ou d'une grille). */
+    fun atListBottom(v: View?): Boolean {
+        val (rv, item) = verticalList(v) ?: return false
+        val count = rv.adapter?.itemCount ?: return false
+        val pos = rv.getChildAdapterPosition(item)
+        if (pos == RecyclerView.NO_POSITION || count == 0) return false
+        val lm = rv.layoutManager
+        return if (lm is androidx.recyclerview.widget.GridLayoutManager) {
+            val span = lm.spanCount.coerceAtLeast(1)
+            pos / span == (count - 1) / span
+        } else pos == count - 1
+    }
+
+    /**
+     * Hors des listes : vrai si la flèche ne mènerait nulle part, ou vers un élément situé de l'autre côté
+     * (par exemple « bas » qui remonterait vers la recherche en haut de l'écran).
+     */
+    fun wrongWay(v: View?, down: Boolean): Boolean {
+        v ?: return false
+        if (verticalList(v) != null) return false
+        val next = v.focusSearch(if (down) View.FOCUS_DOWN else View.FOCUS_UP) ?: return true
+        val a = IntArray(2)
+        val b = IntArray(2)
+        v.getLocationOnScreen(a)
+        next.getLocationOnScreen(b)
+        val curMid = a[1] + v.height / 2
+        val nextMid = b[1] + next.height / 2
+        return if (down) nextMid < curMid - 8 else nextMid > curMid + 8
+    }
+
+    /** Petit rebond : on ne peut pas aller plus loin dans cette direction. */
+    fun bump(v: View?, dx: Int, dy: Int) {
+        v ?: return
+        val d = v.resources.displayMetrics.density * 7
+        v.animate().translationX(dx * d).translationY(dy * d).setInterpolator(DecelerateInterpolator()).setDuration(70)
+            .withEndAction {
+                v.animate().translationX(0f).translationY(0f).setInterpolator(OvershootInterpolator(3f)).setDuration(220).start()
+            }.start()
     }
 
     /** Donne le focus à l'élément [pos] d'une liste, en la faisant défiler si besoin. */
