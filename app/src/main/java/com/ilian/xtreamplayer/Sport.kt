@@ -162,6 +162,34 @@ object Sport {
         return withOdds
     }
 
+    val LEAGUES = listOf(
+        League("soccer", "fra.1", "Ligue 1", "Football"),
+        League("soccer", "uefa.champions", "Ligue des champions", "Football"),
+        League("soccer", "uefa.europa", "Ligue Europa", "Football"),
+        League("soccer", "uefa.europa.conf", "Ligue Conférence", "Football"),
+        League("soccer", "eng.1", "Premier League", "Football"),
+        League("soccer", "esp.1", "LaLiga", "Football"),
+        League("soccer", "ita.1", "Serie A", "Football"),
+        League("soccer", "ger.1", "Bundesliga", "Football"),
+        League("soccer", "fra.2", "Ligue 2", "Football"),
+        League("soccer", "fra.coupe_de_france", "Coupe de France", "Football"),
+        League("soccer", "mar.1", "Botola Pro", "Football"),
+        League("soccer", "caf.nations", "Coupe d'Afrique", "Football"),
+        League("soccer", "uefa.nations", "Ligue des nations", "Football"),
+        League("soccer", "fifa.worldq.uefa", "Qualif. Coupe du monde", "Football"),
+        League("soccer", "fifa.friendly", "Match amical", "Football"),
+        League("basketball", "nba", "NBA", "Basket"),
+        League("rugby", "270559", "Top 14", "Rugby"),
+        League("rugby", "271937", "Champions Cup", "Rugby"),
+        League("rugby", "180659", "Six Nations", "Rugby"),
+        League("tennis", "atp", "ATP", "Tennis"),
+        League("tennis", "wta", "WTA", "Tennis"),
+        League("mma", "ufc", "UFC", "Combat")
+    )
+
+    private const val BASE = "https://site.api.espn.com/apis/site/v2/sports"
+    private val pool = Executors.newFixedThreadPool(6)
+
     /** Matchs d'hier soir à demain, toutes compétitions (ou seulement [leagues]). Bloquant. */
     fun load(leagues: List<League> = LEAGUES): List<Match> {
         val paris = TimeZone.getTimeZone("Europe/Paris")
