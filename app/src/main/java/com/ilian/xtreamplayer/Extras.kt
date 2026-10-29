@@ -31,13 +31,18 @@ object Epg {
         return e.list
     }
 
-    /** Bloquant. */
+    /** Après une mise à jour du guide externe. */
+    fun clear() = cache.clear()
+
+    /** Bloquant : guide externe (XMLTV) d'abord, sinon le guide court du fournisseur. */
     fun load(api: XtreamApi, id: String): List<EpgEntry> {
         cached(id)?.let { return it }
-        val list = try {
-            api.shortEpg(id)
-        } catch (_: Exception) {
-            emptyList()
+        val list = XmlTv.entries(id).ifEmpty {
+            try {
+                api.shortEpg(id)
+            } catch (_: Exception) {
+                emptyList()
+            }
         }
         cache[id] = Entry(System.currentTimeMillis(), list)
         return list

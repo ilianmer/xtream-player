@@ -120,7 +120,8 @@ class XtreamApi(server: String, val user: String, val pass: String) {
     private fun toItem(kind: Kind, m: Map<String, String>): Item? = when (kind) {
         Kind.LIVE -> m["stream_id"]?.let {
             Item(
-                Kind.LIVE, it, m["name"] ?: "?", m["stream_icon"], null, catId = m["category_id"],
+                // Pour le direct, le champ tmdb garde l'identifiant du guide (epg_channel_id, ex. « TF1.fr »)
+                Kind.LIVE, it, m["name"] ?: "?", m["stream_icon"], null, catId = m["category_id"], tmdb = m["epg_channel_id"],
                 num = m["num"]?.toDoubleOrNull()?.toInt()?.takeIf { n -> n > 0 },
                 added = m["added"]?.toLongOrNull() ?: 0L
             )
@@ -241,6 +242,9 @@ class XtreamApi(server: String, val user: String, val pass: String) {
         return out.sortedBy { it.start }
     }
 
+    /** Guide complet du fournisseur au format XMLTV. */
+    fun xmltvUrl(): String = "$base/xmltv.php?username=${Uri.encode(user)}&password=${Uri.encode(pass)}"
+
     fun streamUrl(item: Item, liveFormat: String): String {
         item.url?.let { return it }
         val u = Uri.encode(user)
@@ -262,7 +266,7 @@ class XtreamApi(server: String, val user: String, val pass: String) {
     companion object {
         private val WANTED = setOf(
             "stream_id", "series_id", "name", "stream_icon", "cover", "category_id",
-            "container_extension", "rating", "tmdb", "tmdb_id", "plot", "num", "added", "last_modified"
+            "container_extension", "rating", "tmdb", "tmdb_id", "plot", "num", "added", "last_modified", "epg_channel_id"
         )
 
         /** Garde uniquement schéma + hôte + port : "exemple.com:8080/" -> "http://exemple.com:8080". */

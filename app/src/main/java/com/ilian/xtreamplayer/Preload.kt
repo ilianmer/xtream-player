@@ -40,5 +40,10 @@ object Preload {
             Sport.get(60_000L)
         } catch (_: Exception) {
         }
+        // Guide TV externe : remis à jour en arrière-plan s'il a plus de 12 h
+        try {
+            Session.api()?.let { XmlTv.refreshIfNeeded(src, it) }
+        } catch (_: Exception) {
+        }
     }
 }

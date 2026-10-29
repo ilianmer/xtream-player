@@ -182,6 +182,8 @@ object Db {
     fun deleteSource(id: Long) {
         tx {
             for (t in listOf("categories", "items", "favorites", "progress", "downloads", "hidden", "profiles")) db.delete(t, "source_id=?", args(id))
+            ensureEpg()
+            for (t in listOf("epg_prog", "epg_map")) db.delete(t, "source_id=?", args(id))
             db.delete("sources", "id=?", args(id))
         }
         favCache.clear()
@@ -662,6 +664,85 @@ object Db {
             }
         }
         return out
+    }
+
+    // ---------- Guide TV externe (XMLTV) ----------
+
+    private var epgReady = false
+
+    private fun ensureEpg() {
+        if (epgReady) return
+        db.execSQL(
+            "CREATE TABLE IF NOT EXISTS epg_prog(source_id INTEGER, gen INTEGER, ch TEXT, start INTEGER, stop INTEGER, title TEXT, descr TEXT)"
+        )
+        db.execSQL("CREATE INDEX IF NOT EXISTS epg_prog_ch ON epg_prog(source_id, gen, ch, start)")
+        db.execSQL("CREATE TABLE IF NOT EXISTS epg_map(source_id INTEGER, gen INTEGER, stream TEXT, ch TEXT, PRIMARY KEY(source_id, gen, stream))")
+        epgReady = true
+    }
+
+    fun epgGen(src: Long): Int = kvGet("epg_gen_$src")?.toIntOrNull() ?: 0
+
+    fun epgMap(src: Long, gen: Int, map: Map<String, String>) {
+        ensureEpg()
+        tx {
+            for ((stream, ch) in map) {
+                db.insertWithOnConflict("epg_map", null, ContentValues().apply {
+                    put("source_id", src)
+                    put("gen", gen)
+                    put("stream", stream)
+                    put("ch", ch)
+                }, SQLiteDatabase.CONFLICT_REPLACE)
+            }
+        }
+    }
+
+    /** Ajoute un lot de programmes (ch, début, fin, titre, résumé) pour la génération [gen]. */
+    fun epgInsert(src: Long, gen: Int, rows: List<Array<Any>>) {
+        ensureEpg()
+        tx {
+            val st = db.compileStatement("INSERT INTO epg_prog(source_id, gen, ch, start, stop, title, descr) VALUES(?,?,?,?,?,?,?)")
+            for (r in rows) {
+                st.clearBindings()
+                st.bindLong(1, src)
+                st.bindLong(2, gen.toLong())
+                st.bindString(3, r[0] as String)
+                st.bindLong(4, r[1] as Long)
+                st.bindLong(5, r[2] as Long)
+                st.bindString(6, r[3] as String)
+                st.bindString(7, r[4] as String)
+                st.executeInsert()
+            }
+        }
+    }
+
+    /** La nouvelle génération devient le guide affiché ; l'ancienne est effacée. */
+    fun epgCommit(src: Long, gen: Int) {
+        ensureEpg()
+        kvPut("epg_gen_$src", gen.toString())
+        db.delete("epg_prog", "source_id=? AND gen<>?", args(src, gen))
+        db.delete("epg_map", "source_id=? AND gen<>?", args(src, gen))
+    }
+
+    fun epgDrop(src: Long, gen: Int) {
+        ensureEpg()
+        db.delete("epg_prog", "source_id=? AND gen=?", args(src, gen))
+        db.delete("epg_map", "source_id=? AND gen=?", args(src, gen))
+    }
+
+    /** Programmes d'une chaîne (identifiant du flux) depuis le guide externe. */
+    fun epgFor(src: Long, stream: String, fromSec: Long, limit: Int = 40): List<EpgEntry> {
+        ensureEpg()
+        val gen = epgGen(src)
+        if (gen == 0) return emptyList()
+        return db.rawQuery(
+            "SELECT p.title, p.start, p.stop, p.descr FROM epg_map m JOIN epg_prog p ON p.source_id=m.source_id AND p.gen=m.gen AND p.ch=m.ch " +
+                "WHERE m.source_id=? AND m.gen=? AND m.stream=? AND p.stop>? ORDER BY p.start LIMIT ?",
+            args(src, gen, stream, fromSec, limit)
+        ).use { c ->
+            val out = ArrayList<EpgEntry>()
+            while (c.moveToNext()) out.add(EpgEntry(c.str(0) ?: "", c.getLong(1), c.getLong(2), c.str(3) ?: ""))
+            out
+        }
     }
 
     // ---------- Petites valeurs (chaîne choisie pour un match, équipes suivies…) ----------

@@ -53,6 +53,15 @@ object Prefs {
         get() = bool("epg_preload", true)
         set(v) = putBool("epg_preload", v)
 
+    /** Guide TV externe : voir XmlTv (France par défaut). */
+    var epgSource: Int
+        get() = int("epg_source", XmlTv.FRANCE)
+        set(v) = putInt("epg_source", v)
+
+    var epgCustomUrl: String
+        get() = str("epg_custom_url", "")
+        set(v) = putStr("epg_custom_url", v)
+
     var mergeCategories: Boolean
         get() = bool("merge_cats", true)
         set(v) = putBool("merge_cats", v)
