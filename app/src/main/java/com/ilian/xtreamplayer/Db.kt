@@ -339,6 +339,38 @@ object Db {
         return db.rawQuery("SELECT COUNT(*) FROM items WHERE $w AND pos < ?", a.toTypedArray()).use { c -> if (c.moveToFirst()) c.getInt(0) else null }
     }
 
+    /** Catégories des films et séries regardés ou mis en favori : ce que l'utilisateur aime. */
+    fun tasteCategories(src: Long, kind: Kind): Map<String, Int> {
+        val out = HashMap<String, Int>()
+        val k = kind.name
+        db.rawQuery(
+            "SELECT i.cat_id, COUNT(*) FROM progress p JOIN items i ON i.source_id=p.source_id AND i.kind=p.kind AND i.id=p.id " +
+                "WHERE p.source_id=? AND p.kind=? AND i.cat_id IS NOT NULL GROUP BY i.cat_id",
+            args(src, k)
+        ).use { c -> while (c.moveToNext()) out[c.getString(0)] = (out[c.getString(0)] ?: 0) + c.getInt(1) * 2 }
+        if (kind == Kind.SERIES) {
+            db.rawQuery(
+                "SELECT i.cat_id, COUNT(DISTINCT p.series) FROM progress p JOIN items i ON i.source_id=p.source_id AND i.kind='SERIES' AND i.id=p.series " +
+                    "WHERE p.source_id=? AND p.kind='EPISODE' AND i.cat_id IS NOT NULL GROUP BY i.cat_id",
+                args(src)
+            ).use { c -> while (c.moveToNext()) out[c.getString(0)] = (out[c.getString(0)] ?: 0) + c.getInt(1) * 2 }
+        }
+        db.rawQuery(
+            "SELECT i.cat_id, COUNT(*) FROM favorites f JOIN items i ON i.source_id=f.source_id AND i.kind=f.kind AND i.id=f.id " +
+                "WHERE f.source_id=? AND f.kind=? AND i.cat_id IS NOT NULL GROUP BY i.cat_id",
+            args(src, k)
+        ).use { c -> while (c.moveToNext()) out[c.getString(0)] = (out[c.getString(0)] ?: 0) + c.getInt(1) }
+        return out
+    }
+
+    /** Identifiants déjà vus (terminés) : on ne les remet pas en avant. */
+    fun watchedIds(src: Long, kind: Kind): Set<String> =
+        db.rawQuery("SELECT id FROM progress WHERE source_id=? AND kind=? AND finished=1", args(src, kind.name)).use { c ->
+            val out = HashSet<String>()
+            while (c.moveToNext()) out.add(c.getString(0))
+            out
+        }
+
     /** Un élément du catalogue par son identifiant (null s'il n'existe plus). */
     fun find(src: Long, kind: Kind, id: String): Item? =
         db.rawQuery("SELECT $ITEM_COLS FROM items WHERE source_id=? AND kind=? AND id=?", args(src, kind.name, id)).use { c ->
@@ -450,11 +482,11 @@ object Db {
         out
     }
 
-    data class Resume(val item: Item, val pos: Long, val dur: Long)
+    data class Resume(val item: Item, val pos: Long, val dur: Long, val updated: Long = 0L)
 
     /** Films et épisodes commencés (ou un seul type), du plus récent au plus ancien. */
     fun resume(src: Long, limit: Int, kind: Kind? = null): List<Resume> = db.rawQuery(
-        "SELECT kind, id, name, icon, ext, extra, pos, dur, series FROM progress WHERE source_id=? AND finished=0 AND pos > 0 " +
+        "SELECT kind, id, name, icon, ext, extra, pos, dur, series, updated FROM progress WHERE source_id=? AND finished=0 AND pos > 0 " +
             (if (kind != null) "AND kind='${kind.name}' " else "AND kind IN ('MOVIE','EPISODE') ") +
             "ORDER BY updated DESC LIMIT $limit",
         args(src)
@@ -462,7 +494,7 @@ object Db {
         val out = ArrayList<Resume>()
         while (c.moveToNext()) {
             val item = Item(Kind.valueOf(c.getString(0)), c.getString(1), c.str(2) ?: "?", c.str(3), c.str(4), extra = c.str(5), series = c.str(8))
-            out.add(Resume(item, c.getLong(6), c.getLong(7)))
+            out.add(Resume(item, c.getLong(6), c.getLong(7), c.getLong(9)))
         }
         out
     }
@@ -472,7 +504,7 @@ object Db {
         val out = ArrayList<Pair<String, Resume>>()
         val seen = HashSet<String>()
         db.rawQuery(
-            "SELECT kind, id, name, icon, ext, extra, pos, dur, series, finished FROM progress WHERE source_id=? AND kind='EPISODE' " +
+            "SELECT kind, id, name, icon, ext, extra, pos, dur, series, finished, updated FROM progress WHERE source_id=? AND kind='EPISODE' " +
                 "AND series IS NOT NULL ORDER BY updated DESC LIMIT 400",
             args(src)
         ).use { c ->
@@ -481,7 +513,7 @@ object Db {
                 if (!seen.add(series)) continue
                 val item = Item(Kind.EPISODE, c.getString(1), c.str(2) ?: "?", c.str(3), c.str(4), extra = c.str(5), series = series)
                 val finished = c.getInt(9) == 1
-                out.add(series to Resume(item, if (finished) -1 else c.getLong(6), c.getLong(7)))
+                out.add(series to Resume(item, if (finished) -1 else c.getLong(6), c.getLong(7), c.getLong(10)))
             }
         }
         return out

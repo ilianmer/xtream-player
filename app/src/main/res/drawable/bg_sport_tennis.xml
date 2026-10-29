@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="utf-8"?>
+<layer-list xmlns:android="http://schemas.android.com/apk/res/android">
+    <item><shape><solid android:color="#0A1220" /></shape></item>
+    <item><shape><gradient android:type="radial" android:centerX="0.25" android:centerY="0.2" android:gradientRadius="560dp" android:startColor="#99C2551E" android:endColor="#00C2551E" /></shape></item>
+    <item><shape><gradient android:type="radial" android:centerX="0.8" android:centerY="0.85" android:gradientRadius="560dp" android:startColor="#991E4A8A" android:endColor="#001E4A8A" /></shape></item>
+    <item android:drawable="@drawable/pat_tennis" />
+    <item><shape><solid android:color="#59060A0E" /></shape></item>
+</layer-list>

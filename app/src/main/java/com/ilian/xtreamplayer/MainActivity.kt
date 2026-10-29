@@ -1,20 +1,16 @@
 package com.ilian.xtreamplayer
 
-import android.app.Activity
 import android.content.Intent
 import android.os.Bundle
-import android.text.Editable
-import android.text.TextWatcher
 import android.view.KeyEvent
 import android.view.View
-import android.widget.EditText
 import android.widget.ImageView
 import android.widget.TextView
 import androidx.recyclerview.widget.GridLayoutManager
 import androidx.recyclerview.widget.LinearLayoutManager
 import androidx.recyclerview.widget.RecyclerView
 
-class MainActivity : Activity() {
+class MainActivity : BaseActivity() {
 
     enum class Tab { HOME, LIVE, SPORT, MOVIE, SERIES, FAV, DL }
 
@@ -22,6 +18,7 @@ class MainActivity : Activity() {
     private lateinit var api: XtreamApi
     private lateinit var tabViews: Map<Tab, TextView>
     private lateinit var root: View
+    private lateinit var topBar: View
     private lateinit var bgImage: ImageView
     private lateinit var bgScrim: View
     private lateinit var homeView: View
@@ -30,10 +27,11 @@ class MainActivity : Activity() {
     private lateinit var moviesView: View
     private lateinit var seriesView: View
     private lateinit var catalogView: View
+    private lateinit var catPanel: View
+    private lateinit var gridTitle: TextView
     private lateinit var rvCategories: RecyclerView
     private lateinit var rvItems: RecyclerView
     private lateinit var tvStatus: TextView
-    private lateinit var etSearch: EditText
     private lateinit var grid: GridLayoutManager
 
     private lateinit var home: HomeScreen
@@ -46,19 +44,19 @@ class MainActivity : Activity() {
     private val itemAdapter = ItemAdapter(::onItemClick, ::onItemLongClick)
 
     private var tab = Tab.HOME
-    /** Films et Séries : grille classique (catégories + affiches) au lieu des rangées. */
+    /** Films et Séries : une catégorie ouverte en pleine page (« Voir tout »). */
     private var gridMode = false
     private var groups: List<Group> = emptyList()
     private var dl: List<Downloads.Status> = emptyList()
     private var focusedCategory = -1
-    private var ignoreSearch = false
     private var ready = false
+    private var pendingTab: Tab? = null
+    private val tabSwitch = Runnable {
+        val t = pendingTab ?: return@Runnable
+        if (tabViews[t]?.hasFocus() == true && (t != tab || gridMode)) showTab(t)
+    }
     private val selectFocusedCategory = Runnable {
         if (focusedCategory != catAdapter.selected) selectCategory(focusedCategory)
-    }
-    private val applySearch = Runnable {
-        if (tab == Tab.LIVE) direct.setQuery(etSearch.text.toString().trim().ifBlank { null })
-        else if (catalogView.visibility == View.VISIBLE) reloadItems(resetScroll = true)
     }
     private val refreshDownloads = object : Runnable {
         override fun run() {
@@ -82,6 +80,7 @@ class MainActivity : Activity() {
         setContentView(R.layout.activity_main)
 
         root = findViewById(R.id.root)
+        topBar = findViewById(R.id.topBar)
         bgImage = findViewById(R.id.bgImage)
         bgScrim = findViewById(R.id.bgScrim)
         homeView = findViewById(R.id.homeView)
@@ -90,10 +89,11 @@ class MainActivity : Activity() {
         moviesView = findViewById(R.id.moviesView)
         seriesView = findViewById(R.id.seriesView)
         catalogView = findViewById(R.id.catalogView)
+        catPanel = findViewById(R.id.catPanel)
+        gridTitle = findViewById(R.id.gridTitle)
         rvCategories = findViewById(R.id.rvCategories)
         rvItems = findViewById(R.id.rvItems)
         tvStatus = findViewById(R.id.tvStatus)
-        etSearch = findViewById(R.id.etSearch)
         findViewById<TextView>(R.id.tvSource).text = src.name
 
         tabViews = mapOf(
@@ -105,13 +105,26 @@ class MainActivity : Activity() {
             Tab.FAV to findViewById(R.id.tabFav),
             Tab.DL to findViewById(R.id.tabDl)
         )
-        for ((t, v) in tabViews) v.setOnClickListener { showTab(t) }
+        for ((t, v) in tabViews) {
+            v.setOnClickListener { if (t != tab || gridMode) showTab(t) }
+            // Comme sur les grandes plateformes : on change d'onglet en passant dessus (après un court instant).
+            v.setOnFocusChangeListener { _, has ->
+                Bg.main.removeCallbacks(tabSwitch)
+                if (has && (t != tab || gridMode)) {
+                    pendingTab = t
+                    Bg.main.postDelayed(tabSwitch, 450)
+                }
+            }
+        }
         if (!Prefs.showSport) {
             tabViews[Tab.SPORT]?.visibility = View.GONE
             findViewById<View>(R.id.tabSportGap).visibility = View.GONE
         }
         findViewById<View>(R.id.btnSettings).setOnClickListener {
             startActivity(Intent(this, SettingsActivity::class.java))
+        }
+        findViewById<View>(R.id.btnSearch).setOnClickListener {
+            startActivity(Intent(this, SearchActivity::class.java))
         }
         findViewById<View>(R.id.sourceChip).setOnClickListener { chooseSource() }
 
@@ -125,39 +138,11 @@ class MainActivity : Activity() {
         rvItems.adapter = itemAdapter
         rvItems.itemAnimator = null
 
-        etSearch.addTextChangedListener(object : TextWatcher {
-            override fun beforeTextChanged(s: CharSequence?, start: Int, count: Int, after: Int) {}
-            override fun onTextChanged(s: CharSequence?, start: Int, before: Int, count: Int) {}
-            override fun afterTextChanged(s: Editable?) {
-                if (ignoreSearch) return
-                if (!s.isNullOrBlank()) {
-                    when {
-                        // Accueil, Sport, Favoris, Téléchargements : la recherche part dans tous les films.
-                        tab == Tab.HOME || tab == Tab.SPORT || tab == Tab.FAV || tab == Tab.DL ->
-                            showTab(Tab.MOVIE, groupKey = ALL, keepSearch = true)
-                        (tab == Tab.MOVIE || tab == Tab.SERIES) && !gridMode ->
-                            showTab(tab, groupKey = ALL, keepSearch = true)
-                    }
-                }
-                Bg.main.removeCallbacks(applySearch)
-                Bg.main.postDelayed(applySearch, 400)
-            }
-        })
-
-        home = HomeScreen(this, homeView, src, api, bgImage) { kind, key ->
-            showTab(
-                when (kind) {
-                    Kind.LIVE -> Tab.LIVE
-                    Kind.SERIES -> Tab.SERIES
-                    else -> Tab.MOVIE
-                },
-                groupKey = key
-            )
-        }
+        home = HomeScreen(this, homeView, src, api, bgImage) { showTab(Tab.SPORT) }
         direct = DirectScreen(this, directView, src, api)
-        sport = SportScreen(this, sportView, src, api)
-        movies = StreamScreen(this, moviesView, src, api, Kind.MOVIE, bgImage) { key -> showTab(Tab.MOVIE, groupKey = key) }
-        series = StreamScreen(this, seriesView, src, api, Kind.SERIES, bgImage) { key -> showTab(Tab.SERIES, groupKey = key) }
+        sport = SportScreen(this, sportView, src, api) { res -> if (tab == Tab.SPORT) root.setBackgroundResource(res) }
+        movies = StreamScreen(this, moviesView, src, api, Kind.MOVIE, bgImage) { key, title -> openGrid(Tab.MOVIE, key, title) }
+        series = StreamScreen(this, seriesView, src, api, Kind.SERIES, bgImage) { key, title -> openGrid(Tab.SERIES, key, title) }
         ready = true
 
         home.start()
@@ -176,7 +161,7 @@ class MainActivity : Activity() {
                 Bg.main.removeCallbacks(refreshDownloads)
                 Bg.main.postDelayed(refreshDownloads, 3_000)
             }
-            else -> Unit
+            else -> if (!gridMode) screenFor(tab)?.show()
         }
     }
 
@@ -199,7 +184,7 @@ class MainActivity : Activity() {
             tab == Tab.HOME -> home.refresh()
             tab == Tab.LIVE -> direct.refresh()
             tab == Tab.SPORT -> Unit
-            (tab == Tab.MOVIE || tab == Tab.SERIES) && !gridMode -> screenFor(tab)?.refresh()
+            (tab == Tab.MOVIE || tab == Tab.SERIES) && !gridMode -> Unit
             else -> {
                 val key = groups.getOrNull(catAdapter.selected)?.key
                 groups = buildGroups()
@@ -225,31 +210,24 @@ class MainActivity : Activity() {
         }
     }
 
-    private fun showTab(t: Tab, groupKey: String? = null, keepSearch: Boolean = false) {
-        val wasGrid = catalogView.visibility == View.VISIBLE
-        val changed = t != tab || !wasGrid
-        if (t != tab || groupKey == null) {
-            if (tab == Tab.LIVE && t != Tab.LIVE) direct.hide()
-            if (tab == Tab.SPORT && t != Tab.SPORT) sport.hide()
-            if (tab == Tab.HOME && t != Tab.HOME) home.pause()
-        }
+    /** Quitte l'onglet affiché (arrête ce qui tourne en arrière-plan). */
+    private fun leaveCurrent() {
+        home.pause()
+        direct.hide()
+        sport.hide()
         movies.hide()
         series.hide()
-        tab = t
-        tabViews.forEach { (k, v) -> v.isSelected = k == t }
-        if (!keepSearch && etSearch.text.isNotEmpty()) {
-            ignoreSearch = true
-            etSearch.setText("")
-            ignoreSearch = false
-            if (t == Tab.LIVE) direct.setQuery(null)
-        }
-        Bg.main.removeCallbacks(applySearch)
         Bg.main.removeCallbacks(refreshDownloads)
         bgImage.animate().cancel()
+    }
 
+    private fun showTab(t: Tab) {
+        leaveCurrent()
+        tab = t
+        gridMode = false
+        tabViews.forEach { (k, v) -> v.isSelected = k == t }
         when (t) {
             Tab.HOME -> {
-                gridMode = false
                 showOnly(homeView)
                 root.setBackgroundResource(R.drawable.bg_home)
                 bgScrim.setBackgroundResource(R.drawable.scrim_home)
@@ -257,56 +235,59 @@ class MainActivity : Activity() {
                 bgImage.alpha = 0f
                 home.refresh()
                 home.resume()
-                return
             }
             Tab.LIVE -> {
-                gridMode = false
                 showOnly(directView)
                 root.setBackgroundResource(R.drawable.bg_live)
                 bgScrim.setBackgroundResource(R.drawable.scrim_home)
                 bgImage.visibility = View.GONE
                 direct.show()
-                if (keepSearch) direct.setQuery(etSearch.text.toString().trim().ifBlank { null })
-                return
             }
             Tab.SPORT -> {
-                gridMode = false
                 showOnly(sportView)
-                root.setBackgroundResource(R.drawable.bg_live)
+                root.setBackgroundResource(sport.theme())
                 bgScrim.setBackgroundResource(R.drawable.scrim_home)
                 bgImage.visibility = View.GONE
                 sport.show()
-                return
             }
-            Tab.MOVIE, Tab.SERIES -> if (groupKey == null && !keepSearch) {
-                gridMode = false
+            Tab.MOVIE, Tab.SERIES -> {
                 showOnly(if (t == Tab.MOVIE) moviesView else seriesView)
                 root.setBackgroundResource(R.drawable.bg_catalog)
                 bgScrim.setBackgroundResource(R.drawable.scrim_stream)
                 bgImage.visibility = View.VISIBLE
                 bgImage.alpha = 0f
                 screenFor(t)?.show()
-                return
-            } else {
-                gridMode = true
             }
-            else -> gridMode = false
+            Tab.FAV, Tab.DL -> showGrid(null, null)
         }
+    }
 
-        // Grille classique : Favoris, Téléchargements, ou une catégorie de Films / Séries
+    /** « Voir tout » d'une rangée : la catégorie en pleine page. */
+    private fun openGrid(t: Tab, key: String, title: String) {
+        leaveCurrent()
+        tab = t
+        gridMode = true
+        tabViews.forEach { (k, v) -> v.isSelected = k == t }
+        showGrid(key, title)
+        rvItems.post { focusFirstItem() }
+    }
+
+    private fun showGrid(groupKey: String?, title: String?) {
         showOnly(catalogView)
         bgImage.visibility = View.GONE
         bgScrim.setBackgroundResource(R.drawable.scrim_home)
         root.setBackgroundResource(R.drawable.bg_catalog)
-        if (changed || groupKey != null) {
-            groups = buildGroups()
-            catAdapter.items = groups.map { Category(it.key, it.name) }
-        }
+        // Pleine page : pas de colonne de catégories, juste le titre et toutes les affiches.
+        val full = gridMode
+        catPanel.visibility = if (full) View.GONE else View.VISIBLE
+        gridTitle.visibility = if (full) View.VISIBLE else View.GONE
+        gridTitle.text = title ?: ""
+        groups = buildGroups()
+        catAdapter.items = groups.map { Category(it.key, it.name) }
         val start = groupKey?.let { k -> groups.indexOfFirst { it.key == k }.takeIf { it >= 0 } } ?: defaultIndex()
         selectCategory(start, force = true)
         rvCategories.scrollToPosition(start)
-        if (groupKey != null && !keepSearch) rvItems.post { focusFirstItem() }
-        if (t == Tab.DL) Bg.main.postDelayed(refreshDownloads, 3_000)
+        if (tab == Tab.DL) Bg.main.postDelayed(refreshDownloads, 3_000)
     }
 
     private fun kindOfTab(): Kind = when (tab) {
@@ -333,14 +314,13 @@ class MainActivity : Activity() {
                 g.add(Group(FAV_SERIES, "Séries", emptyList()))
             }
             Tab.DL -> g.add(Group(DL, "Tous les téléchargements", emptyList()))
-            Tab.HOME, Tab.SPORT -> Unit
+            Tab.HOME, Tab.SPORT, Tab.LIVE -> Unit
             else -> {
                 val kind = kindOfTab()
-                g.add(Group(FAV, "Favoris", emptyList()))
-                if (kind == Kind.MOVIE) {
-                    if (Db.progressList(src.id, Kind.MOVIE, false).isNotEmpty()) g.add(Group(RESUME, "Reprendre", emptyList()))
-                    if (Prefs.showRewatch && Db.progressList(src.id, Kind.MOVIE, true).isNotEmpty()) g.add(Group(REWATCH, "Revoir", emptyList()))
-                }
+                g.add(Group(FAV, "Ma liste", emptyList()))
+                g.add(Group(RESUME, "Reprendre", emptyList()))
+                if (Prefs.showRewatch) g.add(Group(REWATCH, "Revoir", emptyList()))
+                g.add(Group(LATEST, "Nouveautés", emptyList()))
                 g.add(Group(ALL, "Tout", emptyList()))
                 g.addAll(Catalog.groups(src.id, kind))
             }
@@ -400,51 +380,51 @@ class MainActivity : Activity() {
 
     private fun reloadItems(resetScroll: Boolean) {
         val g = groups.getOrNull(catAdapter.selected) ?: return
-        val q = etSearch.text.toString().trim().ifBlank { null }
         val s = src.id
         val k = kindOfTab()
-        fun filtered(l: List<Item>): ItemList {
-            if (q == null) return ItemList.of(l)
-            val n = normalize(q)
-            return ItemList.of(l.filter { normalize(it.name).contains(n) })
-        }
 
         val vk = viewKindOf(g.key)
         itemAdapter.viewKind = vk
-        grid.spanCount = if (vk == Kind.LIVE) 3 else 6
+        grid.spanCount = if (vk == Kind.LIVE) 3 else if (gridMode) 7 else 6
         itemAdapter.epgApi = if (vk == Kind.LIVE && Prefs.epgEnabled && Prefs.epgPreload) api else null
         itemAdapter.subtitle = null
         itemAdapter.progress = null
 
         val list = when (g.key) {
-            FAV -> filtered(Db.favorites(s, k))
-            FAV_LIVE -> filtered(Db.favorites(s, Kind.LIVE))
-            FAV_MOVIE -> filtered(Db.favorites(s, Kind.MOVIE))
-            FAV_SERIES -> filtered(Db.favorites(s, Kind.SERIES))
+            FAV -> ItemList.of(Db.favorites(s, k))
+            FAV_LIVE -> ItemList.of(Db.favorites(s, Kind.LIVE))
+            FAV_MOVIE -> ItemList.of(Db.favorites(s, Kind.MOVIE))
+            FAV_SERIES -> ItemList.of(Db.favorites(s, Kind.SERIES))
             RESUME -> {
-                val l = Db.progressList(s, k, false)
-                val map = Db.progressMap(s, k, l.map { it.id })
-                itemAdapter.progress = { item -> map[item.id]?.let { p -> if (p.dur > 0) p.pos.toFloat() / p.dur else null } }
-                filtered(l)
+                if (k == Kind.SERIES) {
+                    val l = Db.seriesActivity(s, 200).mapNotNull { (sid, _) -> Db.find(s, Kind.SERIES, sid) }
+                    ItemList.of(l)
+                } else {
+                    val l = Db.progressList(s, k, false)
+                    val map = Db.progressMap(s, k, l.map { it.id })
+                    itemAdapter.progress = { item -> map[item.id]?.let { p -> if (p.dur > 0) p.pos.toFloat() / p.dur else null } }
+                    ItemList.of(l)
+                }
             }
-            REWATCH -> filtered(Db.progressList(s, k, true))
+            REWATCH -> ItemList.of(Db.progressList(s, k, true))
+            LATEST -> ItemList.of(Db.latest(s, k, 300))
             DL -> {
                 dl = Downloads.statuses(this)
                 val byKey = dl.associateBy { it.row.item.key }
                 itemAdapter.subtitle = { item -> byKey[item.key]?.label }
-                filtered(dl.map { it.row.item })
+                ItemList.of(dl.map { it.row.item })
             }
-            ALL -> ItemList.query(s, k, null, q)
-            else -> ItemList.query(s, k, g.catIds, q)
+            ALL -> ItemList.query(s, k, null, null)
+            else -> ItemList.query(s, k, g.catIds, null)
         }
         itemAdapter.list = list
         if (resetScroll) rvItems.scrollToPosition(0)
+        if (gridMode) gridTitle.text = "${gridTitle.text.toString().substringBefore("  ·  ")}  ·  ${list.size}"
         setStatus(
             when {
                 list.size > 0 -> null
-                q != null -> "Aucun résultat pour « $q »"
                 g.key == DL -> "Aucun téléchargement.\nSur la fiche d'un film ou d'un épisode, choisis Télécharger pour le regarder hors ligne."
-                g.key == FAV || g.key.startsWith("__fav") -> "Aucun favori ici.\nFais un appui long sur OK sur un élément pour l'ajouter."
+                g.key == FAV || g.key.startsWith("__fav") -> "Rien ici pour l'instant.\nAppui long sur OK sur un élément pour l'ajouter."
                 g.key == RESUME || g.key == REWATCH -> "Rien pour l'instant."
                 Db.countAll(s, k) == 0 -> "Aucun contenu dans cette source.\nVa dans Réglages > Sources IPTV > Rafraîchir."
                 else -> "Rien dans cette catégorie."
@@ -496,7 +476,7 @@ class MainActivity : Activity() {
             return
         }
         val added = Db.toggleFav(src.id, item)
-        Ui.toast(this, if (added) "Ajouté aux favoris" else "Retiré des favoris")
+        Ui.toast(this, if (added) "Ajouté à Ma liste" else "Retiré de Ma liste")
         val key = groups.getOrNull(catAdapter.selected)?.key
         if (key == FAV || key?.startsWith("__fav") == true) reloadItems(resetScroll = false)
         else itemAdapter.notifyItemChanged(position)
@@ -506,46 +486,60 @@ class MainActivity : Activity() {
 
     override fun dispatchKeyEvent(event: KeyEvent): Boolean {
         // Chiffres de la télécommande dans le Direct : numéro de chaîne, comme sur un décodeur.
-        if (ready && tab == Tab.LIVE && event.action == KeyEvent.ACTION_DOWN && !etSearch.hasFocus()) {
+        if (ready && tab == Tab.LIVE && event.action == KeyEvent.ACTION_DOWN) {
             val c = event.keyCode
             if (c in KeyEvent.KEYCODE_0..KeyEvent.KEYCODE_9) return direct.typeDigit(c - KeyEvent.KEYCODE_0)
             if (c in KeyEvent.KEYCODE_NUMPAD_0..KeyEvent.KEYCODE_NUMPAD_9) return direct.typeDigit(c - KeyEvent.KEYCODE_NUMPAD_0)
         }
+        // Touche Recherche de la télécommande
+        if (ready && event.action == KeyEvent.ACTION_DOWN && event.keyCode == KeyEvent.KEYCODE_SEARCH) {
+            startActivity(Intent(this, SearchActivity::class.java))
+            return true
+        }
         return super.dispatchKeyEvent(event)
     }
 
+    /**
+     * Retour, toujours dans le même ordre :
+     * grille -> catégories ; catégorie pleine page -> rangées ; contenu -> barre d'onglets ;
+     * onglet -> Accueil ; Accueil -> confirmation avant de quitter.
+     */
     @Deprecated("Deprecated in Java")
     override fun onBackPressed() {
         val tabView = tabViews[tab]
-        val inTopBar = findViewById<View>(R.id.topBar).hasFocus()
+        val inTopBar = topBar.hasFocus()
         when {
-            // Grille -> catégories
-            catalogView.visibility == View.VISIBLE && rvItems.hasFocus() -> {
+            catalogView.visibility == View.VISIBLE && rvItems.hasFocus() && catPanel.visibility == View.VISIBLE -> {
                 val v = rvCategories.findViewHolderForAdapterPosition(catAdapter.selected)?.itemView
                 if (v != null) v.requestFocus() else rvCategories.requestFocus()
             }
-            // Catégories de Films / Séries -> retour aux rangées
             gridMode && !inTopBar -> {
                 showTab(tab)
                 screenFor(tab)?.focusDefault()
             }
-            // Contenu -> barre d'onglets
             tabView != null && !inTopBar -> tabView.requestFocus()
-            // Onglet -> Accueil
             tab != Tab.HOME -> {
                 showTab(Tab.HOME)
                 tabViews[Tab.HOME]?.requestFocus()
             }
-            else -> {
-                @Suppress("DEPRECATION")
-                super.onBackPressed()
-            }
+            else -> confirmExit()
         }
     }
 
+    private fun confirmExit() {
+        val dlg = android.app.AlertDialog.Builder(this, Ui.DIALOG)
+            .setTitle("Quitter Xtream Player ?")
+            .setMessage("Tu pourras revenir quand tu veux depuis l'écran d'accueil du stick.")
+            .setPositiveButton("Quitter") { _, _ -> finish() }
+            .setNegativeButton("Rester", null)
+            .create()
+        dlg.setOnShowListener { dlg.getButton(android.app.AlertDialog.BUTTON_NEGATIVE)?.requestFocus() }
+        dlg.show()
+    }
+
     override fun onDestroy() {
+        Bg.main.removeCallbacks(tabSwitch)
         Bg.main.removeCallbacks(selectFocusedCategory)
-        Bg.main.removeCallbacks(applySearch)
         Bg.main.removeCallbacks(refreshDownloads)
         if (ready) {
             home.pause()
@@ -563,6 +557,7 @@ class MainActivity : Activity() {
         const val FAV_SERIES = "__fav_series"
         const val RESUME = "__resume"
         const val REWATCH = "__rewatch"
+        const val LATEST = "__latest"
         const val ALL = "__all"
         const val DL = "__dl"
     }

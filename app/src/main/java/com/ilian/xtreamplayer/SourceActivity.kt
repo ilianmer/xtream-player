@@ -9,7 +9,7 @@ import android.widget.ImageView
 import android.widget.TextView
 
 /** Écran de connexion : ajout ou modification d'une source IPTV (téléphone ou télécommande). */
-class SourceActivity : Activity() {
+class SourceActivity : BaseActivity() {
 
     private lateinit var etName: EditText
     private lateinit var etServer: EditText

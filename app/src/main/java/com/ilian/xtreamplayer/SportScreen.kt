@@ -1,6 +1,7 @@
 package com.ilian.xtreamplayer
 
 import android.app.Activity
+import android.content.Intent
 import android.graphics.drawable.GradientDrawable
 import android.view.LayoutInflater
 import android.view.View
@@ -15,12 +16,14 @@ import java.util.Calendar
 import java.util.Date
 import java.util.Locale
 
-/** Onglet Sport : matchs en direct, à venir et résultats, avec un raccourci vers la chaîne. */
+/** Onglet Sport : matchs en direct, à venir et résultats, avec un raccourci vers la chaîne qui les diffuse. */
 class SportScreen(
     private val act: Activity,
     root: View,
     private val src: Source,
-    private val api: XtreamApi
+    private val api: XtreamApi,
+    /** Fond d'écran du sport choisi (football, basket…). */
+    private val onTheme: (Int) -> Unit
 ) {
     private val chips: LinearLayout = root.findViewById(R.id.sportChips)
     private val updated: TextView = root.findViewById(R.id.sportUpdated)
@@ -31,10 +34,10 @@ class SportScreen(
     private val liveEmpty: TextView = root.findViewById(R.id.liveEmpty)
     private val upcomingEmpty: TextView = root.findViewById(R.id.upcomingEmpty)
     private val resultsEmpty: TextView = root.findViewById(R.id.resultsEmpty)
+    private val btnTeams: TextView = root.findViewById(R.id.btnTeams)
 
     private var all: List<Sport.Match> = emptyList()
     private var filter = "Tout"
-    private var loadedAt = 0L
     private var loading = false
     private var visible = false
     private var chans: List<Item> = emptyList()
@@ -50,7 +53,7 @@ class SportScreen(
             if (!visible) return
             // Toutes les minutes s'il y a des matchs en cours, sinon toutes les 5 minutes.
             val every = if (all.any { it.live }) 60_000L else 300_000L
-            if (System.currentTimeMillis() - loadedAt >= every - 1_000) load()
+            if (Sport.cachedAge() >= every - 1_000) load()
             paintUpdated()
             Bg.main.postDelayed(this, 20_000)
         }
@@ -60,6 +63,7 @@ class SportScreen(
         rvLive.layoutManager = LinearLayoutManager(act, LinearLayoutManager.HORIZONTAL, false)
         rvLive.adapter = liveAdapter
         rvLive.itemAnimator = null
+        Fx.lockRow(rvLive, escapeLeft = false)
         rvUpcoming.layoutManager = LinearLayoutManager(act)
         rvUpcoming.adapter = upcomingAdapter
         rvUpcoming.itemAnimator = null
@@ -72,18 +76,40 @@ class SportScreen(
             tv.text = g
             tv.tag = g
             tv.isSelected = g == filter
-            tv.setOnClickListener {
-                filter = g
-                for (i in 0 until chips.childCount) chips.getChildAt(i).let { c -> c.isSelected = c.tag == g }
-                paint()
-            }
+            tv.setOnClickListener { setFilter(g) }
             chips.addView(tv)
         }
+        btnTeams.setOnClickListener { act.startActivity(Intent(act, TeamsActivity::class.java)) }
+    }
+
+    private fun setFilter(g: String) {
+        filter = g
+        for (i in 0 until chips.childCount) chips.getChildAt(i).let { c -> c.isSelected = c.tag == g }
+        onTheme(theme())
+        if (g == "Mes équipes" && Sport.followed().isEmpty()) {
+            act.startActivity(Intent(act, TeamsActivity::class.java))
+        }
+        paint()
+    }
+
+    fun theme(): Int = when (filter) {
+        "Football" -> R.drawable.bg_sport_foot
+        "Basket" -> R.drawable.bg_sport_basket
+        "Rugby" -> R.drawable.bg_sport_rugby
+        "Tennis" -> R.drawable.bg_sport_tennis
+        "Combat" -> R.drawable.bg_sport_combat
+        else -> R.drawable.bg_sport_all
     }
 
     fun show() {
         visible = true
-        if (System.currentTimeMillis() - loadedAt > 60_000) load() else paint()
+        onTheme(theme())
+        all = Sport.cached()
+        if (all.isNotEmpty()) {
+            computePicks()
+            paint()
+        }
+        if (Sport.cachedAge() > 60_000) load()
         Bg.main.removeCallbacks(refresh)
         Bg.main.postDelayed(refresh, 20_000)
     }
@@ -106,7 +132,7 @@ class SportScreen(
             liveEmpty.text = "Chargement des scores…"
         }
         Bg.task(act, {
-            val matches = Sport.load()
+            val matches = Sport.get(30_000L)
             val c = SportChannels.candidates(src.id)
             matches to c
         }) { r ->
@@ -114,14 +140,13 @@ class SportScreen(
             r.onSuccess { (matches, c) ->
                 all = matches
                 chans = c
-                loadedAt = System.currentTimeMillis()
                 computePicks()
                 paint()
                 // Le guide TV des chaînes de sport permet de trouver qui diffuse quoi.
-                if (!guideReady && Prefs.epgEnabled && c.isNotEmpty()) {
-                    SportChannels.warmUp(api, c) {
+                if (Prefs.epgEnabled && c.isNotEmpty()) {
+                    SportChannels.warmUp(api, matches, c) {
                         guideReady = true
-                        if (!act.isDestroyed) {
+                        if (!act.isDestroyed && visible) {
                             computePicks()
                             paint()
                         }
@@ -142,12 +167,12 @@ class SportScreen(
         "Tout" -> all
         "Mes équipes" -> all.filter { Sport.involvesFollowed(it) }
         else -> all.filter { it.league.group == filter }
-    }.sortedWith(compareByDescending<Sport.Match> { Sport.involvesFollowed(it) }.thenBy { it.start })
+    }
 
     private fun paint() {
         val list = matches()
-        val live = list.filter { it.live }
-        val upcoming = list.filter { it.state == "pre" }.sortedBy { it.start }
+        val live = list.filter { it.live }.sortedByDescending { Sport.trend(it) }
+        val upcoming = list.filter { it.state == "pre" }.sortedWith(compareByDescending<Sport.Match> { Sport.involvesFollowed(it) }.thenBy { it.start })
         val results = list.filter { it.finished }.sortedByDescending { it.start }
         liveAdapter.set(live)
         upcomingAdapter.set(upcoming)
@@ -159,8 +184,8 @@ class SportScreen(
         }
         liveEmpty.visibility = if (live.isEmpty()) View.VISIBLE else View.GONE
         if (live.isEmpty() && !loading) liveEmpty.text = when {
-            filter == "Mes équipes" && Sport.followed().isEmpty() ->
-                "Aucune équipe suivie.\nAppui long sur OK sur un match pour suivre une équipe."
+            filter == "Mes équipes" && Sport.followed().isEmpty() -> "Aucune équipe suivie.\nChoisis tes équipes avec le bouton « Choisir mes équipes »."
+            filter == "Mes équipes" -> "Aucune de tes équipes ne joue en ce moment."
             else -> "Aucun match en direct pour l'instant."
         }
         upcomingEmpty.visibility = if (upcoming.isEmpty()) View.VISIBLE else View.GONE
@@ -170,27 +195,24 @@ class SportScreen(
     }
 
     private fun paintUpdated() {
-        if (loadedAt == 0L) {
+        val age = Sport.cachedAge()
+        if (age == Long.MAX_VALUE) {
             updated.text = ""
             return
         }
-        val s = (System.currentTimeMillis() - loadedAt) / 1000
+        val s = age / 1000
         updated.text = when {
-            s < 60 -> "Scores mis à jour à l'instant"
-            s < 3600 -> "Scores mis à jour il y a ${s / 60} min"
-            else -> "Scores mis à jour à " + SimpleDateFormat("HH:mm", Locale.FRANCE).format(Date(loadedAt))
+            s < 60 -> "Scores à jour"
+            s < 3600 -> "Mis à jour il y a ${s / 60} min"
+            else -> "Mis à jour à " + SimpleDateFormat("HH:mm", Locale.FRANCE).format(Date(System.currentTimeMillis() - age))
         }
     }
 
     // ---------- Actions ----------
 
     private fun watch(m: Sport.Match) {
-        val p = picks[m.key]
-        if (p != null) {
-            play(p.channel)
-        } else {
-            chooseChannel(m)
-        }
+        val ch = picks[m.key]?.channel
+        if (ch != null) play(ch) else chooseChannel(m)
     }
 
     private fun play(ch: Item) {
@@ -204,6 +226,11 @@ class SportScreen(
             labels.add("Choisir la chaîne")
             acts.add { chooseChannel(m) }
         }
+        val books = m.odds?.books.orEmpty()
+        if (books.isNotEmpty()) {
+            labels.add("Voir les cotes des bookmakers")
+            acts.add { showOdds(m) }
+        }
         for (s in listOf(m.home, m.away)) {
             labels.add(if (Sport.isFollowed(s)) "Ne plus suivre ${s.name}" else "Suivre ${s.name}")
             acts.add {
@@ -215,21 +242,31 @@ class SportScreen(
         Ui.choose(act, m.title, labels) { w -> acts[w]() }
     }
 
-    /** Liste des chaînes de sport : celles qui annoncent le match d'abord. */
+    private fun showOdds(m: Sport.Match) {
+        val books = m.odds?.books.orEmpty()
+        val lines = books.map { b -> "${b.name}   1 ${Odds.fmt(b.home)} · N ${Odds.fmt(b.draw)} · 2 ${Odds.fmt(b.away)}" }
+        Ui.choose(act, "Cotes · ${m.title}", lines) { }
+    }
+
+    /** Liste des chaînes : celles du diffuseur officiel et celles qui annoncent le match d'abord. */
     private fun chooseChannel(m: Sport.Match) {
         if (chans.isEmpty()) {
             Ui.toast(act, "Aucune chaîne de sport trouvée dans ta liste.")
             return
         }
-        val startSec = m.start / 1000
-        fun programme(ch: Item): String? = Epg.cached(ch.id)?.firstOrNull { e -> startSec in (e.start - 2700) until e.end }?.title
-        val sorted = chans.sortedByDescending { if (programme(it) != null) 1 else 0 }.take(80)
+        val startSec = if (m.live) System.currentTimeMillis() / 1000 else m.start / 1000
+        fun programme(ch: Item): String? = Epg.cached(ch.id)?.firstOrNull { e -> startSec in (e.start - 1800) until e.end }?.title
+        val rights = SportChannels.rightsChannels(m.league, chans).toSet()
+        val sorted = chans.sortedWith(
+            compareByDescending<Item> { if (it in rights) 1 else 0 }.thenByDescending { if (programme(it) != null) 1 else 0 }
+        ).take(90)
         val labels = listOf("Chercher une chaîne…") + sorted.map { ch ->
             val num = ch.num?.let { "$it · " } ?: ""
             val prog = programme(ch)
             if (prog != null) "$num${ch.name}  —  $prog" else "$num${ch.name}"
         }
-        Ui.choose(act, "Chaîne pour ${m.title}", labels) { w ->
+        val who = Sport.RIGHTS[m.league.path]?.second?.let { " (diffuseur : $it)" } ?: ""
+        Ui.choose(act, "Chaîne pour ${m.title}$who", labels) { w ->
             if (w == 0) {
                 Ui.textInput(act, "Chercher une chaîne", "", "Nom ou numéro") { q ->
                     if (q.isBlank()) return@textInput
@@ -264,16 +301,17 @@ class SportScreen(
         bg.setColor(s.color ?: 0xFF3A3F55.toInt())
         val text = v.findViewById<TextView>(R.id.crestText)
         val img = v.findViewById<ImageView>(R.id.crestImg)
+        val tag = s.logo ?: s.abbr
         text.background = bg
         text.text = s.abbr.take(3)
+        img.tag = tag
         img.setImageDrawable(null)
-        if (s.logo != null) {
-            Img.fetch(s.logo, 96) { bmp ->
-                if (bmp != null && text.text == s.abbr.take(3)) {
-                    img.setImageBitmap(bmp)
-                    text.text = ""
-                    bg.setColor(0x26FFFFFF)
-                }
+        val logo = s.logo ?: return
+        Img.fetch(logo, 96) { bmp ->
+            if (bmp != null && img.tag == tag) {
+                img.setImageBitmap(bmp)
+                text.text = ""
+                bg.setColor(0x26FFFFFF)
             }
         }
     }
@@ -308,12 +346,7 @@ class SportScreen(
 
         override fun onCreateViewHolder(parent: ViewGroup, viewType: Int): VH {
             val v = LayoutInflater.from(parent.context).inflate(layout, parent, false)
-            if (layout == R.layout.item_match_live) {
-                v.setOnFocusChangeListener { view, has ->
-                    val s = if (has) 1.03f else 1f
-                    view.animate().scaleX(s).scaleY(s).setDuration(120).start()
-                }
-            }
+            if (layout == R.layout.item_match_live) v.setOnFocusChangeListener { view, has -> Fx.focus(view, has, 1.03f) }
             return VH(v)
         }
 
@@ -340,15 +373,26 @@ class SportScreen(
         val name = v.findViewById<TextView>(R.id.chName)
         val logo = v.findViewById<ImageView>(R.id.chLogo)
         val num: TextView? = v.findViewById(R.id.chNum)
-        if (p == null) {
-            name.text = if (!guideReady && Prefs.epgEnabled && chans.isNotEmpty()) "Recherche de la chaîne…" else "Choisir la chaîne"
-            logo.setImageResource(R.drawable.ic_search_small)
-            num?.text = ""
-        } else {
-            val label = if (short) p.channel.name else "Regarder sur ${p.channel.name}"
-            name.text = if (p.sure) label else "$label ?"
-            Img.load(logo, p.channel.icon, R.drawable.ph_live)
-            num?.text = p.channel.num?.let { "ch. $it" } ?: ""
+        val ch = p?.channel
+        val sure = p?.sure == true
+        val brand = p?.broadcaster
+        when {
+            ch != null -> {
+                val label = if (short) ch.name else "Regarder sur ${ch.name}"
+                name.text = if (sure) label else "$label ?"
+                Img.load(logo, ch.icon, R.drawable.ph_live)
+                num?.text = ch.num?.let { "ch. $it" } ?: ""
+            }
+            brand != null -> {
+                name.text = if (short) brand else "Sur $brand · choisir la chaîne"
+                logo.setImageResource(R.drawable.ic_search_small)
+                num?.text = ""
+            }
+            else -> {
+                name.text = if (!guideReady && Prefs.epgEnabled && chans.isNotEmpty()) "Recherche de la chaîne…" else "Choisir la chaîne"
+                logo.setImageResource(R.drawable.ic_search_small)
+                num?.text = ""
+            }
         }
     }
 
@@ -368,6 +412,14 @@ class SportScreen(
         a.setTextColor(if (sa != null && sb != null && sa < sb) dim else bright)
         b.setTextColor(if (sa != null && sb != null && sb < sa) dim else bright)
         v.findViewById<TextView>(R.id.detail).text = m.detail ?: ""
+        val odds = v.findViewById<TextView>(R.id.odds)
+        val o = m.odds
+        if (Prefs.oddsEnabled && o != null) {
+            odds.visibility = View.VISIBLE
+            odds.text = Odds.line(o)
+        } else {
+            odds.visibility = View.GONE
+        }
         crest(v.findViewById(R.id.crestA), m.home)
         crest(v.findViewById(R.id.crestB), m.away)
         bindWatch(v, m, short = false)
@@ -377,7 +429,8 @@ class SportScreen(
         v.findViewById<TextView>(R.id.time).text = m.status
         v.findViewById<TextView>(R.id.day).text = dayLabel(m.start)
         v.findViewById<TextView>(R.id.comp).text = compLabel(m)
-        v.findViewById<TextView>(R.id.teams).text = "${m.home.short}  –  ${m.away.short}"
+        v.findViewById<TextView>(R.id.teamA).text = m.home.short
+        v.findViewById<TextView>(R.id.teamB).text = m.away.short
         crest(v.findViewById(R.id.crestA), m.home)
         crest(v.findViewById(R.id.crestB), m.away)
         bindWatch(v, m, short = true)
@@ -404,5 +457,18 @@ class SportScreen(
         sa.setTextColor(if (aWins) win else lose)
         tb.setTextColor(if (bWins) win else lose)
         sb.setTextColor(if (bWins) win else lose)
+    }
+}
+
+/** Mise en forme des cotes : « 1 2,10 · N 3,40 · 2 3,25 · Unibet ». */
+object Odds {
+    fun fmt(d: Double?): String = if (d == null) "–" else String.format(Locale.FRANCE, "%.2f", d)
+
+    fun line(o: Sport.Odds): String {
+        val parts = ArrayList<String>()
+        parts.add("1 ${fmt(o.home)}")
+        if (o.draw != null) parts.add("N ${fmt(o.draw)}")
+        parts.add("2 ${fmt(o.away)}")
+        return parts.joinToString("  ·  ") + "   " + (if (o.books.size > 1) "meilleures cotes, ${o.source}" else o.source)
     }
 }

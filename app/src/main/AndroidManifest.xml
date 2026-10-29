@@ -41,6 +41,12 @@
 
         <activity android:name=".MovieActivity" android:exported="false" android:screenOrientation="landscape" />
         <activity android:name=".SeriesActivity" android:exported="false" android:screenOrientation="landscape" />
+        <activity
+            android:name=".SearchActivity"
+            android:exported="false"
+            android:screenOrientation="landscape"
+            android:windowSoftInputMode="stateVisible|adjustPan" />
+        <activity android:name=".TeamsActivity" android:exported="false" android:screenOrientation="landscape" />
 
         <activity
             android:name=".SettingsActivity"

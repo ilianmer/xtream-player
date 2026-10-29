@@ -39,7 +39,7 @@ import kotlin.math.max
 import kotlin.math.min
 
 @OptIn(UnstableApi::class)
-class PlayerActivity : Activity() {
+class PlayerActivity : BaseActivity() {
 
     private lateinit var src: Source
     private lateinit var api: XtreamApi
@@ -68,7 +68,74 @@ class PlayerActivity : Activity() {
     private var useAltFormat = false
     private var epgToken = 0
 
-    private val hideOverlay = Runnable { overlay.visibility = View.GONE }
+    private val hideOverlay = Runnable {
+        overlay.visibility = View.GONE
+        if (!alerting) ticker.visibility = View.GONE
+    }
+
+    // ---------- Bandeau des scores ----------
+    private lateinit var ticker: TextView
+    private var tickerItems: List<Sport.Match> = emptyList()
+    private var tickerIndex = 0
+    private var alerting = false
+    private val lastScores = HashMap<String, String>()
+    private val tickerRefresh = object : Runnable {
+        override fun run() {
+            if (isFinishing || !isLive || !Prefs.sportTicker) return
+            Bg.task(this@PlayerActivity, { Sport.get(50_000L) }) { r -> r.getOrNull()?.let { updateTicker(it) } }
+            Bg.main.postDelayed(this, 60_000)
+        }
+    }
+    private val tickerRotate = object : Runnable {
+        override fun run() {
+            if (alerting || overlay.visibility != View.VISIBLE || tickerItems.isEmpty()) return
+            tickerIndex = (tickerIndex + 1) % tickerItems.size
+            paintTicker()
+            Bg.main.postDelayed(this, 4_000)
+        }
+    }
+    private val endAlert = Runnable {
+        alerting = false
+        ticker.setBackgroundResource(R.drawable.glass_dark)
+        ticker.setTextColor(getColor(R.color.text))
+        if (overlay.visibility == View.VISIBLE && tickerItems.isNotEmpty()) paintTicker() else ticker.visibility = View.GONE
+    }
+
+    private fun scoreLine(m: Sport.Match): String {
+        val a = m.home.score ?: "0"
+        val b = m.away.score ?: "0"
+        return "${m.home.short} $a – $b ${m.away.short}  ·  ${m.status}"
+    }
+
+    private fun updateTicker(all: List<Sport.Match>) {
+        val live = all.filter { it.live }
+        val mine = live.filter { Sport.involvesFollowed(it) }
+        val trending = live.filter { !Sport.involvesFollowed(it) }.sortedByDescending { Sport.trend(it) }.take(4)
+        tickerItems = mine + trending
+        // Un score qui change sur un de ces matchs : petite alerte, même bandeau fermé.
+        for (m in tickerItems) {
+            val sc = "${m.home.score}-${m.away.score}"
+            val old = lastScores[m.key]
+            lastScores[m.key] = sc
+            if (old != null && old != sc && !alerting) alert(m)
+        }
+    }
+
+    private fun paintTicker() {
+        val m = tickerItems.getOrNull(tickerIndex) ?: return
+        ticker.text = (if (Sport.involvesFollowed(m)) "Mes équipes  ·  " else "") + scoreLine(m)
+        ticker.visibility = View.VISIBLE
+    }
+
+    private fun alert(m: Sport.Match) {
+        alerting = true
+        ticker.setBackgroundResource(R.drawable.accent_pill)
+        ticker.setTextColor(getColor(R.color.on_accent))
+        ticker.text = "Score ! " + scoreLine(m)
+        ticker.visibility = View.VISIBLE
+        Bg.main.removeCallbacks(endAlert)
+        Bg.main.postDelayed(endAlert, 8_000)
+    }
     private val zapNow = Runnable { play() }
     private var digits = ""
     private val applyDigits = Runnable { zapToNumber() }
@@ -113,6 +180,7 @@ class PlayerActivity : Activity() {
         zapRows[0].alpha = 0.8f
         zapRows[2].alpha = 0.8f
         tvError = findViewById(R.id.tvError)
+        ticker = findViewById(R.id.ticker)
 
         playerView.setShowBuffering(PlayerView.SHOW_BUFFERING_ALWAYS)
         playerView.useController = !isLive
@@ -139,6 +207,10 @@ class PlayerActivity : Activity() {
         if (list.size == 0) return
         initPlayer()
         play()
+        if (isLive && Prefs.sportTicker) {
+            Bg.main.removeCallbacks(tickerRefresh)
+            Bg.main.post(tickerRefresh)
+        }
     }
 
     override fun onStop() {
@@ -146,6 +218,9 @@ class PlayerActivity : Activity() {
         Bg.main.removeCallbacks(hideOverlay)
         Bg.main.removeCallbacks(zapNow)
         Bg.main.removeCallbacks(applyDigits)
+        Bg.main.removeCallbacks(tickerRefresh)
+        Bg.main.removeCallbacks(tickerRotate)
+        Bg.main.removeCallbacks(endAlert)
         player?.release()
         player = null
         Session.index = index
@@ -258,6 +333,11 @@ class PlayerActivity : Activity() {
         overlay.visibility = View.VISIBLE
         Bg.main.removeCallbacks(hideOverlay)
         Bg.main.postDelayed(hideOverlay, 5_000)
+        if (live && !alerting && tickerItems.isNotEmpty() && Prefs.sportTicker) {
+            paintTicker()
+            Bg.main.removeCallbacks(tickerRotate)
+            Bg.main.postDelayed(tickerRotate, 4_000)
+        }
 
         if (!live || !withEpg || !Prefs.epgEnabled) return
         val token = ++epgToken

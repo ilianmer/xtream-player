@@ -42,7 +42,10 @@ object Sport {
         /** Dernier but, sets d'un match de tennis… */
         val detail: String?,
         /** Journée, tour, nom de la soirée de combat… */
-        val round: String?
+        val round: String?,
+        /** Chaînes annoncées par ESPN (souvent américaines, utilisées comme indice). */
+        val broadcasts: List<String> = emptyList(),
+        val odds: Odds? = null
     ) {
         val live: Boolean get() = state == "in"
         val finished: Boolean get() = state == "post"
@@ -50,7 +53,94 @@ object Sport {
         val title: String get() = "${home.short} – ${away.short}"
     }
 
+    /** Cotes 1 / N / 2 en décimal. [books] : détail par bookmaker quand on en a plusieurs. */
+    data class Odds(
+        val home: Double?,
+        val draw: Double?,
+        val away: Double?,
+        val source: String,
+        val books: List<Book> = emptyList()
+    )
+
+    data class Book(val name: String, val home: Double?, val draw: Double?, val away: Double?)
+
     val GROUPS = listOf("Tout", "Football", "Basket", "Rugby", "Tennis", "Combat", "Mes équipes")
+
+    /**
+     * Qui diffuse quoi en France (saison 2026-2027) : mots à chercher dans les noms de chaînes,
+     * et le nom du diffuseur à afficher.
+     */
+    val RIGHTS: Map<String, Pair<List<String>, String>> = mapOf(
+        "fra.1" to (listOf("ligue 1+", "ligue1+", "ligue 1 +", "l1+", "bein") to "Ligue 1+ / beIN Sports"),
+        "fra.2" to (listOf("bein") to "beIN Sports"),
+        "uefa.champions" to (listOf("canal", "bein") to "Canal+"),
+        "uefa.europa" to (listOf("canal") to "Canal+"),
+        "uefa.europa.conf" to (listOf("canal") to "Canal+"),
+        "eng.1" to (listOf("canal") to "Canal+"),
+        "esp.1" to (listOf("dazn", "disney", "espn") to "DAZN / Disney+"),
+        "ita.1" to (listOf("dazn") to "DAZN"),
+        "ger.1" to (listOf("bein") to "beIN Sports"),
+        "fra.coupe_de_france" to (listOf("bein", "france 2", "france 3", "france tv") to "beIN Sports"),
+        "mar.1" to (listOf("arryadia", "aoula", "maroc", "snrt", "2m") to "Arryadia"),
+        "caf.nations" to (listOf("bein", "arryadia") to "beIN Sports"),
+        "uefa.nations" to (listOf("tf1", "m6", "equipe") to "TF1 / L'Équipe"),
+        "fifa.worldq.uefa" to (listOf("tf1", "m6", "equipe") to "TF1 / L'Équipe"),
+        "fifa.friendly" to (listOf("tf1", "m6", "equipe") to "TF1 / L'Équipe"),
+        "nba" to (listOf("bein", "nba", "prime") to "beIN Sports"),
+        "270559" to (listOf("canal", "rugby") to "Canal+"),
+        "271937" to (listOf("bein", "france 2", "france 3", "france tv") to "beIN Sports / France TV"),
+        "180659" to (listOf("france 2", "france tv") to "France 2"),
+        "atp" to (listOf("eurosport", "bein", "tennis") to "Eurosport"),
+        "wta" to (listOf("eurosport", "bein", "tennis") to "Eurosport"),
+        "ufc" to (listOf("rmc", "ufc", "dazn", "fight") to "RMC Sport")
+    )
+
+    /** Grandes équipes : un match qui les concerne est « tendance ». */
+    private val BIG = listOf(
+        "paris saint", "marseille", "lyon", "monaco", "lille", "lens", "nice", "rennes",
+        "real madrid", "barcelona", "atletico", "manchester city", "manchester united", "liverpool", "arsenal", "chelsea", "tottenham",
+        "bayern", "dortmund", "inter", "milan", "juventus", "napoli", "roma", "raja", "wydad", "far rabat",
+        "lakers", "celtics", "warriors", "toulouse", "la rochelle", "racing 92", "france", "maroc", "morocco"
+    )
+    private val LEAGUE_WEIGHT = mapOf(
+        "uefa.champions" to 10, "fra.1" to 8, "eng.1" to 7, "esp.1" to 7, "caf.nations" to 7, "uefa.nations" to 6,
+        "ita.1" to 6, "ger.1" to 6, "uefa.europa" to 5, "nba" to 5, "270559" to 5, "180659" to 8, "fifa.worldq.uefa" to 7,
+        "mar.1" to 4, "ufc" to 4, "atp" to 3, "wta" to 3, "fra.coupe_de_france" to 4
+    )
+
+    /** Note de « tendance » d'un match (compétition, grandes équipes, suspense). */
+    fun trend(m: Match): Int {
+        var s = LEAGUE_WEIGHT[m.league.path] ?: 2
+        val names = normalize(m.home.name + " " + m.away.name)
+        s += BIG.count { names.contains(it) } * 4
+        val a = m.home.score?.toIntOrNull()
+        val b = m.away.score?.toIntOrNull()
+        if (m.live && a != null && b != null && m.league.sport == "soccer" && kotlin.math.abs(a - b) <= 1) s += 2
+        if (involvesFollowed(m)) s += 20
+        return s
+    }
+
+    // ---------- Cache partagé (Accueil, Sport, lecteur) ----------
+
+    @Volatile
+    private var cache: List<Match> = emptyList()
+    @Volatile
+    private var cachedAt = 0L
+
+    /** Derniers matchs connus sans attendre le réseau. */
+    fun cached(): List<Match> = cache
+
+    fun cachedAge(): Long = if (cachedAt == 0L) Long.MAX_VALUE else System.currentTimeMillis() - cachedAt
+
+    /** Matchs à jour : réutilise le cache s'il a moins de [maxAgeMs]. Bloquant. */
+    fun get(maxAgeMs: Long = 60_000L): List<Match> {
+        if (cachedAge() < maxAgeMs) return cache
+        val l = load()
+        val withOdds = if (Prefs.oddsEnabled) OddsApi.attach(l) else l
+        cache = withOdds
+        cachedAt = System.currentTimeMillis()
+        return withOdds
+    }
 
     val LEAGUES = listOf(
         League("soccer", "fra.1", "Ligue 1", "Football"),
@@ -223,8 +313,64 @@ object Sport {
         return Match(
             e.str("id") ?: return null, l, start, state, text, home, away,
             if (state == "in") lastScore(comp) else null,
-            roundOf(e, comp)
+            roundOf(e, comp),
+            broadcasts(comp),
+            espnOdds(comp)
         )
+    }
+
+    private fun broadcasts(comp: JSONObject): List<String> {
+        val out = LinkedHashSet<String>()
+        comp.optJSONArray("broadcasts")?.let { a ->
+            for (i in 0 until a.length()) {
+                val names = a.optJSONObject(i)?.optJSONArray("names") ?: continue
+                for (j in 0 until names.length()) names.optString(j).trim().takeIf { it.isNotEmpty() }?.let { out.add(it) }
+            }
+        }
+        comp.optJSONArray("geoBroadcasts")?.let { a ->
+            for (i in 0 until a.length()) a.optJSONObject(i)?.optJSONObject("media")?.str("shortName")?.let { out.add(it) }
+        }
+        return out.toList()
+    }
+
+    /** Cote américaine (+150 / -120) vers cote décimale (2,50 / 1,83). */
+    fun decimal(moneyLine: Double): Double? = when {
+        moneyLine.isNaN() || moneyLine == 0.0 -> null
+        moneyLine > 0 -> 1 + moneyLine / 100
+        else -> 1 + 100 / -moneyLine
+    }
+
+    private fun espnOdds(comp: JSONObject): Odds? {
+        val o = comp.optJSONArray("odds")?.optJSONObject(0) ?: return null
+        fun ml(key: String): Double? {
+            val x = o.optJSONObject(key) ?: return null
+            val v = x.optDouble("moneyLine", Double.NaN)
+            return decimal(v)
+        }
+        val h = ml("homeTeamOdds")
+        val a = ml("awayTeamOdds")
+        val d = ml("drawOdds")
+        if (h == null && a == null) return null
+        return Odds(h, d, a, o.optJSONObject("provider")?.str("name") ?: "ESPN")
+    }
+
+    /** Équipes d'une compétition (pour la liste « Mes équipes »). Bloquant. */
+    fun teams(l: League): List<Side> {
+        val o = JSONObject(Http.getText("$BASE/${l.sport}/${l.path}/teams"))
+        val arr = o.optJSONArray("sports")?.optJSONObject(0)?.optJSONArray("leagues")?.optJSONObject(0)?.optJSONArray("teams")
+            ?: return emptyList()
+        val out = ArrayList<Side>()
+        for (i in 0 until arr.length()) {
+            val t = arr.optJSONObject(i)?.optJSONObject("team") ?: continue
+            val name = t.str("displayName") ?: continue
+            out.add(
+                Side(
+                    name, t.str("shortDisplayName") ?: name, t.str("abbreviation") ?: initials(name),
+                    t.optJSONArray("logos")?.optJSONObject(0)?.str("href"), color(t.str("color")), null, false
+                )
+            )
+        }
+        return out.sortedBy { normalize(it.name) }
     }
 
     /** « But · Mbappé 64' » ou « Essai · Dupont 49' ». */
@@ -328,6 +474,20 @@ object Sport {
         }
     } ?: emptySet()
 
+    /** Équipes suivies avec leur nom et leur logo, pour les afficher. */
+    fun followedSides(): List<Side> {
+        val info = try {
+            JSONObject(Db.kvGet("sport:teaminfo") ?: "{}")
+        } catch (_: Exception) {
+            JSONObject()
+        }
+        return followed().map { k ->
+            val o = info.optJSONObject(k)
+            val name = o?.str("name") ?: k.replaceFirstChar { it.uppercase() }
+            Side(name, o?.str("short") ?: name, o?.str("abbr") ?: initials(name), o?.str("logo"), null, null, false)
+        }.sortedBy { normalize(it.name) }
+    }
+
     fun isFollowed(side: Side): Boolean = normalize(side.name) in followed()
 
     fun toggleFollow(side: Side): Boolean {
@@ -341,6 +501,14 @@ object Sport {
             true
         }
         Db.kvPut("sport:teams", JSONArray(set.toList()).toString())
+        val info = try {
+            JSONObject(Db.kvGet("sport:teaminfo") ?: "{}")
+        } catch (_: Exception) {
+            JSONObject()
+        }
+        if (added) info.put(k, JSONObject().put("name", side.name).put("short", side.short).put("abbr", side.abbr).put("logo", side.logo ?: ""))
+        else info.remove(k)
+        Db.kvPut("sport:teaminfo", info.toString())
         return added
     }
 
@@ -351,115 +519,240 @@ object Sport {
 }
 
 /**
- * Trouve la chaîne qui diffuse un match : choix mémorisé, sinon recherche des noms d'équipes
- * dans le guide TV des chaînes de sport du fournisseur.
+ * Trouve la chaîne qui diffuse un match : choix mémorisé, sinon le titre du match dans le guide TV
+ * des chaînes du diffuseur officiel (droits TV en France), sinon le diffuseur seul.
  */
 object SportChannels {
-    data class Pick(val channel: Item, val sure: Boolean, val programme: String?)
+    /**
+     * [sure] : le match a été trouvé dans le guide (ou choisi par toi).
+     * [broadcaster] : seulement le nom du diffuseur, sans chaîne précise trouvée.
+     */
+    data class Pick(val channel: Item?, val sure: Boolean, val programme: String?, val broadcaster: String? = null)
 
-    private val pool = Executors.newFixedThreadPool(4)
+    private val pool = Executors.newFixedThreadPool(2)
+    private val workers = Executors.newFixedThreadPool(4)
     private val HINTS = listOf(
-        "bein", "canal", "rmc", "dazn", "eurosport", "equipe", "prime", "foot", "ligue", "sport", "arryadia", "ssc",
-        "espn", "sky", "nba", "ufc", "rugby", "tennis", "match", "arena", "movistar", "la liga", "premier"
+        "bein", "canal", "rmc", "dazn", "eurosport", "equipe", "prime", "foot", "ligue 1", "sport", "arryadia", "ssc",
+        "espn", "nba", "ufc", "rugby", "tennis", "tf1", "m6", "france 2", "france 3", "disney", "aoula", "2m"
     )
-    private val STRONG = listOf("bein", "canal", "rmc", "dazn", "eurosport", "equipe", "prime", "arryadia", "ssc", "foot")
+    private val NOISE = Regex("""\b(4k|uhd|backup|test|vip|24/7|replay|radio|music|kids)\b""")
 
     @Volatile
     private var cachedFor = -1L
     @Volatile
     private var cached: List<Item> = emptyList()
+    @Volatile
+    private var warmedAt = 0L
 
-    /** Chaînes de sport du fournisseur, les plus probables d'abord (au plus [limit]). Bloquant. */
-    fun candidates(src: Long, limit: Int = 120): List<Item> {
+    /** Chaînes de sport du fournisseur (au plus [limit]), les françaises et HD d'abord. Bloquant. */
+    fun candidates(src: Long, limit: Int = 160): List<Item> {
         if (cachedFor == src && cached.isNotEmpty()) return cached
         val seen = HashSet<String>()
         val all = ArrayList<Item>()
         for (h in HINTS) {
-            for (it in Db.page(src, Kind.LIVE, null, h, 0, 200)) if (seen.add(it.id)) all.add(it)
+            for (it in Db.page(src, Kind.LIVE, null, h, 0, 250)) if (seen.add(it.id)) all.add(it)
         }
         fun score(i: Item): Int {
             val n = normalize(i.name)
             var s = 0
-            if (STRONG.any { n.contains(it) }) s += 10
-            if (Regex("""\b(fr|france)\b""").containsMatchIn(n)) s += 4
+            if (Regex("""\b(fr|france|french)\b""").containsMatchIn(n) || n.startsWith("fr")) s += 6
             if (n.contains("hd") || n.contains("fhd")) s += 1
-            if (Regex("""\b(4k|uhd|backup|test|vip|24/7|replay)\b""").containsMatchIn(n)) s -= 3
+            if (NOISE.containsMatchIn(n)) s -= 5
             return s
         }
-        val list = all.sortedByDescending { score(it) }.take(limit)
+        val list = all.filter { !NOISE.containsMatchIn(normalize(it.name)) || score(it) > 0 }.sortedByDescending { score(it) }.take(limit)
         cached = list
         cachedFor = src
         return list
     }
 
-    /** Charge le guide des chaînes candidates en arrière-plan ; [progress] reçoit le nombre chargé. */
-    fun warmUp(api: XtreamApi, chans: List<Item>, done: () -> Unit) {
+    /** Chaînes du diffuseur officiel d'une compétition parmi [chans]. */
+    fun rightsChannels(league: Sport.League, chans: List<Item>): List<Item> {
+        val keys = Sport.RIGHTS[league.path]?.first ?: return emptyList()
+        return chans.filter { ch -> val n = normalize(ch.name); keys.any { n.contains(it) } }
+    }
+
+    /**
+     * Charge le guide des chaînes utiles aux matchs du jour (diffuseurs officiels d'abord).
+     * Au plus une fois toutes les 15 minutes.
+     */
+    fun warmUp(api: XtreamApi, matches: List<Sport.Match>, chans: List<Item>, done: () -> Unit) {
+        if (System.currentTimeMillis() - warmedAt < 15 * 60_000L) {
+            Bg.main.post(done)
+            return
+        }
+        warmedAt = System.currentTimeMillis()
         pool.execute {
-            val tasks = chans.map { ch -> Callable { Epg.load(api, ch.id) } }
+            val wanted = LinkedHashSet<Item>()
+            for (m in matches.filter { !it.finished }) wanted.addAll(rightsChannels(m.league, chans))
+            wanted.addAll(chans.take(60))
+            val tasks = wanted.take(140).map { ch -> Callable { Epg.load(api, ch.id) } }
             try {
-                ScopedPool.run(tasks)
+                workers.invokeAll(tasks, 90, TimeUnit.SECONDS)
             } catch (_: Exception) {
             }
             Bg.main.post(done)
         }
     }
 
-    private object ScopedPool {
-        private val workers = Executors.newFixedThreadPool(4)
-        fun run(tasks: List<Callable<List<EpgEntry>>>) {
-            workers.invokeAll(tasks, 60, TimeUnit.SECONDS)
-        }
-    }
+    private val STOP = Regex("""\b(fc|cf|sc|ac|as|ss|afc|club|de|du|la|le|les|real|united|city|sporting|stade|olympique|racing)\b""")
 
-    private fun tokens(s: Sport.Side): List<String> {
+    fun tokens(s: Sport.Side): List<String> {
         val out = LinkedHashSet<String>()
         for (n in listOf(s.name, s.short)) {
-            val t = normalize(n).replace(Regex("""\b(fc|cf|sc|ac|as|ss|afc|club|de|du|la|le|les|olympique|real|united|city)\b"""), " ")
-                .replace(Regex("""[^a-z0-9 ]"""), " ").replace(Regex("""\s+"""), " ").trim()
+            val base = normalize(n).replace(Regex("""[^a-z0-9 ]"""), " ").replace(Regex("""\s+"""), " ").trim()
+            val t = STOP.replace(base, " ").replace(Regex("""\s+"""), " ").trim()
             if (t.length >= 4) out.add(t)
-            // Mot le plus distinctif : « marseille », « barcelona »…
             t.split(' ').filter { it.length >= 5 }.maxByOrNull { it.length }?.let { out.add(it) }
         }
-        val abbr = s.abbr.lowercase()
-        if (abbr.length >= 3 && abbr in listOf("psg", "om", "ol", "losc", "ogcn", "asse")) out.add(abbr)
-        if (normalize(s.name).contains("paris saint")) out.add("psg")
+        val n = normalize(s.name)
+        if (n.contains("paris saint")) out.addAll(listOf("psg", "paris sg", "paris saint germain"))
+        if (n.contains("marseille")) out.add("om")
+        if (n.contains("lyon")) out.add("ol")
+        if (n.contains("manchester city")) out.add("man city")
+        if (n.contains("manchester united")) out.add("man united")
         return out.toList()
     }
 
     private fun hit(title: String, toks: List<String>): Boolean {
-        val t = " " + normalize(title).replace(Regex("""[^a-z0-9 ]"""), " ") + " "
+        val t = " " + normalize(title).replace(Regex("""[^a-z0-9 ]"""), " ").replace(Regex("""\s+"""), " ") + " "
         return toks.any { k -> t.contains(" $k ") || (k.length >= 6 && t.contains(k)) }
     }
 
-    /** Meilleure chaîne pour ce match d'après le guide déjà chargé (ou le choix mémorisé). */
+    /** Programme qui couvre le match (le direct pour un match en cours, le coup d'envoi sinon). */
+    private fun covering(l: List<EpgEntry>, m: Sport.Match): List<EpgEntry> {
+        val now = System.currentTimeMillis() / 1000
+        val t = if (m.live) now else m.start / 1000
+        return l.filter { e -> e.start > 0 && e.end > e.start && t >= e.start - 30 * 60 && t < e.end }
+    }
+
+    /** Meilleure chaîne pour ce match. Ne bloque pas : utilise seulement le guide déjà chargé. */
     fun pick(src: Long, m: Sport.Match, chans: List<Item>): Pick? {
         Db.kvGet("sport:m:${m.key}")?.let { id -> Db.find(src, Kind.LIVE, id)?.let { return Pick(it, true, null) } }
         val ta = tokens(m.home)
         val tb = tokens(m.away)
-        val startSec = m.start / 1000
+        val rights = rightsChannels(m.league, chans)
         var best: Pick? = null
         var bestScore = 0
-        for (ch in chans) {
-            val l = Epg.cached(ch.id) ?: continue
-            for (e in l) {
-                if (e.end <= 0 || e.start <= 0) continue
-                if (startSec < e.start - 45 * 60 || startSec > e.end) continue
-                val a = hit(e.title, ta)
-                val b = hit(e.title, tb)
-                val sc = (if (a) 2 else 0) + (if (b) 2 else 0)
-                if (sc > bestScore) {
-                    bestScore = sc
-                    best = Pick(ch, sc >= 4, e.title)
+        // Les chaînes du diffuseur officiel passent en premier, à score égal.
+        for ((rank, list) in listOf(rights, chans).withIndex()) {
+            for (ch in list) {
+                val l = Epg.cached(ch.id) ?: continue
+                for (e in covering(l, m)) {
+                    val a = hit(e.title + " " + e.desc, ta)
+                    val b = hit(e.title + " " + e.desc, tb)
+                    // Les deux équipes citées = certain ; une seule équipe sur la chaîne du diffuseur = probable.
+                    val sc = when {
+                        a && b -> 10
+                        (a || b) && rank == 0 -> 6
+                        else -> 0
+                    }
+                    if (sc > bestScore) {
+                        bestScore = sc
+                        best = Pick(ch, sc >= 10, e.title)
+                    }
                 }
             }
+            if (bestScore >= 10) break
         }
         if (best != null) return best
-        Db.kvGet("sport:l:${m.league.path}")?.let { id -> Db.find(src, Kind.LIVE, id)?.let { return Pick(it, false, null) } }
-        return null
+        // Rien dans le guide : on indique au moins le diffuseur officiel, sans inventer de chaîne.
+        val label = Sport.RIGHTS[m.league.path]?.second
+        val esp = m.broadcasts.firstOrNull()
+        return if (label != null || esp != null) Pick(null, false, null, label ?: esp) else null
     }
 
     fun remember(m: Sport.Match, ch: Item) {
         Db.kvPut("sport:m:${m.key}", ch.id)
-        Db.kvPut("sport:l:${m.league.path}", ch.id)
+    }
+}
+
+/** Cotes de plusieurs bookmakers via The Odds API (clé gratuite facultative), mises en cache 5 minutes. */
+object OddsApi {
+    private val KEYS = mapOf(
+        "fra.1" to "soccer_france_ligue_one", "fra.2" to "soccer_france_ligue_two",
+        "uefa.champions" to "soccer_uefa_champs_league", "uefa.europa" to "soccer_uefa_europa_league",
+        "uefa.europa.conf" to "soccer_uefa_europa_conference_league", "eng.1" to "soccer_epl",
+        "esp.1" to "soccer_spain_la_liga", "ita.1" to "soccer_italy_serie_a", "ger.1" to "soccer_germany_bundesliga",
+        "nba" to "basketball_nba", "ufc" to "mma_mixed_martial_arts"
+    )
+    private class Ev(val home: String, val away: String, val books: List<Sport.Book>)
+    private val cache = java.util.concurrent.ConcurrentHashMap<String, Pair<Long, List<Ev>>>()
+
+    private fun key(n: String) = normalize(n).replace(Regex("[^a-z0-9]"), "")
+
+    private fun same(a: String, b: String): Boolean {
+        val x = key(a)
+        val y = key(b)
+        if (x.isEmpty() || y.isEmpty()) return false
+        if (x == y || x.contains(y) || y.contains(x)) return true
+        val ta = normalize(a).split(' ').filter { it.length >= 5 }.toSet()
+        val tb = normalize(b).split(' ').filter { it.length >= 5 }.toSet()
+        return ta.intersect(tb).isNotEmpty()
+    }
+
+    private fun events(sportKey: String): List<Ev> {
+        cache[sportKey]?.let { (at, l) -> if (System.currentTimeMillis() - at < 5 * 60_000L) return l }
+        val k = Prefs.oddsKey.trim()
+        val url = "https://api.the-odds-api.com/v4/sports/$sportKey/odds?apiKey=${java.net.URLEncoder.encode(k, "UTF-8")}" +
+            "&regions=eu&markets=h2h&oddsFormat=decimal"
+        val arr = JSONArray(Http.getText(url))
+        val out = ArrayList<Ev>()
+        for (i in 0 until arr.length()) {
+            val e = arr.optJSONObject(i) ?: continue
+            val home = e.str("home_team") ?: continue
+            val away = e.str("away_team") ?: continue
+            val books = ArrayList<Sport.Book>()
+            val bs = e.optJSONArray("bookmakers") ?: JSONArray()
+            for (j in 0 until bs.length()) {
+                val b = bs.optJSONObject(j) ?: continue
+                val outcomes = b.optJSONArray("markets")?.optJSONObject(0)?.optJSONArray("outcomes") ?: continue
+                var h: Double? = null
+                var a: Double? = null
+                var d: Double? = null
+                for (o in 0 until outcomes.length()) {
+                    val x = outcomes.optJSONObject(o) ?: continue
+                    val price = x.optDouble("price", Double.NaN).takeIf { !it.isNaN() }
+                    when (x.str("name")) {
+                        home -> h = price
+                        away -> a = price
+                        else -> d = price
+                    }
+                }
+                books.add(Sport.Book(b.str("title") ?: "?", h, d, a))
+            }
+            out.add(Ev(home, away, books))
+        }
+        cache[sportKey] = System.currentTimeMillis() to out
+        return out
+    }
+
+    /** Ajoute les cotes aux matchs en cours ou du jour (clé The Odds API si renseignée, sinon cotes ESPN). */
+    fun attach(matches: List<Sport.Match>): List<Sport.Match> {
+        if (Prefs.oddsKey.isBlank()) return matches
+        val soon = System.currentTimeMillis() + 18 * 3_600_000L
+        val needed = matches.filter { !it.finished && it.start < soon }.mapNotNull { KEYS[it.league.path] }.toSet()
+        val byKey = HashMap<String, List<Ev>>()
+        for (k in needed) {
+            try {
+                byKey[k] = events(k)
+            } catch (_: Exception) {
+            }
+        }
+        return matches.map { m ->
+            val evs = byKey[KEYS[m.league.path] ?: ""] ?: return@map m
+            val ev = evs.firstOrNull { same(it.home, m.home.name) && same(it.away, m.away.name) }
+                ?: evs.firstOrNull { same(it.home, m.away.name) && same(it.away, m.home.name) }
+                ?: return@map m
+            val swapped = !same(ev.home, m.home.name)
+            val books = ev.books.map { b -> if (swapped) b.copy(home = b.away, away = b.home) else b }
+            if (books.isEmpty()) return@map m
+            m.copy(
+                odds = Sport.Odds(
+                    books.mapNotNull { it.home }.maxOrNull(), books.mapNotNull { it.draw }.maxOrNull(),
+                    books.mapNotNull { it.away }.maxOrNull(), "${books.size} bookmakers", books.sortedBy { it.name }
+                )
+            )
+        }
     }
 }

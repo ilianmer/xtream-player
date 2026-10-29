@@ -92,12 +92,8 @@ class ItemAdapter(
         val layout = if (viewType == 0) R.layout.item_live else R.layout.item_poster
         val v = LayoutInflater.from(parent.context).inflate(layout, parent, false)
         v.findViewById<View>(R.id.frame)?.clipToOutline = true
-        val zoom = if (viewType == 0) 1.03f else 1.07f
-        v.setOnFocusChangeListener { view, hasFocus ->
-            val s = if (hasFocus) zoom else 1f
-            view.animate().scaleX(s).scaleY(s).setDuration(120).start()
-            view.elevation = if (hasFocus) 8f else 0f
-        }
+        val zoom = if (viewType == 0) 1.03f else 1.08f
+        v.setOnFocusChangeListener { view, hasFocus -> Fx.focus(view, hasFocus, zoom) }
         return VH(v)
     }
 
@@ -198,10 +194,7 @@ class EpisodeAdapter(
     override fun onCreateViewHolder(parent: ViewGroup, viewType: Int): VH {
         val v = LayoutInflater.from(parent.context).inflate(R.layout.item_episode, parent, false)
         v.findViewById<View>(R.id.frame).clipToOutline = true
-        v.setOnFocusChangeListener { view, hasFocus ->
-            val s = if (hasFocus) 1.02f else 1f
-            view.animate().scaleX(s).scaleY(s).setDuration(120).start()
-        }
+        v.setOnFocusChangeListener { view, hasFocus -> Fx.focus(view, hasFocus, 1.02f) }
         return VH(v)
     }
 
@@ -276,8 +269,7 @@ class SmallPosterAdapter(
         Img.load(h.img, item.icon, R.drawable.ph_poster)
         h.itemView.setOnClickListener { onClick(item) }
         h.itemView.setOnFocusChangeListener { view, has ->
-            val s = if (has) 1.08f else 1f
-            view.animate().scaleX(s).scaleY(s).setDuration(120).start()
+            Fx.focus(view, has, 1.08f)
             onFocus(if (has) item else null)
         }
     }

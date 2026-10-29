@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="utf-8"?>
+<layer-list xmlns:android="http://schemas.android.com/apk/res/android">
+    <item><shape><solid android:color="#140808" /></shape></item>
+    <item><shape><gradient android:type="radial" android:centerX="0.2" android:centerY="0.25" android:gradientRadius="560dp" android:startColor="#99A3262A" android:endColor="#00A3262A" /></shape></item>
+    <item><shape><gradient android:type="radial" android:centerX="0.85" android:centerY="0.85" android:gradientRadius="560dp" android:startColor="#80401018" android:endColor="#00401018" /></shape></item>
+    <item android:drawable="@drawable/pat_combat" />
+    <item><shape><solid android:color="#59060A0E" /></shape></item>
+</layer-list>

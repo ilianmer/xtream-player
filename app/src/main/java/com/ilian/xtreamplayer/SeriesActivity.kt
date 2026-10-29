@@ -11,7 +11,7 @@ import androidx.recyclerview.widget.RecyclerView
 import org.json.JSONObject
 
 /** Fiche d'une série : saisons, épisodes, reprise. */
-class SeriesActivity : Activity() {
+class SeriesActivity : BaseActivity() {
 
     private lateinit var src: Source
     private lateinit var api: XtreamApi
@@ -84,9 +84,26 @@ class SeriesActivity : Activity() {
         rvSeasons.layoutManager = LinearLayoutManager(this, LinearLayoutManager.HORIZONTAL, false)
         rvSeasons.adapter = seasonAdapter
         rvSeasons.itemAnimator = null
+        // Saisons : gauche / droite restent dans la rangée et la font défiler (plus de saut vers le bouton retour)
+        Fx.lockRow(rvSeasons)
         rvEpisodes.layoutManager = LinearLayoutManager(this)
         rvEpisodes.adapter = episodeAdapter
         rvEpisodes.itemAnimator = null
+        // Haut depuis le premier épisode : la saison sélectionnée
+        rvEpisodes.addOnChildAttachStateChangeListener(object : RecyclerView.OnChildAttachStateChangeListener {
+            override fun onChildViewAttachedToWindow(view: View) {
+                view.setOnKeyListener { v, code, e ->
+                    if (e.action == android.view.KeyEvent.ACTION_DOWN && code == android.view.KeyEvent.KEYCODE_DPAD_UP &&
+                        rvEpisodes.getChildAdapterPosition(v) == 0 && seasonAdapter.itemCount > 0
+                    ) {
+                        Fx.focusAt(rvSeasons, seasonAdapter.selected.coerceAtLeast(0))
+                        true
+                    } else false
+                }
+            }
+
+            override fun onChildViewDetachedFromWindow(view: View) {}
+        })
 
         tvStatus.text = "Chargement des épisodes…"
         btnFav.requestFocus()
@@ -136,6 +153,17 @@ class SeriesActivity : Activity() {
         }
         paintMeta()
         si.backdrop?.let { showBackdrop(it) }
+        if (!Tmdb.enabled && (si.backdrop == null || tvPlot.text.isNullOrBlank())) {
+            Bg.task(this, { FreeMeta.series(series) }) { r ->
+                val f = r.getOrNull() ?: return@task
+                if (si.backdrop == null) f.backdrop?.let { showBackdrop(it) }
+                if (tvPlot.text.isNullOrBlank()) f.plot?.let { tvPlot.text = it }
+                if (series.icon.isNullOrBlank() && si.cover == null) f.poster?.let {
+                    Img.load(ivCover, it, R.drawable.ph_poster, 400)
+                    Img.blurred(ivBg, it)
+                }
+            }
+        }
         val needTmdb = Tmdb.enabled && (tvPlot.text.isNullOrBlank() || si.backdrop == null || (series.icon.isNullOrBlank() && si.cover == null))
         if (needTmdb) {
             val forTmdb = series.copy(tmdb = si.tmdb ?: series.tmdb)
@@ -157,6 +185,7 @@ class SeriesActivity : Activity() {
         }
         tvStatus.visibility = View.GONE
         seasonAdapter.items = si.seasons.map { Category(it.number.toString(), "Saison ${it.number}") }
+        rvSeasons.setOnFocusChangeListener(null)
         paintResume()
         // On ouvre la saison où l'on s'était arrêté.
         val start = resumeTarget?.let { t -> si.seasons.indexOfFirst { s -> s.episodes.any { it.id == t.id } } }?.takeIf { it >= 0 } ?: 0
