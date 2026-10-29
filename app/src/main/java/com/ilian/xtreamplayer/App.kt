@@ -10,6 +10,10 @@ class App : Application() {
         // Le bon profil dès le démarrage (même si Android relance l'appli directement sur un écran)
         try {
             Session.profile()
+            if (!Features.DOWNLOADS && !Prefs.downloadsPurged) {
+                Downloads.purgeAll(this)
+                Prefs.downloadsPurged = true
+            }
             if (!Prefs.langsStrict) {
                 Langs.tightenAll()
                 Prefs.langsStrict = true

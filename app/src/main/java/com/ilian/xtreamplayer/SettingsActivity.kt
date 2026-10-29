@@ -24,11 +24,11 @@ class SettingsActivity : BaseActivity() {
 
     private val sections = listOf(
         "Sources IPTV", "Réglages IPTV", "Interface", "Sport", "Protection multi-écran", "Lecteur vidéo", "Téléchargements"
-    )
+    ).let { if (Features.DOWNLOADS) it else it.dropLast(1) }
     private val icons = listOf(
         R.drawable.ic_menu_sources, R.drawable.ic_menu_iptv, R.drawable.ic_menu_ui, R.drawable.ic_menu_sport,
         R.drawable.ic_menu_shield, R.drawable.ic_menu_player, R.drawable.ic_download
-    )
+    ).let { if (Features.DOWNLOADS) it else it.dropLast(1) }
     private lateinit var tvSection: TextView
 
     override fun onCreate(savedInstanceState: Bundle?) {

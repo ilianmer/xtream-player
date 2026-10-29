@@ -7,6 +7,11 @@ import android.os.Environment
 import java.util.Locale
 
 /** Téléchargements hors ligne, gérés par le gestionnaire de téléchargements d'Android. */
+/** Fonctions activables. Les téléchargements sont retirés pour l'instant (appli TV) : remettre true pour les réactiver. */
+object Features {
+    const val DOWNLOADS = false
+}
+
 object Downloads {
     data class Status(val row: Db.DlRow, val state: Int, val done: Long, val total: Long, val localUri: String?) {
         val finished: Boolean get() = state == DownloadManager.STATUS_SUCCESSFUL && localUri != null
@@ -60,6 +65,7 @@ object Downloads {
     }
 
     fun statuses(ctx: Context): List<Status> {
+        if (!Features.DOWNLOADS) return emptyList()
         val rows = Db.downloads()
         if (rows.isEmpty()) return emptyList()
         val byId = HashMap<Long, Status>()
@@ -83,6 +89,11 @@ object Downloads {
 
     fun find(ctx: Context, src: Long, item: Item): Status? =
         statuses(ctx).firstOrNull { it.row.sourceId == src && it.row.item.kind == item.kind && it.row.item.id == item.id }
+
+    /** Téléchargements désactivés : on annule ceux en cours et on libère la place des fichiers. */
+    fun purgeAll(ctx: Context) {
+        for (r in Db.downloads()) remove(ctx, r.dmId)
+    }
 
     /** Annule le téléchargement et supprime le fichier. */
     fun remove(ctx: Context, dmId: Long) {

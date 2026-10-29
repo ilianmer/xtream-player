@@ -26,6 +26,11 @@ object Prefs {
         get() = sp.getLong("update_snooze", 0L)
         set(v) = sp.edit().putLong("update_snooze", v).apply()
 
+    /** Téléchargements retirés : anciens fichiers effacés une fois. */
+    var downloadsPurged: Boolean
+        get() = bool("downloads_purged_v1", false)
+        set(v) = putBool("downloads_purged_v1", v)
+
     /** Préréglages de langue passés en mode strict (migration faite une fois). */
     var langsStrict: Boolean
         get() = bool("langs_strict_v1", false)
