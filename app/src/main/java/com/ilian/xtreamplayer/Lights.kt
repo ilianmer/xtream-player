@@ -44,7 +44,12 @@ class LogOutput : LightOutput {
  * [role] : 0 = automatique (selon l'ordre : 1-2 basses, 3-4 médiums, 5-6 aigus), 1 = basses, 2 = médiums, 3 = aigus.
  */
 data class Lamp(val brand: String, val ip: String, val id: String, val role: Int = 0, val extra: Int = 0) {
-    val label: String get() = "$brand · ${ip.substringAfterLast('.').let { "…$it" }}"
+    /** Spot Bluetooth : [ip] contient alors son adresse Bluetooth et [id] le nom annoncé. */
+    val ble: Boolean get() = ip.contains(':')
+
+    val label: String
+        get() = if (ble) "${id.ifBlank { brand }.take(22)} · Bluetooth …${ip.takeLast(5)}"
+        else "$brand · ${ip.substringAfterLast('.').let { "…$it" }}"
 
     fun json(): JSONObject = JSONObject().put("brand", brand).put("ip", ip).put("id", id).put("role", role).put("extra", extra)
 
@@ -54,8 +59,9 @@ data class Lamp(val brand: String, val ip: String, val id: String, val role: Int
 }
 
 /**
- * Objets connectés en Wi-Fi local, sans cloud (trop lent pour suivre la musique) :
- * WiZ, Govee (contrôle LAN activé dans l'appli Govee), LIFX, Yeelight (contrôle LAN activé), WLED, Magic Home.
+ * Objets connectés pilotés en direct, sans cloud (trop lent pour suivre la musique).
+ * Wi-Fi local : WiZ, Govee (contrôle LAN activé dans l'appli Govee), LIFX, Yeelight (contrôle LAN activé), WLED, Magic Home.
+ * Bluetooth : Govee, Philips Hue, rubans et ampoules LED génériques (voir LightsBle.kt).
  */
 object Lamps {
     const val WIZ = "WiZ"
@@ -64,7 +70,11 @@ object Lamps {
     const val YEELIGHT = "Yeelight"
     const val WLED = "WLED"
     const val MAGIC = "Magic Home"
+    const val BT_LED = "LED Bluetooth"
+    const val BT_GOVEE = "Govee Bluetooth"
+    const val BT_HUE = "Hue Bluetooth"
     val BRANDS = listOf(WIZ, GOVEE, LIFX, YEELIGHT, WLED, MAGIC)
+    val BT_BRANDS = listOf(BT_LED, BT_GOVEE, BT_HUE)
 
     fun saved(): List<Lamp> = try {
         val a = JSONArray(Prefs.lightsDevices)
@@ -98,9 +108,17 @@ object Lamps {
         return out.distinct()
     }
 
-    /** Cherche les spots compatibles sur le Wi-Fi (bloquant, environ 3,5 s). */
+    /** Cherche les spots compatibles sur le Wi-Fi et en Bluetooth (bloquant, environ 5 s). */
     fun scan(ctx: Context, timeoutMs: Long = 3_500): List<Lamp> {
         val found = ConcurrentHashMap<String, Lamp>()
+        val bleFound = ArrayList<Lamp>()
+        val ble = Thread {
+            try {
+                val l = Ble.scan(ctx)
+                synchronized(bleFound) { bleFound.addAll(l) }
+            } catch (_: Exception) {
+            }
+        }.apply { isDaemon = true; start() }
         val wifi = ctx.applicationContext.getSystemService(Context.WIFI_SERVICE) as? WifiManager
         val lock = try {
             wifi?.createMulticastLock("xtream-lights")?.apply { setReferenceCounted(false); acquire() }
@@ -145,6 +163,7 @@ object Lamps {
             try {
                 wled.join(800)
                 govee.join(800)
+                ble.join(3_000)
             } catch (_: Exception) {
             }
             try {
@@ -152,7 +171,8 @@ object Lamps {
             } catch (_: Exception) {
             }
         }
-        return found.values.sortedWith(compareBy({ it.brand }, { it.ip.substringAfterLast('.').toIntOrNull() ?: 0 }))
+        synchronized(bleFound) { for (l in bleFound) found.putIfAbsent(l.ip, l) }
+        return found.values.sortedWith(compareBy({ it.ble }, { it.brand }, { it.ip.substringAfterLast('.').toIntOrNull() ?: 0 }, { it.ip }))
     }
 
     private fun trySend(s: DatagramSocket, data: ByteArray, to: InetAddress, port: Int) {
@@ -283,6 +303,7 @@ object Lamps {
     fun blink(ctx: Context, lamp: Lamp) {
         val out = MultiOutput(ctx.applicationContext, listOf(lamp.copy(role = 0)))
         try {
+            out.awaitReady(8_000)
             repeat(3) {
                 out.sendOne(0xFFFFFF, 1f)
                 Thread.sleep(320)
@@ -299,10 +320,13 @@ object Lamps {
 
 // ---------- Pilotes par marque ----------
 
-private abstract class Driver(val lamp: Lamp) {
+internal abstract class Driver(val lamp: Lamp) {
     /** [rgb] couleur pleine, [level] intensité 0..1. */
     abstract fun set(rgb: Int, level: Float)
     open fun close() {}
+
+    /** Prêt à recevoir des couleurs (le Bluetooth met une à trois secondes à se connecter). */
+    open fun ready(): Boolean = true
 
     protected fun scaled(rgb: Int, level: Float): Triple<Int, Int, Int> {
         val l = level.coerceIn(0f, 1f)
@@ -538,6 +562,7 @@ class MultiOutput(ctx: Context, lamps: List<Lamp>) : LightOutput {
                     Lamps.WLED -> WledDriver(l, udp)
                     Lamps.MAGIC -> MagicDriver(l)
                     Lamps.YEELIGHT -> YeelightDriver(l)
+                    Lamps.BT_LED, Lamps.BT_GOVEE, Lamps.BT_HUE -> BleDriver(ctx, l)
                     else -> null
                 }
             } catch (_: Exception) {
@@ -575,6 +600,15 @@ class MultiOutput(ctx: Context, lamps: List<Lamp>) : LightOutput {
                 drivers[i].set(rgb, lv)
             } catch (_: Exception) {
             }
+        }
+    }
+
+    /** Attend que les spots Bluetooth soient connectés (test, clignotement), au plus [maxMs]. */
+    fun awaitReady(maxMs: Long) {
+        val end = android.os.SystemClock.uptimeMillis() + maxMs
+        try {
+            while (drivers.any { !it.ready() } && android.os.SystemClock.uptimeMillis() < end) Thread.sleep(100)
+        } catch (_: InterruptedException) {
         }
     }
 

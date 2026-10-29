@@ -124,6 +124,11 @@ class SettingsActivity : BaseActivity() {
         menuViews.getOrNull(s)?.requestFocus()
     }
 
+    override fun onRequestPermissionsResult(requestCode: Int, permissions: Array<out String>, grantResults: IntArray) {
+        super.onRequestPermissionsResult(requestCode, permissions, grantResults)
+        LightsSettings.onPermissionResult(requestCode)
+    }
+
     @Deprecated("Deprecated in Java")
     override fun onBackPressed() {
         // Retour depuis la partie droite : on revient au menu.
