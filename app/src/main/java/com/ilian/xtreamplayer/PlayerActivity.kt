@@ -41,6 +41,8 @@ import kotlin.math.min
 @OptIn(UnstableApi::class)
 class PlayerActivity : BaseActivity() {
 
+    override val edgeBump = false
+
     private lateinit var src: Source
     private lateinit var api: XtreamApi
     private lateinit var playerView: PlayerView
