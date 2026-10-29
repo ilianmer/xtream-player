@@ -9,7 +9,7 @@
 
     <LinearLayout
         android:id="@+id/cell"
-        android:layout_width="160dp"
+        android:layout_width="188dp"
         android:layout_height="match_parent"
         android:background="@drawable/guide_cell_bg"
         android:duplicateParentState="true"
@@ -21,13 +21,14 @@
         <TextView
             android:id="@+id/num"
             style="@style/Txt"
-            android:layout_width="26dp"
+            android:layout_width="wrap_content"
             android:layout_height="wrap_content"
+            android:minWidth="22dp"
             android:fontFeatureSettings="tnum"
             android:gravity="end"
-            android:singleLine="true"
+            android:maxLines="1"
             android:textColor="@color/text_faint"
-            android:textSize="12sp" />
+            android:textSize="11sp" />
 
         <ImageView
             android:id="@+id/img"

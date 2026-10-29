@@ -51,7 +51,22 @@ class HomeScreen(
     private val heroDots: LinearLayout = root.findViewById(R.id.heroDots)
     private val heroEmpty: View = root.findViewById(R.id.heroEmpty)
 
-    private val rowTitle: TextView = root.findViewById(R.id.rowTitle)
+    private val rowTabs: View = root.findViewById(R.id.rowTabs)
+    private val rowEmpty: TextView = root.findViewById(R.id.rowEmpty)
+    /** Rangée du bas : en cours, favoris ou dernières sorties (choix mémorisé par profil). */
+    private val rowTabViews: Map<String, TextView> = mapOf(
+        ROW_RESUME to root.findViewById(R.id.rowTabResume),
+        ROW_FAV to root.findViewById(R.id.rowTabFav),
+        ROW_LATEST to root.findViewById(R.id.rowTabLatest)
+    )
+    private var rowMode = Db.kvGet(Db.pkey("home_row")) ?: ROW_RESUME
+    private var pendingRow: String? = null
+    private val switchRow = Runnable {
+        val m = pendingRow ?: return@Runnable
+        if (m != rowMode && rowTabViews[m]?.hasFocus() == true) setRowMode(m)
+    }
+    /** Prochain épisode des séries terminées (« Prochain : S2 · É6 »), calculé une fois. */
+    private val nextLabels = HashMap<String, String>()
     private val rvResume: RecyclerView = root.findViewById(R.id.rvResume)
     private val resumeAdapter = ResumeAdapter()
 
@@ -115,6 +130,36 @@ class HomeScreen(
         rvResume.adapter = resumeAdapter
         rvResume.itemAnimator = null
         Fx.lockRow(rvResume, escapeLeft = true)
+        for ((m, v) in rowTabViews) {
+            v.isSelected = m == rowMode
+            // Comme les onglets du haut : on change en passant dessus, OK descend dans la rangée
+            v.setOnFocusChangeListener { _, has ->
+                Bg.main.removeCallbacks(switchRow)
+                if (has && m != rowMode) {
+                    pendingRow = m
+                    Bg.main.postDelayed(switchRow, 350)
+                }
+            }
+            v.setOnClickListener {
+                Bg.main.removeCallbacks(switchRow)
+                if (m != rowMode) setRowMode(m)
+                rvResume.post { rvResume.getChildAt(0)?.requestFocus() }
+            }
+        }
+        // En arrivant sur ces onglets depuis ailleurs, on se pose sur celui en cours
+        root.viewTreeObserver.addOnGlobalFocusChangeListener { old, new ->
+            if (new != null && new.parent === rowTabs && (old == null || old.parent !== rowTabs) && rowTabViews[rowMode] !== new) {
+                rowTabViews[rowMode]?.requestFocus()
+            }
+        }
+    }
+
+    private fun setRowMode(m: String) {
+        rowMode = m
+        Db.kvPut(Db.pkey("home_row"), m)
+        for ((k, v) in rowTabViews) v.isSelected = k == m
+        fillResume()
+        rvResume.scrollToPosition(0)
     }
 
     fun start() {
@@ -421,10 +466,37 @@ class HomeScreen(
     // ---------- Reprendre la lecture ----------
 
     /** Une carte de la rangée : film ou épisode en cours, ou série à poursuivre. */
-    private class Entry(val item: Item, val title: String, val sub: String, val progress: Float?, val series: Item?, val updated: Long)
+    private class Entry(val item: Item, val title: String, var sub: String, val progress: Float?, val series: Item?, val updated: Long)
 
     private fun fillResume() {
+        when (rowMode) {
+            ROW_FAV -> fillList(
+                (Db.favorites(src.id, Kind.MOVIE) + Db.favorites(src.id, Kind.SERIES)),
+                "Ajoute des films ou des séries à tes favoris (bouton + ou appui long) : ils apparaîtront ici."
+            )
+            ROW_LATEST -> fillList(
+                (Db.latest(src.id, Kind.MOVIE, 25) + Db.latest(src.id, Kind.SERIES, 25)).sortedByDescending { it.added }.take(30),
+                "Aucune nouveauté dans cette source."
+            )
+            else -> fillInProgress()
+        }
+    }
+
+    /** Favoris ou dernières sorties : cartes simples, OK ouvre la fiche. */
+    private fun fillList(items: List<Item>, empty: String) {
+        val out = items.map { i ->
+            val kindLabel = if (i.kind == Kind.SERIES) "Série" else "Film"
+            Entry(i, Tmdb.cleanTitle(i.name).first, listOfNotNull(kindLabel, Meta.rating(i.rating)).joinToString(" · "), null,
+                if (i.kind == Kind.SERIES) i else null, i.added)
+        }
+        rowEmpty.text = empty
+        rowEmpty.visibility = if (out.isEmpty()) View.VISIBLE else View.GONE
+        resumeAdapter.set(out)
+    }
+
+    private fun fillInProgress() {
         val out = ArrayList<Entry>()
+        val missing = ArrayList<Pair<String, String>>()
         for (r in Db.resume(src.id, 20, Kind.MOVIE)) {
             val m = Db.find(src.id, Kind.MOVIE, r.item.id) ?: r.item
             out.add(Entry(m, Tmdb.cleanTitle(m.name).first, remaining(r.dur - r.pos), if (r.dur > 0) r.pos.toFloat() / r.dur else null, null, r.updated))
@@ -433,21 +505,37 @@ class HomeScreen(
             val s = Db.find(src.id, Kind.SERIES, sid) ?: continue
             val se = SE.find(r.item.extra ?: "")?.let { "S${it.groupValues[1]} · É${it.groupValues[2]}" } ?: ""
             if (r.pos >= 0) {
+                // Épisode commencé : saison, épisode et temps restant
                 out.add(Entry(r.item, Tmdb.cleanTitle(s.name).first, listOf(se, remaining(r.dur - r.pos)).filter { it.isNotEmpty() }.joinToString(" · "),
                     if (r.dur > 0) r.pos.toFloat() / r.dur else null, s, r.updated))
             } else {
-                out.add(Entry(s, Tmdb.cleanTitle(s.name).first, "Épisode suivant", null, s, r.updated))
+                // Épisode terminé : le prochain à regarder (calculé avec la liste des épisodes)
+                val label = nextLabels[sid] ?: (if (se.isNotEmpty()) "Vu : $se · la suite" else "Épisode suivant")
+                out.add(Entry(s, Tmdb.cleanTitle(s.name).first, label, null, s, r.updated))
+                if (!nextLabels.containsKey(sid)) missing.add(sid to r.item.id)
             }
         }
         out.sortByDescending { it.updated }
-        if (out.isEmpty()) {
-            // Rien en cours : on propose les nouveautés à la place.
-            rowTitle.text = "À découvrir"
-            for (m in Db.latest(src.id, Kind.MOVIE, 20)) out.add(Entry(m, Tmdb.cleanTitle(m.name).first, Meta.rating(m.rating) ?: "Nouveauté", null, null, 0))
-        } else {
-            rowTitle.text = "Reprendre la lecture"
-        }
+        rowEmpty.text = "Rien en cours : lance un film ou une série, il apparaîtra ici."
+        rowEmpty.visibility = if (out.isEmpty()) View.VISIBLE else View.GONE
         resumeAdapter.set(out)
+        for ((sid, lastId) in missing.take(8)) loadNextLabel(sid, lastId)
+    }
+
+    private fun loadNextLabel(sid: String, lastId: String) {
+        Bg.task(act, { api.seriesInfo(sid) }) { r ->
+            val si = r.getOrNull() ?: return@task
+            seriesInfos[sid] = si
+            val all = si.seasons.flatMap { it.episodes }
+            val i = all.indexOfFirst { it.id == lastId }
+            val label = when {
+                i < 0 -> return@task
+                i + 1 < all.size -> SE.find(all[i + 1].extra ?: "")?.let { "Prochain : S${it.groupValues[1]} · É${it.groupValues[2]}" } ?: "Épisode suivant"
+                else -> "Tout vu · à revoir"
+            }
+            nextLabels[sid] = label
+            if (rowMode == ROW_RESUME) resumeAdapter.updateSub(sid, label)
+        }
     }
 
     private fun remaining(ms: Long): String {
@@ -524,6 +612,13 @@ class HomeScreen(
             notifyDataSetChanged()
         }
 
+        fun updateSub(seriesId: String, sub: String) {
+            val i = items.indexOfFirst { it.item.kind == Kind.SERIES && it.item.id == seriesId }
+            if (i < 0) return
+            items[i].sub = sub
+            notifyItemChanged(i)
+        }
+
         inner class VH(v: View) : RecyclerView.ViewHolder(v) {
             val img: ImageView = v.findViewById(R.id.img)
             val thumb: ImageView = v.findViewById(R.id.thumb)
@@ -549,7 +644,7 @@ class HomeScreen(
             h.bar.visibility = if (e.progress != null) View.VISIBLE else View.GONE
             e.progress?.let { h.bar.progress = (it * 1000).toInt().coerceIn(0, 1000) }
             backdropFor(e, h.img, h.thumb)
-            h.itemView.setOnClickListener { play(e) }
+            h.itemView.setOnClickListener { if (rowMode == ROW_RESUME) play(e) else open(e.item) }
             h.itemView.setOnLongClickListener {
                 entryOptions(e)
                 true
@@ -577,5 +672,8 @@ class HomeScreen(
         private const val ROTATE_MS = 7_000L
         private const val PAUSE_MS = 10_000L
         private val SE = Regex("""Saison (\d+) · Épisode (\d+)""")
+        private const val ROW_RESUME = "resume"
+        private const val ROW_FAV = "fav"
+        private const val ROW_LATEST = "latest"
     }
 }

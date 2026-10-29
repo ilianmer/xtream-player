@@ -6,6 +6,10 @@ import android.media.AudioAttributes
 import android.media.SoundPool
 import android.view.KeyEvent
 import android.view.View
+import android.view.ViewGroup
+import android.widget.AbsListView
+import android.widget.HorizontalScrollView
+import android.widget.ScrollView
 import android.view.animation.DecelerateInterpolator
 import android.view.animation.OvershootInterpolator
 import androidx.recyclerview.widget.LinearLayoutManager
@@ -23,6 +27,12 @@ import kotlin.math.sin
  * avec un léger délai entre deux sons quand on maintient une flèche.
  */
 open class BaseActivity : Activity() {
+    /** Le zoom de sélection déborde un peu : les panneaux ne le coupent plus dans leur marge intérieure. */
+    override fun onContentChanged() {
+        super.onContentChanged()
+        (findViewById<View>(android.R.id.content) as? ViewGroup)?.let { Fx.relaxClipping(it) }
+    }
+
     override fun dispatchKeyEvent(event: KeyEvent): Boolean {
         val nav = event.action == KeyEvent.ACTION_DOWN && event.keyCode in NAV_KEYS
         val before = if (nav) currentFocus else null
@@ -149,8 +159,31 @@ object Fx {
     private val grow = OvershootInterpolator(0.9f)
     private val shrink = DecelerateInterpolator()
 
+    private fun isScroller(v: View) =
+        v is RecyclerView || v is ScrollView || v is HorizontalScrollView || v is AbsListView
+
+    /**
+     * Les conteneurs ne coupent plus leurs enfants dans leur marge intérieure (sauf les listes qui défilent),
+     * pour que le contour et le zoom de l'élément sélectionné restent entiers.
+     */
+    fun relaxClipping(root: ViewGroup) {
+        if (!isScroller(root)) root.clipToPadding = false
+        if (root is RecyclerView) return
+        for (i in 0 until root.childCount) (root.getChildAt(i) as? ViewGroup)?.let { relaxClipping(it) }
+    }
+
     /** Zoom doux et ombre quand un élément prend le focus. */
     fun focus(v: View, has: Boolean, scale: Float = 1.07f) {
+        if (has) {
+            // Éléments ajoutés après coup : on libère aussi leurs conteneurs proches
+            var p = v.parent
+            var n = 0
+            while (p is ViewGroup && n < 3 && !isScroller(p)) {
+                p.clipToPadding = false
+                p = p.parent
+                n++
+            }
+        }
         v.animate().cancel()
         v.animate().scaleX(if (has) scale else 1f).scaleY(if (has) scale else 1f)
             .translationZ(if (has) v.resources.displayMetrics.density * 10 else 0f)
