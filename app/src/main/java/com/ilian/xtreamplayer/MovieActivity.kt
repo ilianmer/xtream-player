@@ -13,7 +13,7 @@ import org.json.JSONObject
 import kotlin.random.Random
 
 /** Fiche d'un film : lecture ou reprise, favori, téléchargement, suggestions. */
-class MovieActivity : Activity() {
+class MovieActivity : BaseActivity() {
 
     private lateinit var src: Source
     private lateinit var api: XtreamApi
@@ -96,6 +96,14 @@ class MovieActivity : Activity() {
             val i = info
             val needTmdb = Tmdb.enabled &&
                 (i?.plot.isNullOrBlank() || i?.backdrop == null || (item.icon.isNullOrBlank() && i?.cover.isNullOrBlank()))
+            if (!Tmdb.enabled && (i?.plot.isNullOrBlank() || (item.icon.isNullOrBlank() && i?.cover.isNullOrBlank()))) {
+                // Sans clé TMDB : résumé et affiche du catalogue iTunes France
+                Bg.task(this, { FreeMeta.movie(item) }) { f ->
+                    val x = f.getOrNull() ?: return@task
+                    if (i?.plot.isNullOrBlank() && item.plot.isNullOrBlank()) x.plot?.let { tvPlot.text = it }
+                    if (item.icon.isNullOrBlank() && i?.cover.isNullOrBlank()) x.poster?.let { showPoster(it) }
+                }
+            }
             if (needTmdb) {
                 val forTmdb = item.copy(tmdb = i?.tmdb ?: item.tmdb)
                 Bg.task(this, { Tmdb.info(forTmdb) }) { t ->
@@ -212,6 +220,7 @@ class MovieActivity : Activity() {
         val rv = findViewById<RecyclerView>(R.id.rvSimilar)
         rv.layoutManager = LinearLayoutManager(this, LinearLayoutManager.HORIZONTAL, false)
         rv.itemAnimator = null
+        Fx.lockRow(rv)
         rv.adapter = SmallPosterAdapter(
             onClick = { other ->
                 startActivity(Intent(this, MovieActivity::class.java).putExtra(MainActivity.EXTRA_ITEM, other.toJson().toString()))

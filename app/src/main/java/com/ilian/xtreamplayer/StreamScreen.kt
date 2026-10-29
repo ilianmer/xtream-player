@@ -2,6 +2,7 @@ package com.ilian.xtreamplayer
 
 import android.app.Activity
 import android.content.Intent
+import android.view.KeyEvent
 import android.view.LayoutInflater
 import android.view.View
 import android.view.ViewGroup
@@ -14,7 +15,8 @@ import androidx.recyclerview.widget.RecyclerView
 
 /**
  * Onglets Films et Séries façon plateforme de streaming : grande image de fond,
- * titre mis en avant et rangées horizontales (Reprendre, Nouveautés, Tendances, catégories…).
+ * titre mis en avant et rangées horizontales (Reprendre, Nouveautés, Tendances, Ma liste, catégories).
+ * Au bout de chaque rangée, « Voir tout » ouvre la catégorie en pleine page.
  */
 class StreamScreen(
     private val act: Activity,
@@ -23,8 +25,8 @@ class StreamScreen(
     private val api: XtreamApi,
     private val kind: Kind,
     private val bg: ImageView,
-    /** Ouvre la grille classique sur une catégorie (null = tout). */
-    private val openGrid: (String?) -> Unit
+    /** Ouvre une catégorie en pleine page : clé du groupe et titre. */
+    private val openGrid: (String, String) -> Unit
 ) {
     private class Rail(
         val key: String,
@@ -34,7 +36,9 @@ class StreamScreen(
         var progress: Map<String, Float> = emptyMap(),
         var subs: Map<String, String> = emptyMap(),
         var badge: String? = null,
-        var badgeIds: Set<String> = emptySet()
+        var badgeIds: Set<String> = emptySet(),
+        /** Groupe ouvert par « Voir tout » (null : pas de carte Voir tout). */
+        val seeAll: String? = null
     )
 
     private val rvRails: RecyclerView = root.findViewById(R.id.rvRails)
@@ -54,20 +58,30 @@ class StreamScreen(
     private var visible = false
     private val movieInfos = HashMap<String, MovieInfo>()
     private val seriesInfos = HashMap<String, SeriesInfo>()
-    private val tmdbInfos = HashMap<String, Tmdb.Info>()
-    private val railScroll = HashMap<String, Int>()
+    private val extraBackdrops = HashMap<String, String?>()
+    /** Position mémorisée dans chaque rangée (comme Netflix : chaque rangée garde sa place). */
+    private val railFocus = HashMap<String, Int>()
+    private var activeRail = -1
     private val applyHero = Runnable { pending?.let { (i, r) -> setHero(i, r) } }
 
     private val isSeries = kind == Kind.SERIES
 
     init {
         root.findViewById<TextView>(R.id.streamTitle).text = if (isSeries) "Séries" else "Films"
-        root.findViewById<View>(R.id.btnGenres).setOnClickListener { chooseCategory() }
         rvRails.layoutManager = LinearLayoutManager(act)
         rvRails.adapter = adapter
         rvRails.itemAnimator = null
         heroPlay.setOnClickListener { hero?.let { primary(it, heroRail) } }
         heroMore.setOnClickListener { hero?.let { open(it) } }
+        // Bas depuis les boutons : première rangée, à la place mémorisée
+        for (b in listOf(heroPlay, heroMore)) {
+            b.setOnKeyListener { _, code, e ->
+                if (e.action == KeyEvent.ACTION_DOWN && code == KeyEvent.KEYCODE_DPAD_DOWN) {
+                    focusRail(firstRail(), 0)
+                    true
+                } else false
+            }
+        }
     }
 
     fun show() {
@@ -82,11 +96,10 @@ class StreamScreen(
     }
 
     fun focusDefault() {
-        rvRails.post {
-            val first = rvRails.getChildAt(0)?.findViewById<RecyclerView>(R.id.railList)?.getChildAt(0)
-            (first ?: heroPlay).requestFocus()
-        }
+        rvRails.post { if (rails.isNotEmpty()) focusRail(if (activeRail >= 0) activeRail else firstRail(), 0) else heroPlay.requestFocus() }
     }
+
+    private fun firstRail(): Int = rails.indexOfFirst { it.items.isNotEmpty() || it.loader != null }.coerceAtLeast(0)
 
     // ---------- Rangées ----------
 
@@ -101,13 +114,14 @@ class StreamScreen(
                 Rail(
                     "latest", if (isSeries) "Nouveaux épisodes" else "Nouveautés", latest,
                     badge = if (isSeries) "Nouvel épisode" else "Nouveau",
-                    badgeIds = latest.filter { it.added >= recent }.map { it.id }.toSet()
+                    badgeIds = latest.filter { it.added >= recent }.map { it.id }.toSet(),
+                    seeAll = MainActivity.LATEST
                 )
             )
         }
         favRail()?.let { rails.add(it) }
         for (g in Catalog.groups(src.id, kind)) {
-            rails.add(Rail(g.key, Catalog.cleanName(g.name), emptyList(), loader = { Db.page(src.id, kind, g.catIds, null, 0, 30) }))
+            rails.add(Rail(g.key, Catalog.cleanName(g.name), emptyList(), loader = { Db.page(src.id, kind, g.catIds, null, 0, 30) }, seeAll = g.key))
         }
         adapter.notifyDataSetChanged()
         val first = rails.firstOrNull { it.key == "latest" } ?: rails.firstOrNull()
@@ -119,39 +133,29 @@ class StreamScreen(
         loadTrending()
     }
 
-    /** Retour sur l'onglet : la reprise et les favoris ont pu changer. */
+    /** Retour sur l'onglet : la reprise et Ma liste ont pu changer. */
     fun refresh() {
-        val newResume = resumeRail()
-        val iResume = rails.indexOfFirst { it.key == "resume" }
+        replaceRail("resume", resumeRail(), 0)
+        replaceRail("fav", favRail(), rails.indexOfFirst { it.key.startsWith("c:") || it.key.startsWith("m:") }.let { if (it < 0) rails.size else it })
+    }
+
+    private fun replaceRail(key: String, new: Rail?, insertAt: Int) {
+        val i = rails.indexOfFirst { it.key == key }
         when {
-            newResume != null && iResume >= 0 -> {
-                rails[iResume] = newResume
-                adapter.notifyItemChanged(iResume)
+            new != null && i >= 0 -> {
+                rails[i] = new
+                adapter.notifyItemChanged(i)
             }
-            newResume != null -> {
-                rails.add(0, newResume)
-                adapter.notifyItemInserted(0)
-            }
-            iResume >= 0 -> {
-                rails.removeAt(iResume)
-                adapter.notifyItemRemoved(iResume)
-            }
-        }
-        val newFav = favRail()
-        val iFav = rails.indexOfFirst { it.key == "fav" }
-        when {
-            newFav != null && iFav >= 0 -> {
-                rails[iFav] = newFav
-                adapter.notifyItemChanged(iFav)
-            }
-            newFav != null -> {
-                val at = rails.indexOfFirst { it.key.startsWith("c:") || it.key.startsWith("m:") }.let { if (it < 0) rails.size else it }
-                rails.add(at, newFav)
+            new != null -> {
+                val at = insertAt.coerceIn(0, rails.size)
+                rails.add(at, new)
                 adapter.notifyItemInserted(at)
+                if (activeRail >= at) activeRail++
             }
-            iFav >= 0 -> {
-                rails.removeAt(iFav)
-                adapter.notifyItemRemoved(iFav)
+            i >= 0 -> {
+                rails.removeAt(i)
+                adapter.notifyItemRemoved(i)
+                if (activeRail > i) activeRail-- else if (activeRail == i) activeRail = -1
             }
         }
     }
@@ -163,7 +167,8 @@ class StreamScreen(
             return Rail(
                 "resume", "Reprendre", list.map { r -> Db.find(src.id, Kind.MOVIE, r.item.id) ?: r.item.copy(kind = Kind.MOVIE) },
                 progress = list.filter { it.dur > 0 }.associate { it.item.id to it.pos.toFloat() / it.dur },
-                subs = list.filter { it.dur > 0 }.associate { it.item.id to remaining(it.dur - it.pos) }
+                subs = list.filter { it.dur > 0 }.associate { it.item.id to remaining(it.dur - it.pos) },
+                seeAll = MainActivity.RESUME
             )
         }
         val list = Db.seriesActivity(src.id, 20)
@@ -178,16 +183,16 @@ class StreamScreen(
                 progress[sid] = r.pos.toFloat() / r.dur
                 subs[sid] = listOf(label, remaining(r.dur - r.pos)).filter { it.isNotEmpty() }.joinToString(" · ")
             } else {
-                subs[sid] = if (label.isNotEmpty()) "$label vu" else "Épisode suivant"
+                subs[sid] = "Épisode suivant"
             }
         }
         if (items.isEmpty()) return null
-        return Rail("resume", "Reprendre", items, progress = progress, subs = subs)
+        return Rail("resume", "Reprendre", items, progress = progress, subs = subs, seeAll = MainActivity.RESUME)
     }
 
     private fun favRail(): Rail? {
         val favs = Db.favorites(src.id, kind)
-        return if (favs.isEmpty()) null else Rail("fav", "Ma liste", favs)
+        return if (favs.isEmpty()) null else Rail("fav", "Ma liste", favs, seeAll = MainActivity.FAV)
     }
 
     private fun loadTrending() {
@@ -201,6 +206,7 @@ class StreamScreen(
             val at = rails.indexOfFirst { it.key == "latest" }.let { if (it < 0) 0 else it + 1 }
             rails.add(at, Rail("trending", "Tendances de la semaine", list.take(30)))
             adapter.notifyItemInserted(at)
+            if (activeRail >= at) activeRail++
         }
     }
 
@@ -209,15 +215,52 @@ class StreamScreen(
         return if (min >= 60) "${min / 60} h ${String.format(java.util.Locale.FRANCE, "%02d", min % 60)}" else "$min min"
     }
 
-    private fun chooseCategory() {
-        val groups = Catalog.groups(src.id, kind)
-        val labels = listOf("Tout le catalogue", "Favoris") + groups.map { it.name }
-        Ui.choose(act, if (isSeries) "Catégories de séries" else "Catégories de films", labels) { w ->
-            when (w) {
-                0 -> openGrid(MainActivity.ALL)
-                1 -> openGrid(MainActivity.FAV)
-                else -> openGrid(groups[w - 2].key)
-            }
+    // ---------- Navigation verticale ----------
+
+    /**
+     * Haut / bas : rangée précédente ou suivante, sur l'élément où l'on s'était arrêté dans cette
+     * rangée (le focus ne part plus de l'autre côté de l'écran).
+     */
+    private fun focusRail(target: Int, dir: Int) {
+        var t = target
+        // On saute les rangées vides (catégorie sans titre)
+        while (t in rails.indices) {
+            val r = rails[t]
+            if (r.items.isEmpty() && r.loader != null) r.items = r.loader.invoke()
+            if (r.items.isNotEmpty()) break
+            t += if (dir == 0) 1 else dir
+        }
+        if (t !in rails.indices) return
+        val rail = rails[t]
+        val idx = (railFocus[rail.key] ?: 0).coerceIn(0, cardCount(rail) - 1)
+        activeRail = t
+        scrollRailToTop(t)
+        val lm = rvRails.layoutManager as LinearLayoutManager
+        val attempt = {
+            val holder = rvRails.findViewHolderForAdapterPosition(t) as? RailAdapter.VH
+            if (holder != null) Fx.focusAt(holder.list, idx)
+            holder != null
+        }
+        if (!attempt()) {
+            lm.scrollToPositionWithOffset(t, 0)
+            rvRails.post { attempt() }
+        }
+    }
+
+    private fun cardCount(r: Rail): Int = r.items.size + (if (r.seeAll != null && r.items.size >= 6) 1 else 0)
+
+    /** Fait remonter la rangée active en haut de la zone des rangées, et estompe les autres. */
+    private fun scrollRailToTop(pos: Int) {
+        if (pos < 0) return
+        val s = object : LinearSmoothScroller(act) {
+            override fun getVerticalSnapPreference() = SNAP_TO_START
+        }
+        s.targetPosition = pos
+        rvRails.layoutManager?.startSmoothScroll(s)
+        for (i in 0 until rvRails.childCount) {
+            val c = rvRails.getChildAt(i)
+            val p = rvRails.getChildAdapterPosition(c)
+            c.animate().alpha(if (p == pos || p < 0) 1f else 0.55f).setDuration(200).start()
         }
     }
 
@@ -288,24 +331,25 @@ class StreamScreen(
         backdrop(item, si.backdrop, si.tmdb)
     }
 
-    /** Fond d'écran : image de fond du fournisseur, sinon TMDB, sinon l'affiche floutée. */
+    /** Fond d'écran : fournisseur, puis TMDB, puis TVmaze ; sinon l'affiche floutée. */
     private fun backdrop(item: Item, url: String?, tmdbId: String?) {
         if (url != null) {
             showBackdrop(item, url)
             return
         }
-        tmdbInfos[item.key]?.backdrop?.let {
-            showBackdrop(item, it)
+        if (extraBackdrops.containsKey(item.key)) {
+            extraBackdrops[item.key]?.let { showBackdrop(item, it) }
             return
         }
-        if (!Tmdb.enabled) return
-        Bg.task(act, { Tmdb.info(item.copy(tmdb = tmdbId ?: item.tmdb)) }) { r ->
-            val t = r.getOrNull() ?: return@task
-            tmdbInfos[item.key] = t
-            if (hero?.id == item.id) {
-                t.backdrop?.let { showBackdrop(item, it) }
-                if (heroPlot.text.isNullOrBlank()) heroPlot.text = t.overview ?: ""
-            }
+        Bg.task(act, {
+            val t = if (Tmdb.enabled) Tmdb.info(item.copy(tmdb = tmdbId ?: item.tmdb)) else null
+            (t?.backdrop ?: FreeMeta.backdrop(item)) to t?.overview
+        }) { r ->
+            val (b, overview) = r.getOrNull() ?: (null to null)
+            extraBackdrops[item.key] = b
+            if (hero?.id != item.id) return@task
+            if (heroPlot.text.isNullOrBlank() && overview != null) heroPlot.text = overview
+            b?.let { showBackdrop(item, it) }
         }
     }
 
@@ -315,29 +359,33 @@ class StreamScreen(
             bg.animate().cancel()
             bg.tag = "backdrop|$url"
             bg.setImageBitmap(bmp)
-            bg.alpha = 0.4f
-            bg.animate().alpha(1f).setDuration(300).start()
+            bg.alpha = 0.35f
+            bg.scaleX = 1f
+            bg.scaleY = 1f
+            // Fondu puis léger zoom lent
+            bg.animate().alpha(1f).setDuration(350).withEndAction {
+                bg.animate().scaleX(1.05f).scaleY(1.05f).setDuration(12_000).start()
+            }.start()
         }
     }
 
     private fun paintBackground(item: Item) {
         if (!visible) return
         bg.visibility = View.VISIBLE
+        bg.scaleX = 1f
+        bg.scaleY = 1f
         Img.blurred(bg, item.icon) { ok -> if (ok && visible && hero?.id == item.id) bg.animate().alpha(0.9f).setDuration(250).start() }
     }
 
     // ---------- Actions ----------
 
     private fun primary(item: Item, rail: Rail?) {
-        if (!isSeries && rail?.key == "resume") {
-            val d = Downloads.find(act, src.id, item)?.playable()
-            Ui.play(act, ItemList.of(listOf(d ?: item)), 0)
-        } else if (!isSeries) {
-            val d = Downloads.find(act, src.id, item)?.playable()
-            Ui.play(act, ItemList.of(listOf(d ?: item)), 0)
-        } else {
+        if (isSeries) {
             open(item)
+            return
         }
+        val d = Downloads.find(act, src.id, item)?.playable()
+        Ui.play(act, ItemList.of(listOf(d ?: item)), 0)
     }
 
     private fun open(item: Item) {
@@ -358,7 +406,6 @@ class StreamScreen(
             val title: TextView = v.findViewById(R.id.railTitle)
             val list: RecyclerView = v.findViewById(R.id.railList)
             val cards = CardAdapter()
-            var key: String? = null
         }
 
         override fun getItemCount() = rails.size
@@ -370,24 +417,19 @@ class StreamScreen(
             h.list.adapter = h.cards
             h.list.itemAnimator = null
             h.list.setHasFixedSize(true)
-            h.list.addOnScrollListener(object : RecyclerView.OnScrollListener() {
-                override fun onScrolled(rv: RecyclerView, dx: Int, dy: Int) {
-                    val k = h.key ?: return
-                    railScroll[k] = (rv.layoutManager as LinearLayoutManager).findFirstVisibleItemPosition()
-                }
-            })
             return h
         }
 
         override fun onBindViewHolder(h: VH, position: Int) {
             val rail = rails[position]
             if (rail.items.isEmpty() && rail.loader != null) rail.items = rail.loader.invoke()
-            h.key = rail.key
             h.title.text = rail.title
             h.cards.rail = rail
             h.cards.railPos = { h.bindingAdapterPosition }
             h.cards.notifyDataSetChanged()
-            h.list.scrollToPosition(railScroll[rail.key] ?: 0)
+            val keep = railFocus[rail.key] ?: 0
+            (h.list.layoutManager as LinearLayoutManager).scrollToPositionWithOffset(keep, h.list.paddingStart)
+            h.itemView.alpha = if (activeRail < 0 || activeRail == position) 1f else 0.55f
             h.itemView.visibility = if (rail.items.isEmpty()) View.GONE else View.VISIBLE
             h.itemView.layoutParams = h.itemView.layoutParams.apply {
                 height = if (rail.items.isEmpty()) 0 else ViewGroup.LayoutParams.WRAP_CONTENT
@@ -395,65 +437,111 @@ class StreamScreen(
         }
     }
 
-    /** Fait remonter la rangée active en haut de la zone des rangées. */
-    private fun scrollRailToTop(pos: Int) {
-        if (pos < 0) return
-        val s = object : LinearSmoothScroller(act) {
-            override fun getVerticalSnapPreference() = SNAP_TO_START
-        }
-        s.targetPosition = pos
-        rvRails.layoutManager?.startSmoothScroll(s)
-    }
-
     private inner class CardAdapter : RecyclerView.Adapter<CardAdapter.VH>() {
         var rail: Rail? = null
         var railPos: () -> Int = { -1 }
 
         inner class VH(v: View) : RecyclerView.ViewHolder(v) {
-            val img: ImageView = v.findViewById(R.id.img)
-            val name: TextView = v.findViewById(R.id.name)
-            val sub: TextView = v.findViewById(R.id.sub)
-            val bar: ProgressBar = v.findViewById(R.id.bar)
-            val badge: TextView = v.findViewById(R.id.badge)
-            val overlay: View = v.findViewById(R.id.overlay)
+            val img: ImageView? = v.findViewById(R.id.img)
+            val name: TextView? = v.findViewById(R.id.name)
+            val sub: TextView? = v.findViewById(R.id.sub)
+            val bar: ProgressBar? = v.findViewById(R.id.bar)
+            val badge: TextView? = v.findViewById(R.id.badge)
+            val overlay: View? = v.findViewById(R.id.overlay)
         }
 
-        override fun getItemCount() = rail?.items?.size ?: 0
+        override fun getItemCount() = rail?.let { cardCount(it) } ?: 0
+
+        override fun getItemViewType(position: Int) = if (position >= (rail?.items?.size ?: 0)) 1 else 0
 
         override fun onCreateViewHolder(parent: ViewGroup, viewType: Int): VH {
-            val v = LayoutInflater.from(parent.context).inflate(R.layout.item_card, parent, false)
+            val layout = if (viewType == 1) R.layout.item_card_more else R.layout.item_card
+            val v = LayoutInflater.from(parent.context).inflate(layout, parent, false)
             v.clipToOutline = true
             return VH(v)
         }
 
         override fun onBindViewHolder(h: VH, position: Int) {
             val r = rail ?: return
+            val count = cardCount(r)
+            h.itemView.setOnKeyListener { _, code, e ->
+                if (e.action != KeyEvent.ACTION_DOWN) return@setOnKeyListener false
+                when (code) {
+                    KeyEvent.KEYCODE_DPAD_UP -> {
+                        val p = railPos()
+                        val prev = (p - 1 downTo 0).firstOrNull { i -> rails[i].items.isNotEmpty() || rails[i].loader != null }
+                        if (prev == null) {
+                            activeRail = -1
+                            heroPlay.requestFocus()
+                            rvRails.smoothScrollToPosition(0)
+                        } else focusRail(prev, -1)
+                        true
+                    }
+                    KeyEvent.KEYCODE_DPAD_DOWN -> {
+                        val p = railPos()
+                        if (p + 1 < rails.size) focusRail(p + 1, 1)
+                        true
+                    }
+                    KeyEvent.KEYCODE_DPAD_RIGHT -> {
+                        val rv = h.itemView.parent as? RecyclerView
+                        if (rv != null && position + 1 < count) Fx.focusAt(rv, position + 1)
+                        true
+                    }
+                    KeyEvent.KEYCODE_DPAD_LEFT -> {
+                        val rv = h.itemView.parent as? RecyclerView
+                        if (rv != null && position > 0) Fx.focusAt(rv, position - 1)
+                        true
+                    }
+                    else -> false
+                }
+            }
+            h.itemView.setOnFocusChangeListener { view, has ->
+                Fx.focus(view, has, 1.08f)
+                if (has) {
+                    railFocus[r.key] = position
+                    val p = railPos()
+                    if (p != activeRail) {
+                        activeRail = p
+                        scrollRailToTop(p)
+                    }
+                    r.items.getOrNull(position)?.let { onCardFocus(it, r) }
+                }
+            }
+            if (position >= r.items.size) {
+                // Carte « Voir tout »
+                h.itemView.setOnClickListener { r.seeAll?.let { openGrid(it, r.title) } }
+                h.itemView.setOnLongClickListener(null)
+                return
+            }
             val item = r.items[position]
             val noImage = item.icon.isNullOrBlank()
-            h.name.text = Tmdb.cleanTitle(item.name).first
-            h.name.visibility = if (noImage) View.VISIBLE else View.GONE
+            h.name?.text = Tmdb.cleanTitle(item.name).first
+            h.name?.visibility = if (noImage) View.VISIBLE else View.GONE
             val sub = r.subs[item.id]
-            h.sub.text = sub ?: ""
-            h.sub.visibility = if (sub.isNullOrBlank()) View.GONE else View.VISIBLE
+            h.sub?.text = sub ?: ""
+            h.sub?.visibility = if (sub.isNullOrBlank()) View.GONE else View.VISIBLE
             val p = r.progress[item.id]
-            h.bar.visibility = if (p != null && p > 0f) View.VISIBLE else View.GONE
-            if (p != null) h.bar.progress = (p * 1000).toInt().coerceIn(0, 1000)
-            h.overlay.visibility = if (noImage || !sub.isNullOrBlank() || (p != null && p > 0f)) View.VISIBLE else View.GONE
+            h.bar?.visibility = if (p != null && p > 0f) View.VISIBLE else View.GONE
+            if (p != null) h.bar?.progress = (p * 1000).toInt().coerceIn(0, 1000)
+            h.overlay?.visibility = if (noImage || !sub.isNullOrBlank() || (p != null && p > 0f)) View.VISIBLE else View.GONE
             val showBadge = r.badge != null && item.id in r.badgeIds
-            h.badge.visibility = if (showBadge) View.VISIBLE else View.GONE
-            h.badge.text = r.badge ?: ""
-            if (noImage && Tmdb.enabled) {
-                val tag = "tmdb:" + item.key
-                h.img.tag = tag
-                h.img.setImageResource(R.drawable.ph_poster)
-                Tmdb.posterAsync(item) { url ->
-                    if (h.img.tag == tag) {
-                        Img.load(h.img, url, R.drawable.ph_poster, 300)
-                        h.name.visibility = View.GONE
+            h.badge?.visibility = if (showBadge) View.VISIBLE else View.GONE
+            h.badge?.text = r.badge ?: ""
+            val img = h.img
+            if (img != null) {
+                if (noImage && Tmdb.enabled) {
+                    val tag = "tmdb:" + item.key
+                    img.tag = tag
+                    img.setImageResource(R.drawable.ph_poster)
+                    Tmdb.posterAsync(item) { url ->
+                        if (img.tag == tag) {
+                            Img.load(img, url, R.drawable.ph_poster, 300)
+                            h.name?.visibility = View.GONE
+                        }
                     }
+                } else {
+                    Img.load(img, item.icon, R.drawable.ph_poster, 300)
                 }
-            } else {
-                Img.load(h.img, item.icon, R.drawable.ph_poster, 300)
             }
             h.itemView.setOnClickListener {
                 if (r.key == "resume" && !isSeries) primary(item, r) else open(item)
@@ -461,15 +549,6 @@ class StreamScreen(
             h.itemView.setOnLongClickListener {
                 toggleFav(item)
                 true
-            }
-            h.itemView.setOnFocusChangeListener { view, has ->
-                val s = if (has) 1.08f else 1f
-                view.animate().scaleX(s).scaleY(s).setDuration(120).start()
-                view.elevation = if (has) 8f else 0f
-                if (has) {
-                    onCardFocus(item, r)
-                    scrollRailToTop(railPos())
-                }
             }
         }
     }

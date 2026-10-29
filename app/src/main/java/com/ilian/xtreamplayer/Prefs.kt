@@ -98,6 +98,26 @@ object Prefs {
         get() = bool("guide_preview", true)
         set(v) = putBool("guide_preview", v)
 
+    /** Son de navigation : 0 aucun, 1 doux, 2 plus marqué. */
+    var navSound: Int
+        get() = int("nav_sound", 1)
+        set(v) = putInt("nav_sound", v)
+
+    /** Cotes des bookmakers sur les matchs. */
+    var oddsEnabled: Boolean
+        get() = bool("odds", false)
+        set(v) = putBool("odds", v)
+
+    /** Clé The Odds API (facultative) pour comparer plusieurs bookmakers. */
+    var oddsKey: String
+        get() = str("odds_key", "")
+        set(v) = putStr("odds_key", v)
+
+    /** Scores de mes équipes et des matchs tendance pendant la lecture d'une chaîne. */
+    var sportTicker: Boolean
+        get() = bool("sport_ticker", true)
+        set(v) = putBool("sport_ticker", v)
+
     /** Onglet Sport affiché dans la barre du haut. */
     var showSport: Boolean
         get() = bool("show_sport", true)

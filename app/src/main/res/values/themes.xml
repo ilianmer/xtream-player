@@ -12,6 +12,7 @@
         <item name="android:fontFamily">@font/outfit</item>
         <item name="android:textViewStyle">@style/Txt</item>
         <item name="android:windowAnimationStyle">@style/Fade</item>
+        <item name="android:soundEffectsEnabled">false</item>
     </style>
 
     <style name="Fade" parent="@android:style/Animation.Activity">
@@ -35,6 +36,7 @@
         <item name="android:colorAccent">@color/accent</item>
         <item name="android:backgroundDimAmount">0.7</item>
         <item name="android:colorBackground">#181A24</item>
+        <item name="android:soundEffectsEnabled">false</item>
     </style>
 
     <style name="Txt" parent="@android:style/Widget.Material.TextView">

@@ -20,6 +20,7 @@
 
         <TextView
             android:id="@+id/btnGenres"
+            android:visibility="gone"
             style="@style/Medium"
             android:layout_width="wrap_content"
             android:layout_height="27dp"

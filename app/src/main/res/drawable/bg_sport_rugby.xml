@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="utf-8"?>
+<layer-list xmlns:android="http://schemas.android.com/apk/res/android">
+    <item><shape><solid android:color="#0A140C" /></shape></item>
+    <item><shape><gradient android:type="radial" android:centerX="0.2" android:centerY="0.3" android:gradientRadius="560dp" android:startColor="#99357A3A" android:endColor="#00357A3A" /></shape></item>
+    <item><shape><gradient android:type="radial" android:centerX="0.8" android:centerY="0.85" android:gradientRadius="560dp" android:startColor="#80203F6B" android:endColor="#00203F6B" /></shape></item>
+    <item android:drawable="@drawable/pat_rugby" />
+    <item><shape><solid android:color="#59060A0E" /></shape></item>
+</layer-list>

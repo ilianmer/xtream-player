@@ -43,21 +43,50 @@
         android:textColor="@color/text_faint"
         android:textSize="10sp" />
 
-    <include android:id="@+id/crestA" layout="@layout/item_crest" />
-
-    <TextView
-        android:id="@+id/teams"
-        style="@style/Medium"
+    <!-- Domicile et extérieur : chaque logo reste collé au nom de son équipe -->
+    <LinearLayout
         android:layout_width="0dp"
-        android:layout_height="wrap_content"
-        android:layout_marginStart="6dp"
-        android:layout_marginEnd="6dp"
+        android:layout_height="match_parent"
         android:layout_weight="1"
-        android:ellipsize="end"
-        android:singleLine="true"
-        android:textSize="12sp" />
+        android:gravity="center_vertical"
+        android:orientation="horizontal">
 
-    <include android:id="@+id/crestB" layout="@layout/item_crest" />
+        <include android:id="@+id/crestA" layout="@layout/item_crest" />
+
+        <TextView
+            android:id="@+id/teamA"
+            style="@style/Medium"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginStart="6dp"
+            android:ellipsize="end"
+            android:maxWidth="118dp"
+            android:singleLine="true"
+            android:textSize="12sp" />
+
+        <TextView
+            style="@style/Txt"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginStart="7dp"
+            android:layout_marginEnd="7dp"
+            android:text="–"
+            android:textColor="#6E7380"
+            android:textSize="12sp" />
+
+        <include android:id="@+id/crestB" layout="@layout/item_crest" />
+
+        <TextView
+            android:id="@+id/teamB"
+            style="@style/Medium"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginStart="6dp"
+            android:ellipsize="end"
+            android:maxWidth="118dp"
+            android:singleLine="true"
+            android:textSize="12sp" />
+    </LinearLayout>
 
     <LinearLayout
         android:id="@+id/watch"

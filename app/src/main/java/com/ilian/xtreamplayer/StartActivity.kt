@@ -9,7 +9,7 @@ import android.widget.ProgressBar
 import android.widget.TextView
 
 /** Écran de démarrage : met à jour le catalogue quand c'est nécessaire, puis ouvre l'appli. */
-class StartActivity : Activity() {
+class StartActivity : BaseActivity() {
 
     private lateinit var tvProgress: TextView
     private lateinit var tvError: TextView

@@ -11,7 +11,7 @@ import android.widget.ScrollView
 import android.widget.TextView
 
 /** Réglages : sources, IPTV, interface, protection multi-écran, lecteur, téléchargements. */
-class SettingsActivity : Activity() {
+class SettingsActivity : BaseActivity() {
 
     private lateinit var menu: LinearLayout
     private lateinit var content: LinearLayout
@@ -24,10 +24,10 @@ class SettingsActivity : Activity() {
     private val dlValues = HashMap<Long, TextView>()
 
     private val sections = listOf(
-        "Sources IPTV", "Réglages IPTV", "Interface", "Protection multi-écran", "Lecteur vidéo", "Téléchargements"
+        "Sources IPTV", "Réglages IPTV", "Interface", "Sport", "Protection multi-écran", "Lecteur vidéo", "Téléchargements"
     )
     private val icons = listOf(
-        R.drawable.ic_menu_sources, R.drawable.ic_menu_iptv, R.drawable.ic_menu_ui,
+        R.drawable.ic_menu_sources, R.drawable.ic_menu_iptv, R.drawable.ic_menu_ui, R.drawable.ic_menu_sport,
         R.drawable.ic_menu_shield, R.drawable.ic_menu_player, R.drawable.ic_download
     )
     private lateinit var tvSection: TextView
@@ -110,8 +110,9 @@ class SettingsActivity : Activity() {
             0 -> sources()
             1 -> iptv()
             2 -> ui()
-            3 -> protection()
-            4 -> playerSettings()
+            3 -> sportSettings()
+            4 -> protection()
+            5 -> playerSettings()
             else -> downloads()
         }
     }
@@ -165,7 +166,7 @@ class SettingsActivity : Activity() {
 
         rows.action("Rafraîchir", "Recharge toutes les listes depuis le serveur.") { Ui.restart(this, forceSync = true) }
         rows.action("Modifier", "Nom, serveur, identifiant, mot de passe.") { editSource(src.id) }
-        rows.action("Masquer des catégories", "Choisis les catégories à ne plus afficher.") { hideCategories(src) }
+        rows.action("Catégories affichées", "Coche seulement les catégories que tu veux voir.") { hideCategories(src) }
         rows.action("Supprimer", "Retire la source et ses listes de cet appareil.", danger = true) {
             Ui.confirm(this, "Supprimer « ${src.name} » ?", "Ses favoris et sa progression de lecture seront aussi supprimés.", "Supprimer") {
                 deleteSource(src.id)
@@ -224,9 +225,10 @@ class SettingsActivity : Activity() {
         }
     }
 
+    /** Catégories visibles : cochées. « Tout décocher » puis on coche seulement ce qu'on veut voir. */
     private fun hideCategories(src: Source) {
         val kinds = listOf(Kind.LIVE, Kind.MOVIE, Kind.SERIES)
-        Ui.choose(this, "Masquer des catégories", listOf("Direct", "Films", "Séries")) { w ->
+        Ui.choose(this, "Catégories affichées", listOf("Direct", "Films", "Séries")) { w ->
             val k = kinds[w]
             val cats = Db.categories(src.id, k)
             if (cats.isEmpty()) {
@@ -234,17 +236,39 @@ class SettingsActivity : Activity() {
                 return@choose
             }
             val names = cats.map { it.first.name }.toTypedArray()
-            val checked = cats.map { it.second }.toBooleanArray()
-            AlertDialog.Builder(this, Ui.DIALOG)
-                .setTitle("Catégories à masquer")
-                .setMultiChoiceItems(names, checked) { _, i, c -> checked[i] = c }
+            val visible = cats.map { !it.second }.toBooleanArray()
+            val dlg = AlertDialog.Builder(this, Ui.DIALOG)
+                .setTitle("Coche les catégories à afficher")
+                .setMultiChoiceItems(names, visible) { _, i, c -> visible[i] = c }
                 .setPositiveButton("Enregistrer") { _, _ ->
-                    val ids = cats.filterIndexed { i, _ -> checked[i] }.map { it.first.id }.toSet()
-                    Db.setHidden(src.id, k, ids)
-                    Ui.toast(this, "${ids.size} catégorie(s) masquée(s)")
+                    val hidden = cats.filterIndexed { i, _ -> !visible[i] }.map { it.first.id }.toSet()
+                    Db.setHidden(src.id, k, hidden)
+                    Ui.toast(this, "${cats.size - hidden.size} catégorie(s) affichée(s) sur ${cats.size}")
                 }
+                .setNeutralButton("Tout décocher", null)
                 .setNegativeButton("Annuler", null)
-                .show()
+                .create()
+            dlg.setOnShowListener {
+                // Le bouton bascule entre « Tout décocher » et « Tout cocher » sans fermer la fenêtre.
+                val b = dlg.getButton(AlertDialog.BUTTON_NEUTRAL)
+                fun label() {
+                    b.text = if (visible.any { it }) "Tout décocher" else "Tout cocher"
+                }
+                label()
+                b.setOnClickListener {
+                    val target = !visible.any { it }
+                    for (i in visible.indices) {
+                        visible[i] = target
+                        dlg.listView.setItemChecked(i, target)
+                    }
+                    label()
+                }
+                dlg.listView.setOnItemClickListener { _, _, i, _ ->
+                    visible[i] = dlg.listView.isItemChecked(i)
+                    label()
+                }
+            }
+            dlg.show()
         }
     }
 
@@ -320,11 +344,47 @@ class SettingsActivity : Activity() {
             { if (it) "La chaîne sélectionnée dans le Direct se lance en petit, comme sur un décodeur. Elle utilise un écran de ton compte." else "Pas d'aperçu : seul le guide s'affiche." },
             { Prefs.guidePreview }, { Prefs.guidePreview = it }
         )
+        rows.choice(
+            "Son de navigation", "Petit son quand tu te déplaces avec les flèches de la télécommande.",
+            listOf(1 to "Doux", 2 to "Plus marqué", 0 to "Aucun"),
+            { Prefs.navSound }, { Prefs.navSound = it }
+        )
+    }
+
+    // ---------- Sport ----------
+
+    private fun sportSettings() {
         rows.toggle(
             "Onglet Sport",
-            { if (it) "Scores en direct et matchs à venir, avec la chaîne qui les diffuse." else "L'onglet Sport est masqué." },
+            { if (it) "Scores en direct et matchs à venir, avec la chaîne qui les diffuse." else "L'onglet Sport est masqué (effet au prochain retour à l'accueil)." },
             { Prefs.showSport }, { Prefs.showSport = it }
         )
+        val n = Sport.followed().size
+        rows.action("Mes équipes", if (n == 0) "Aucune équipe suivie" else "$n équipe(s) suivie(s) : leurs matchs passent en premier.") {
+            startActivity(Intent(this, TeamsActivity::class.java))
+        }
+        rows.toggle(
+            "Scores pendant le direct",
+            { if (it) "En regardant une chaîne : scores de tes équipes et des grands matchs avec les infos, et une alerte à chaque but." else "Aucun score pendant la lecture." },
+            { Prefs.sportTicker }, { Prefs.sportTicker = it }
+        )
+        rows.header("Cotes en direct")
+        rows.toggle(
+            "Afficher les cotes",
+            { if (it) "Cotes 1 / N / 2 sur les matchs (source ESPN, ou plusieurs bookmakers avec une clé The Odds API)." else "Les cotes sont masquées." },
+            { Prefs.oddsEnabled }, { Prefs.oddsEnabled = it }
+        )
+        rows.action(
+            "Clé The Odds API",
+            "Facultative et gratuite (500 requêtes par mois) sur the-odds-api.com : compare les cotes de plusieurs bookmakers.",
+            value = if (Prefs.oddsKey.isBlank()) "Aucune" else "Enregistrée"
+        ) {
+            Ui.textInput(this, "Clé The Odds API", Prefs.oddsKey, "Colle ta clé ici") { key ->
+                Prefs.oddsKey = key.trim()
+                reshow()
+            }
+        }
+        rows.note("Les scores viennent du site ESPN, sans compte. La chaîne de chaque match est trouvée dans le guide TV de ton fournisseur ; sinon l'appli affiche le diffuseur officiel et tu choisis la chaîne une fois.")
     }
 
     // ---------- Protection multi-écran ----------
