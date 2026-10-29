@@ -128,6 +128,10 @@ class MainActivity : BaseActivity() {
                 if (cur != null && cur !== new && cur.visibility == View.VISIBLE && !gridMode) cur.requestFocus()
             }
         }
+        if (!Features.DOWNLOADS) {
+            tabViews[Tab.DL]?.visibility = View.GONE
+            findViewById<View>(R.id.tabDlGap).visibility = View.GONE
+        }
         if (!Prefs.showSport) {
             tabViews[Tab.SPORT]?.visibility = View.GONE
             findViewById<View>(R.id.tabSportGap).visibility = View.GONE

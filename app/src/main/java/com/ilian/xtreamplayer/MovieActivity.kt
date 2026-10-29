@@ -87,6 +87,7 @@ class MovieActivity : BaseActivity() {
             paintButtons()
         }
         btnDownload.setOnClickListener { download() }
+        if (!Features.DOWNLOADS) btnDownload.visibility = View.GONE
         btnPlay.requestFocus()
         fillSimilar()
 
@@ -206,7 +207,7 @@ class MovieActivity : BaseActivity() {
             d.finished -> "Téléchargé : se lit même sans connexion"
             else -> "Téléchargement : ${d.label}"
         }
-        tvDl.visibility = if (d == null) View.GONE else View.VISIBLE
+        tvDl.visibility = if (d == null || !Features.DOWNLOADS) View.GONE else View.VISIBLE
     }
 
     private fun fillSimilar() {

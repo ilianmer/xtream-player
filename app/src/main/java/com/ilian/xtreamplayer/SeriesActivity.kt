@@ -294,16 +294,21 @@ class SeriesActivity : BaseActivity() {
         if (position !in episodes.indices) return
         val ep = episodes[position]
         val dl = Downloads.find(this, src.id, ep)
-        val options = listOf(
-            "Lire depuis le début",
+        val options = arrayListOf("Lire depuis le début", "Marquer comme vu")
+        if (Features.DOWNLOADS) options.add(
             when {
                 dl == null -> "Télécharger l'épisode"
                 dl.finished -> "Supprimer le téléchargement"
                 else -> "Annuler le téléchargement"
-            },
-            "Marquer comme vu"
+            }
         )
-        Ui.choose(this, ep.name, options) { w ->
+        Ui.choose(this, ep.name, options) { picked ->
+            // Ordre de la liste : 0 lire, 1 marquer vu, 2 téléchargement (si activé)
+            val w = when (picked) {
+                1 -> 2
+                2 -> 1
+                else -> picked
+            }
             when (w) {
                 0 -> {
                     Db.saveProgress(src.id, ep, 0, 0, false)
