@@ -244,6 +244,78 @@ class SettingsActivity : BaseActivity() {
         }
     }
 
+    // ---------- Guide TV externe ----------
+
+    private fun epgSection() {
+        val src = Session.source() ?: return
+        rows.header("Guide TV externe")
+        rows.note("Le programme de toutes les chaînes, même quand ton fournisseur n'en donne pas. Les chaînes sont reconnues automatiquement.")
+        var status: TextView? = null
+        rows.choice(
+            "Source du guide", null, XmlTv.CHOICES,
+            { Prefs.epgSource }, { Prefs.epgSource = it }
+        ) {
+            when {
+                Prefs.epgSource == XmlTv.OFF -> Unit
+                Prefs.epgSource == XmlTv.CUSTOM && Prefs.epgCustomUrl.isBlank() -> askEpgUrl { updateEpg(src, status) }
+                else -> updateEpg(src, status)
+            }
+        }
+        rows.action("Adresse personnalisée", "Lien vers un fichier XMLTV (.xml, .gz ou .zip).", Prefs.epgCustomUrl.ifBlank { "Aucune" }) { v ->
+            askEpgUrl {
+                rows.value(v).text = Prefs.epgCustomUrl.ifBlank { "Aucune" }
+                if (Prefs.epgSource == XmlTv.CUSTOM) updateEpg(src, status)
+            }
+        }
+        val up = rows.action("Mettre à jour le guide maintenant", "Se fait aussi tout seul au lancement, toutes les 12 h.", XmlTv.lastLabel(src.id)) {
+            updateEpg(src, status)
+        }
+        status = rows.value(up)
+    }
+
+    private fun askEpgUrl(after: () -> Unit) {
+        Ui.textInput(this, "Adresse du guide XMLTV", Prefs.epgCustomUrl, "https://…/guide.xml.gz") { url ->
+            Prefs.epgCustomUrl = url.trim()
+            after()
+        }
+    }
+
+    /** Téléchargement du guide avec l'avancement affiché. */
+    private fun updateEpg(src: Source, status: TextView?) {
+        val api = Session.api() ?: return
+        if (Prefs.epgSource == XmlTv.OFF) {
+            Ui.toast(this, "Choisis d'abord une source de guide.")
+            return
+        }
+        if (XmlTv.running) {
+            Ui.toast(this, "Mise à jour du guide déjà en cours…")
+            return
+        }
+        val d = resources.displayMetrics.density
+        val label = TextView(this).apply {
+            text = "Préparation…"
+            setTextColor(getColor(R.color.text_dim))
+            textSize = 13f
+            setPadding((24 * d).toInt(), (8 * d).toInt(), (24 * d).toInt(), (4 * d).toInt())
+        }
+        val dlg = android.app.AlertDialog.Builder(this, Ui.DIALOG)
+            .setTitle("Guide TV")
+            .setView(label)
+            .setCancelable(false)
+            .show()
+        Bg.task(this, {
+            XmlTv.import(src, api) { msg -> Bg.main.post { label.text = msg } }
+        }) { r ->
+            dlg.dismiss()
+            r.onSuccess { res ->
+                status?.text = XmlTv.lastLabel(src.id)
+                Ui.toast(this, "Guide à jour : ${res.channels} chaînes reconnues, ${Sync.fmt(res.programmes)} programmes.")
+            }.onFailure { e ->
+                Ui.toast(this, "Guide indisponible : ${Bg.err(e)}")
+            }
+        }
+    }
+
     // ---------- Réglages IPTV ----------
 
     private fun iptv() {
@@ -272,6 +344,7 @@ class SettingsActivity : BaseActivity() {
             { "Affiche le programme en cours directement dans la liste des chaînes, sans attendre de lancer la chaîne." },
             { Prefs.epgPreload }, { Prefs.epgPreload = it }
         )
+        epgSection()
         rows.toggle(
             "Fusion des catégories similaires",
             { "Exemple : FR TV (SD) | FR TV (HD) | FR TV (4K) sont regroupées en : FR TV" },
