@@ -17,7 +17,22 @@ jobs:
           distribution: temurin
           java-version: "17"
       - uses: gradle/actions/setup-gradle@v4
+      # Clé de signature fixe (chiffrée dans le dépôt). Sans le secret, on n'envoie surtout pas
+      # une version signée avec une autre clé : elle refuserait de s'installer par-dessus.
+      - name: Préparer la clé de signature
+        env:
+          SIGNING_PASSWORD: ${{ secrets.SIGNING_PASSWORD }}
+        run: |
+          if [ -z "$SIGNING_PASSWORD" ]; then
+            echo "::error::Secret SIGNING_PASSWORD manquant : GitHub > Settings > Secrets and variables > Actions > New repository secret"
+            exit 1
+          fi
+          openssl enc -d -aes-256-cbc -md sha256 -pbkdf2 -iter 200000 -in signing/release.p12.enc -out "$RUNNER_TEMP/release.p12" -pass env:SIGNING_PASSWORD \
+            || { echo "::error::Le secret SIGNING_PASSWORD ne correspond pas à la clé"; exit 1; }
+          echo "SIGNING_STORE=$RUNNER_TEMP/release.p12" >> "$GITHUB_ENV"
       - name: Compiler l'APK
+        env:
+          SIGNING_PASSWORD: ${{ secrets.SIGNING_PASSWORD }}
         run: |
           chmod +x gradlew
           set -o pipefail
@@ -30,6 +45,13 @@ jobs:
           done
       - name: Renommer l'APK
         run: cp app/build/outputs/apk/release/app-release.apk XtreamPlayer.apk
+      # Garde-fou : on ne publie que des APK signés avec la clé fixe
+      - name: Vérifier la signature
+        run: |
+          AS="$(ls -d "$ANDROID_HOME"/build-tools/*/ | sort -V | tail -1)apksigner"
+          "$AS" verify --print-certs XtreamPlayer.apk | tee sig.txt
+          grep -qi "bfa8ac77d0e56955af0d554d8a1d9f0c539a36648bd9d5aeb6f145e538eb9cac" sig.txt \
+            || { echo "::error::L'APK n'est pas signé avec la clé fixe"; exit 1; }
       - uses: actions/upload-artifact@v4
         with:
           name: XtreamPlayer-apk

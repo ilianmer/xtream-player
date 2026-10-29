@@ -15,11 +15,27 @@ android {
         versionName = "6.0"
     }
 
+    // Clé de signature fixe : toutes les versions portent la même signature, donc les mises à jour
+    // s'installent par-dessus sans perdre les données. Le fichier est chiffré dans le dépôt
+    // (signing/release.p12.enc) et déchiffré par GitHub avec le secret SIGNING_PASSWORD.
+    val signingStore = System.getenv("SIGNING_STORE")
+    signingConfigs {
+        create("fixed") {
+            if (signingStore != null) {
+                storeFile = file(signingStore)
+                storeType = "pkcs12"
+                storePassword = System.getenv("SIGNING_PASSWORD")
+                keyAlias = "xtream"
+                keyPassword = System.getenv("SIGNING_PASSWORD")
+            }
+        }
+    }
+
     buildTypes {
         release {
             isMinifyEnabled = false
-            // Signé avec la clé de debug : suffisant pour installer l'APK à la main
-            signingConfig = signingConfigs.getByName("debug")
+            // Sans la clé (compilation locale) : clé de debug
+            signingConfig = signingConfigs.getByName(if (signingStore != null) "fixed" else "debug")
         }
     }
 
