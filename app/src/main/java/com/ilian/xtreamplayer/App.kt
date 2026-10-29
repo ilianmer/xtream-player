@@ -10,6 +10,10 @@ class App : Application() {
         // Le bon profil dès le démarrage (même si Android relance l'appli directement sur un écran)
         try {
             Session.profile()
+            if (!Prefs.langsStrict) {
+                Langs.tightenAll()
+                Prefs.langsStrict = true
+            }
         } catch (_: Exception) {
         }
     }

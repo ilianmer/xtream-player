@@ -302,4 +302,63 @@
         android:padding="18dp"
         android:textSize="15sp"
         android:visibility="gone" />
+
+    <!-- Épisode suivant, proposé pendant le générique (comme Netflix) -->
+    <LinearLayout
+        android:id="@+id/nextBox"
+        android:layout_width="300dp"
+        android:layout_height="wrap_content"
+        android:layout_gravity="bottom|end"
+        android:layout_marginEnd="32dp"
+        android:layout_marginBottom="40dp"
+        android:background="@drawable/glass_dark"
+        android:orientation="vertical"
+        android:padding="14dp"
+        android:visibility="gone">
+
+        <TextView
+            style="@style/Txt"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="ÉPISODE SUIVANT"
+            android:letterSpacing="0.08"
+            android:textColor="@color/accent"
+            android:textSize="10sp" />
+
+        <TextView
+            android:id="@+id/nextTitle"
+            style="@style/Semi"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="3dp"
+            android:ellipsize="end"
+            android:maxLines="2"
+            android:textSize="15sp" />
+
+        <Button
+            android:id="@+id/btnNext"
+            style="@style/Btn"
+            android:layout_height="38dp"
+            android:layout_marginTop="10dp"
+            android:drawableStart="@drawable/ic_play_small"
+            android:text="Lecture" />
+
+        <ProgressBar
+            android:id="@+id/nextBar"
+            style="@android:style/Widget.Material.ProgressBar.Horizontal"
+            android:layout_width="match_parent"
+            android:layout_height="3dp"
+            android:layout_marginTop="8dp"
+            android:max="1000"
+            android:progressTint="@color/accent" />
+
+        <TextView
+            style="@style/Txt"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="6dp"
+            android:text="Retour : finir cet épisode"
+            android:textColor="@color/text_faint"
+            android:textSize="10sp" />
+    </LinearLayout>
 </FrameLayout>

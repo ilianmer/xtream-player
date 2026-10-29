@@ -46,8 +46,6 @@ class StreamScreen(
     private val heroBadge: TextView = root.findViewById(R.id.sHeroBadge)
     private val heroMeta: TextView = root.findViewById(R.id.sHeroMeta)
     private val heroPlot: TextView = root.findViewById(R.id.sHeroPlot)
-    private val heroPlay: TextView = root.findViewById(R.id.sHeroPlay)
-    private val heroMore: TextView = root.findViewById(R.id.sHeroMore)
 
     private val rails = ArrayList<Rail>()
     private val adapter = RailAdapter()
@@ -71,17 +69,6 @@ class StreamScreen(
         rvRails.layoutManager = LinearLayoutManager(act)
         rvRails.adapter = adapter
         rvRails.itemAnimator = null
-        heroPlay.setOnClickListener { hero?.let { primary(it, heroRail) } }
-        heroMore.setOnClickListener { hero?.let { open(it) } }
-        // Bas depuis les boutons : première rangée, à la place mémorisée
-        for (b in listOf(heroPlay, heroMore)) {
-            b.setOnKeyListener { _, code, e ->
-                if (e.action == KeyEvent.ACTION_DOWN && code == KeyEvent.KEYCODE_DPAD_DOWN) {
-                    focusRail(firstRail(), 0)
-                    true
-                } else false
-            }
-        }
     }
 
     fun show() {
@@ -96,7 +83,12 @@ class StreamScreen(
     }
 
     fun focusDefault() {
-        rvRails.post { if (rails.isNotEmpty()) focusRail(if (activeRail >= 0) activeRail else firstRail(), 0) else heroPlay.requestFocus() }
+        rvRails.post { if (rails.isNotEmpty()) focusRail(if (activeRail >= 0) activeRail else firstRail(), 0) else focusTab() }
+    }
+
+    /** Onglet Films ou Séries de la barre du haut. */
+    private fun focusTab() {
+        act.findViewById<View>(if (isSeries) R.id.tabSeries else R.id.tabMovies)?.requestFocus()
     }
 
     private fun firstRail(): Int = rails.indexOfFirst { it.items.isNotEmpty() || it.loader != null }.coerceAtLeast(0)
@@ -280,11 +272,6 @@ class StreamScreen(
         heroBadge.text = rail.badge ?: ""
         heroPlot.text = item.plot ?: ""
         heroMeta.text = Meta.line(listOf(Meta.rating(item.rating)), act.getColor(R.color.accent))
-        heroPlay.text = when {
-            rail.key == "resume" && !isSeries -> "Reprendre"
-            isSeries -> "Épisodes"
-            else -> "Lecture"
-        }
         paintBackground(item)
         if (isSeries) {
             seriesInfos[item.id]?.let {
@@ -471,9 +458,10 @@ class StreamScreen(
                         val p = railPos()
                         val prev = (p - 1 downTo 0).firstOrNull { i -> rails[i].items.isNotEmpty() || rails[i].loader != null }
                         if (prev == null) {
+                            // Tout en haut : retour à la barre d'onglets (plus de boutons sur la mise en avant)
                             activeRail = -1
-                            heroPlay.requestFocus()
                             rvRails.smoothScrollToPosition(0)
+                            focusTab()
                         } else focusRail(prev, -1)
                         true
                     }

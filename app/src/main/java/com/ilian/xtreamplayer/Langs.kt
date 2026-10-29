@@ -9,7 +9,8 @@ object Langs {
     data class Lang(val code: String, val label: String, val words: Set<String>)
 
     val ALL = listOf(
-        Lang("fr", "Français", setOf("fr", "fra", "france", "french", "francais", "vf", "vff", "vfq", "vostfr", "truefrench", "belgique", "suisse", "quebec", "tnt")),
+        // Strict : seulement ce qui est marqué France / FR / Français (et les versions françaises VF / VOSTFR)
+        Lang("fr", "Français", setOf("fr", "fra", "france", "french", "francais", "vf", "vff", "vfq", "vostfr", "truefrench")),
         Lang("ar", "Arabe", setOf("ar", "ara", "arab", "arabe", "arabic", "mbc", "osn", "shahid", "rotana", "aljazeera", "khaleeji", "egypt", "egypte", "maghreb", "dz", "algerie", "tunisie", "tn")),
         Lang("ma", "Maroc", setOf("ma", "maroc", "morocco", "marocain", "moroccan", "amazigh", "2m", "arryadia")),
         Lang("en", "Anglais", setOf("en", "eng", "english", "uk", "us", "usa", "gb", "anglais", "britain", "canada")),
@@ -38,11 +39,26 @@ object Langs {
 
     fun label(code: String): String = ALL.firstOrNull { it.code == code }?.label ?: code
 
-    /** Une catégorie reste visible si elle est dans une des langues choisies, ou si sa langue est inconnue. */
+    /**
+     * Préréglage strict : une catégorie n'est visible que si son nom indique une des langues choisies
+     * (« FR », « France », « Français »…). Les catégories sans langue reconnaissable sont masquées ;
+     * on peut toujours les réafficher une par une dans « Catégories affichées ».
+     */
     fun keep(name: String, langs: Set<String>): Boolean {
         if (langs.isEmpty()) return true
-        val d = detect(name)
-        return d.isEmpty() || d.any { it in langs }
+        return detect(name).any { it in langs }
+    }
+
+    /** Passage au préréglage strict (une seule fois) : masque en plus ce qui n'a pas de langue reconnue. */
+    fun tightenAll() {
+        for (src in Db.sources()) for (p in Db.profiles(src.id)) {
+            val langs = p.langSet
+            if (langs.isEmpty()) continue
+            for (k in listOf(Kind.LIVE, Kind.MOVIE, Kind.SERIES)) {
+                val hide = Db.categories(src.id, k, p.id).filter { !it.second && !keep(it.first.name, langs) }.map { it.first.id }
+                if (hide.isNotEmpty()) Db.addHidden(src.id, k, hide, p.id)
+            }
+        }
     }
 
     /** Nombre de catégories par langue, pour proposer seulement les langues présentes chez le fournisseur. */

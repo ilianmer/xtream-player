@@ -107,8 +107,8 @@
 
             <FrameLayout
                 android:layout_width="match_parent"
-                android:layout_height="162dp"
-                android:layout_marginTop="7dp">
+                android:layout_height="170dp"
+                android:layout_marginTop="2dp">
 
                 <androidx.recyclerview.widget.RecyclerView
                     android:id="@+id/rvLive"
@@ -116,8 +116,10 @@
                     android:layout_height="match_parent"
                     android:clipChildren="false"
                     android:clipToPadding="false"
-                    android:paddingStart="2dp"
-                    android:paddingEnd="2dp"
+                    android:paddingStart="9dp"
+                    android:paddingEnd="9dp"
+                    android:paddingTop="5dp"
+                    android:paddingBottom="5dp"
                     android:scrollbars="none" />
 
                 <TextView

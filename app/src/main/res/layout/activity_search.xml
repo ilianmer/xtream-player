@@ -86,6 +86,7 @@
                 android:layout_height="64dp"
                 android:clipChildren="false"
                 android:clipToPadding="false"
+                android:paddingStart="8dp"
                 android:paddingEnd="20dp"
                 android:scrollbars="none" />
         </LinearLayout>
@@ -111,6 +112,7 @@
                 android:layout_height="150dp"
                 android:clipChildren="false"
                 android:clipToPadding="false"
+                android:paddingStart="8dp"
                 android:paddingEnd="20dp"
                 android:scrollbars="none" />
         </LinearLayout>
@@ -136,6 +138,7 @@
                 android:layout_height="150dp"
                 android:clipChildren="false"
                 android:clipToPadding="false"
+                android:paddingStart="8dp"
                 android:paddingEnd="20dp"
                 android:scrollbars="none" />
         </LinearLayout>

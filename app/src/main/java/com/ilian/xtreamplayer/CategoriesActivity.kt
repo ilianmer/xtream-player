@@ -72,7 +72,17 @@ class CategoriesActivity : BaseActivity() {
         findViewById<View>(R.id.btnAll).setOnClickListener { setAll(true) }
         findViewById<View>(R.id.btnNone).setOnClickListener { setAll(false) }
         findViewById<View>(R.id.btnLang).setOnClickListener { byLanguage() }
-        findViewById<View>(R.id.btnDone).setOnClickListener { finish() }
+        findViewById<View>(R.id.btnDone).setOnClickListener {
+            Ui.toast(this, "Catégories enregistrées.")
+            finish()
+        }
+        // Colonne de gauche : haut / bas restent dans la colonne (on ne passe plus par la liste de droite)
+        val chain = intArrayOf(R.id.btnAll, R.id.btnNone, R.id.btnLang, R.id.btnDone).map { findViewById<View>(it) }
+        chain.forEachIndexed { i, v ->
+            if (i > 0) v.nextFocusUpId = chain[i - 1].id
+            v.nextFocusDownId = if (i < chain.size - 1) chain[i + 1].id else v.id
+        }
+        for (t in tabs.values) t.nextFocusDownId = R.id.btnAll
         for (id in intArrayOf(R.id.btnAll, R.id.btnNone, R.id.btnLang, R.id.btnDone)) {
             findViewById<View>(id).setOnFocusChangeListener { v, has -> Fx.focus(v, has, 1.04f) }
         }
@@ -84,6 +94,7 @@ class CategoriesActivity : BaseActivity() {
     private fun load(k: Kind) {
         kind = k
         for ((kk, v) in tabs) v.isSelected = kk == k
+        tabs[k]?.let { findViewById<View>(R.id.btnAll).nextFocusUpId = it.id }
         tvKind.text = when (k) {
             Kind.LIVE -> "Chaînes en direct"
             Kind.MOVIE -> "Films"
@@ -124,7 +135,7 @@ class CategoriesActivity : BaseActivity() {
         val hidden = rows.filter { !Langs.keep(it.cat.name, p.langSet) }.map { it.cat.id }.toSet()
         Db.setHidden(src.id, kind, hidden)
         load(kind)
-        Ui.toast(this, "Seulement : ${p.langSet.joinToString(", ") { Langs.label(it) }} (+ catégories sans langue précise)")
+        Ui.toast(this, "Seulement les catégories marquées : ${p.langSet.joinToString(", ") { Langs.label(it) }}")
     }
 
     private fun toggle(pos: Int) {

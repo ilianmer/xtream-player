@@ -286,7 +286,8 @@ object Sport {
     }
 
     fun initials(name: String): String {
-        val words = name.split(' ', '-', '.').filter { it.isNotBlank() }
+        // Doubles « A / B » : initiales du premier joueur ; jamais de « / » dans la pastille
+        val words = name.substringBefore('/').split(' ', '-', '.').map { w -> w.filter { it.isLetterOrDigit() } }.filter { it.isNotBlank() }
         return when {
             words.isEmpty() -> "?"
             words.size == 1 -> words[0].take(3).uppercase()
