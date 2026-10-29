@@ -11,8 +11,10 @@ android {
         applicationId = "com.ilian.xtreamplayer"
         minSdk = 26
         targetSdk = 35
-        versionCode = 6
-        versionName = "6.0"
+        // Numéro de version = numéro de build GitHub : l'appli compare directement avec la dernière version publiée.
+        val build = System.getenv("GITHUB_RUN_NUMBER")?.toIntOrNull() ?: 6
+        versionCode = build
+        versionName = "6.0 · build $build"
     }
 
     // Clé de signature fixe : toutes les versions portent la même signature, donc les mises à jour
@@ -59,5 +61,6 @@ dependencies {
     implementation("androidx.media3:media3-extractor:$media3")
     implementation("androidx.media3:media3-ui:$media3")
     implementation("androidx.recyclerview:recyclerview:1.3.2")
+    implementation("androidx.core:core:1.13.1")
     implementation("com.google.zxing:core:3.5.3")
 }

@@ -69,6 +69,6 @@ jobs:
         with:
           tag_name: build-${{ github.run_number }}
           name: Xtream Player (version ${{ github.run_number }})
-          body: Installe ou mets à jour avec l'appli Downloader sur le stick.
+          body: ${{ github.event.head_commit.message }}
           files: XtreamPlayer.apk
           make_latest: "true"
