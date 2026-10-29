@@ -1,0 +1,68 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="38dp"
+    android:layout_marginBottom="5dp"
+    android:clickable="true"
+    android:focusable="true"
+    android:orientation="horizontal">
+
+    <LinearLayout
+        android:id="@+id/cell"
+        android:layout_width="160dp"
+        android:layout_height="match_parent"
+        android:background="@drawable/guide_cell_bg"
+        android:duplicateParentState="true"
+        android:gravity="center_vertical"
+        android:orientation="horizontal"
+        android:paddingStart="6dp"
+        android:paddingEnd="8dp">
+
+        <TextView
+            android:id="@+id/num"
+            style="@style/Txt"
+            android:layout_width="26dp"
+            android:layout_height="wrap_content"
+            android:fontFeatureSettings="tnum"
+            android:gravity="end"
+            android:singleLine="true"
+            android:textColor="@color/text_faint"
+            android:textSize="12sp" />
+
+        <ImageView
+            android:id="@+id/img"
+            android:layout_width="38dp"
+            android:layout_height="27dp"
+            android:layout_marginStart="7dp"
+            android:background="@drawable/logo_tile"
+            android:padding="3dp"
+            android:scaleType="fitCenter" />
+
+        <TextView
+            android:id="@+id/name"
+            style="@style/Medium"
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_marginStart="7dp"
+            android:layout_weight="1"
+            android:ellipsize="end"
+            android:singleLine="true"
+            android:textSize="12sp" />
+
+        <ImageView
+            android:id="@+id/star"
+            android:layout_width="11dp"
+            android:layout_height="11dp"
+            android:layout_marginStart="3dp"
+            android:src="@drawable/ic_star"
+            android:tint="@color/accent"
+            android:visibility="gone" />
+    </LinearLayout>
+
+    <com.ilian.xtreamplayer.EpgRowView
+        android:id="@+id/strip"
+        android:layout_width="0dp"
+        android:layout_height="match_parent"
+        android:layout_marginStart="6dp"
+        android:layout_weight="1" />
+</LinearLayout>

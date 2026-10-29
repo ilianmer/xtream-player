@@ -70,6 +70,8 @@ class PlayerActivity : Activity() {
 
     private val hideOverlay = Runnable { overlay.visibility = View.GONE }
     private val zapNow = Runnable { play() }
+    private var digits = ""
+    private val applyDigits = Runnable { zapToNumber() }
 
     private val list: ItemList get() = Session.playlist
     private val current: Item? get() = list[index]
@@ -143,6 +145,7 @@ class PlayerActivity : Activity() {
         savePosition()
         Bg.main.removeCallbacks(hideOverlay)
         Bg.main.removeCallbacks(zapNow)
+        Bg.main.removeCallbacks(applyDigits)
         player?.release()
         player = null
         Session.index = index
@@ -233,7 +236,7 @@ class PlayerActivity : Activity() {
     private fun showInfo(item: Item, withEpg: Boolean) {
         val live = item.kind == Kind.LIVE
         ovClock.text = hhmm(System.currentTimeMillis())
-        ovTitle.text = if (live) "${index + 1} · ${item.name}" else item.name
+        ovTitle.text = if (live) "${item.num ?: (index + 1)} · ${item.name}" else item.name
         ovLive.visibility = if (live) View.VISIBLE else View.GONE
         ovStar.visibility = if (Db.isFav(src.id, item)) View.VISIBLE else View.GONE
         ovLogo.visibility = if (live) View.VISIBLE else View.GONE
@@ -302,7 +305,7 @@ class PlayerActivity : Activity() {
         val idx = listOf((index + 1) % n, index, (index - 1 + n) % n)
         for ((row, i) in zapRows.zip(idx)) {
             val ch = list[i] ?: continue
-            row.findViewById<TextView>(R.id.name).text = "${i + 1} · ${ch.name}"
+            row.findViewById<TextView>(R.id.name).text = "${ch.num ?: (i + 1)} · ${ch.name}"
             Img.load(row.findViewById(R.id.img), ch.icon, R.drawable.ph_live)
             val sub = row.findViewById<TextView>(R.id.sub)
             if (i == index) {
@@ -420,9 +423,43 @@ class PlayerActivity : Activity() {
         Bg.main.postDelayed(hideOverlay, 2_000)
     }
 
+    /** Numéro tapé à la télécommande : on zappe sur cette chaîne de la liste. */
+    private fun typeDigit(d: Int) {
+        if (digits.length >= 4) digits = ""
+        digits += d
+        ovTitle.text = "Chaîne $digits"
+        ovNow.text = ""
+        ovNext.text = ""
+        ovProgress.visibility = View.GONE
+        overlay.visibility = View.VISIBLE
+        Bg.main.removeCallbacks(hideOverlay)
+        Bg.main.removeCallbacks(applyDigits)
+        Bg.main.postDelayed(applyDigits, 1_300)
+    }
+
+    private fun zapToNumber() {
+        val n = digits.toIntOrNull()
+        digits = ""
+        val idx = n?.let { list.indexOfNum(it) }
+        if (idx == null) {
+            ovNow.text = "Pas de chaîne n° ${n ?: ""} dans cette liste"
+            Bg.main.postDelayed(hideOverlay, 2_000)
+            return
+        }
+        index = idx
+        play()
+    }
+
     override fun dispatchKeyEvent(event: KeyEvent): Boolean {
         if (event.action == KeyEvent.ACTION_DOWN) {
             if (isLive) {
+                val c = event.keyCode
+                if (c in KeyEvent.KEYCODE_0..KeyEvent.KEYCODE_9) {
+                    typeDigit(c - KeyEvent.KEYCODE_0); return true
+                }
+                if (c in KeyEvent.KEYCODE_NUMPAD_0..KeyEvent.KEYCODE_NUMPAD_9) {
+                    typeDigit(c - KeyEvent.KEYCODE_NUMPAD_0); return true
+                }
                 when (event.keyCode) {
                     KeyEvent.KEYCODE_DPAD_UP, KeyEvent.KEYCODE_CHANNEL_UP -> {
                         zap(1); return true

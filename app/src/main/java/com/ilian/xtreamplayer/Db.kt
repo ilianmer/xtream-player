@@ -20,7 +20,7 @@ object Db {
         helper.setWriteAheadLoggingEnabled(true)
     }
 
-    private class Helper(ctx: Context) : SQLiteOpenHelper(ctx, "xtream.db", null, 1) {
+    private class Helper(ctx: Context) : SQLiteOpenHelper(ctx, "xtream.db", null, 2) {
         override fun onCreate(d: SQLiteDatabase) {
             d.execSQL(
                 "CREATE TABLE sources(id INTEGER PRIMARY KEY AUTOINCREMENT, name TEXT, server TEXT, user TEXT, pass TEXT, " +
@@ -32,20 +32,33 @@ object Db {
             )
             d.execSQL(
                 "CREATE TABLE items(source_id INTEGER, kind TEXT, id TEXT, name TEXT, norm TEXT, icon TEXT, cat_id TEXT, ext TEXT, " +
-                    "rating TEXT, tmdb TEXT, plot TEXT, pos INTEGER, PRIMARY KEY(source_id, kind, id))"
+                    "rating TEXT, tmdb TEXT, plot TEXT, pos INTEGER, num INTEGER, added INTEGER DEFAULT 0, PRIMARY KEY(source_id, kind, id))"
             )
             d.execSQL("CREATE INDEX items_cat ON items(source_id, kind, cat_id, pos)")
             d.execSQL("CREATE INDEX items_pos ON items(source_id, kind, pos)")
+            d.execSQL("CREATE INDEX items_added ON items(source_id, kind, added)")
             d.execSQL("CREATE TABLE favorites(source_id INTEGER, kind TEXT, id TEXT, added INTEGER, PRIMARY KEY(source_id, kind, id))")
             d.execSQL(
                 "CREATE TABLE progress(source_id INTEGER, kind TEXT, id TEXT, pos INTEGER, dur INTEGER, finished INTEGER, updated INTEGER, " +
-                    "name TEXT, icon TEXT, ext TEXT, extra TEXT, PRIMARY KEY(source_id, kind, id))"
+                    "name TEXT, icon TEXT, ext TEXT, extra TEXT, series TEXT, PRIMARY KEY(source_id, kind, id))"
             )
+            d.execSQL("CREATE TABLE kv(key TEXT PRIMARY KEY, value TEXT)")
             d.execSQL("CREATE TABLE downloads(dm_id INTEGER PRIMARY KEY, source_id INTEGER, kind TEXT, id TEXT, json TEXT, created INTEGER)")
             d.execSQL("CREATE TABLE tmdb(key TEXT PRIMARY KEY, json TEXT, fetched INTEGER)")
         }
 
-        override fun onUpgrade(d: SQLiteDatabase, oldVersion: Int, newVersion: Int) {}
+        override fun onUpgrade(d: SQLiteDatabase, oldVersion: Int, newVersion: Int) {
+            if (oldVersion < 2) {
+                // Version 3 : numéro de chaîne, date d'ajout, série des épisodes, petites préférences.
+                d.execSQL("ALTER TABLE items ADD COLUMN num INTEGER")
+                d.execSQL("ALTER TABLE items ADD COLUMN added INTEGER DEFAULT 0")
+                d.execSQL("CREATE INDEX items_added ON items(source_id, kind, added)")
+                d.execSQL("ALTER TABLE progress ADD COLUMN series TEXT")
+                d.execSQL("CREATE TABLE kv(key TEXT PRIMARY KEY, value TEXT)")
+                // Le catalogue est rechargé une fois pour remplir les nouvelles colonnes.
+                d.execSQL("UPDATE sources SET last_sync=0")
+            }
+        }
     }
 
     private fun <T> tx(block: () -> T): T {
@@ -177,8 +190,8 @@ object Db {
                 }, SQLiteDatabase.CONFLICT_REPLACE)
             }
             val st = db.compileStatement(
-                "INSERT OR REPLACE INTO items(source_id, kind, id, name, norm, icon, cat_id, ext, rating, tmdb, plot, pos) " +
-                    "VALUES (?,?,?,?,?,?,?,?,?,?,?,?)"
+                "INSERT OR REPLACE INTO items(source_id, kind, id, name, norm, icon, cat_id, ext, rating, tmdb, plot, pos, num, added) " +
+                    "VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)"
             )
             var pos = 0L
             fun bind(i: Int, v: String?) {
@@ -199,6 +212,9 @@ object Db {
                     bind(10, item.tmdb)
                     bind(11, item.plot)
                     st.bindLong(12, pos++)
+                    val n = item.num
+                    if (n == null) st.bindNull(13) else st.bindLong(13, n.toLong())
+                    st.bindLong(14, item.added)
                     st.executeInsert()
                 }
             } finally {
@@ -207,7 +223,7 @@ object Db {
         }
     }
 
-    private const val ITEM_COLS = "kind, id, name, icon, ext, plot, cat_id, rating, tmdb"
+    private const val ITEM_COLS = "kind, id, name, icon, ext, plot, cat_id, rating, tmdb, num, added"
     private val ITEM_COLS_I = ITEM_COLS.split(",").joinToString(",") { "i." + it.trim() }
 
     private fun item(c: Cursor): Item {
@@ -223,7 +239,9 @@ object Db {
             extra = if (kind == Kind.MOVIE && rating != null && rating != "0") "★ $rating" else null,
             catId = c.str(6),
             rating = rating,
-            tmdb = c.str(8)
+            tmdb = c.str(8),
+            num = if (c.isNull(9)) null else c.getInt(9),
+            added = if (c.isNull(10)) 0L else c.getLong(10)
         )
     }
 
@@ -243,8 +261,15 @@ object Db {
             a.add(kind.name)
         }
         if (!q.isNullOrBlank()) {
-            sb.append(" AND norm LIKE ? ESCAPE '\\'")
-            a.add("%" + escapeLike(normalize(q.trim())) + "%")
+            val t = q.trim()
+            if (kind == Kind.LIVE && t.all { it.isDigit() }) {
+                // Chaîne cherchée par son numéro (ou un nom qui contient ces chiffres)
+                sb.append(" AND (num = ? OR norm LIKE ? ESCAPE '\\')")
+                a.add(t)
+            } else {
+                sb.append(" AND norm LIKE ? ESCAPE '\\'")
+            }
+            a.add("%" + escapeLike(normalize(t)) + "%")
         }
         return sb.toString()
     }
@@ -267,6 +292,51 @@ object Db {
             while (c.moveToNext()) out.add(item(c))
             out
         }
+    }
+
+    /** Les plus récents d'abord (date d'ajout du fournisseur), hors catégories masquées. */
+    fun latest(src: Long, kind: Kind, limit: Int): List<Item> {
+        val a = ArrayList<String>()
+        val w = where(src, kind, null, null, a)
+        a.add(limit.toString())
+        return db.rawQuery("SELECT $ITEM_COLS FROM items WHERE $w AND added > 0 ORDER BY added DESC LIMIT ?", a.toTypedArray()).use { c ->
+            val out = ArrayList<Item>(limit)
+            while (c.moveToNext()) out.add(item(c))
+            out
+        }
+    }
+
+    /** Éléments du catalogue correspondant à des identifiants TMDB, dans l'ordre demandé. */
+    fun byTmdb(src: Long, kind: Kind, ids: List<String>): List<Item> {
+        if (ids.isEmpty()) return emptyList()
+        val a = arrayListOf(src.toString(), kind.name)
+        a.addAll(ids)
+        val found = HashMap<String, Item>()
+        db.rawQuery(
+            "SELECT $ITEM_COLS FROM items WHERE source_id=? AND kind=? AND tmdb IN (${ids.joinToString(",") { "?" }})",
+            a.toTypedArray()
+        ).use { c ->
+            while (c.moveToNext()) {
+                val it = item(c)
+                val t = it.tmdb ?: continue
+                if (t !in found) found[t] = it
+            }
+        }
+        return ids.mapNotNull { found[it] }
+    }
+
+    /** Position d'une chaîne (par son numéro) dans une liste filtrée, ou null. */
+    fun indexOfNum(src: Long, kind: Kind, catIds: List<String>?, q: String?, num: Int): Int? {
+        if (catIds != null && catIds.isEmpty()) return null
+        val a = ArrayList<String>()
+        val w = where(src, kind, catIds, q, a)
+        val a1 = ArrayList(a)
+        a1.add(num.toString())
+        val pos = db.rawQuery("SELECT pos FROM items WHERE $w AND num = ? ORDER BY pos LIMIT 1", a1.toTypedArray()).use { c ->
+            if (c.moveToFirst()) c.getLong(0) else null
+        } ?: return null
+        a.add(pos.toString())
+        return db.rawQuery("SELECT COUNT(*) FROM items WHERE $w AND pos < ?", a.toTypedArray()).use { c -> if (c.moveToFirst()) c.getInt(0) else null }
     }
 
     /** Un élément du catalogue par son identifiant (null s'il n'existe plus). */
@@ -365,6 +435,7 @@ object Db {
             put("icon", item.icon)
             put("ext", item.ext)
             put("extra", item.extra)
+            put("series", item.series)
         }, SQLiteDatabase.CONFLICT_REPLACE)
     }
 
@@ -381,18 +452,52 @@ object Db {
 
     data class Resume(val item: Item, val pos: Long, val dur: Long)
 
-    /** Films et épisodes commencés, tous types confondus, du plus récent au plus ancien. */
-    fun resume(src: Long, limit: Int): List<Resume> = db.rawQuery(
-        "SELECT kind, id, name, icon, ext, extra, pos, dur FROM progress WHERE source_id=? AND finished=0 AND pos > 0 " +
-            "AND kind IN ('MOVIE','EPISODE') ORDER BY updated DESC LIMIT $limit",
+    /** Films et épisodes commencés (ou un seul type), du plus récent au plus ancien. */
+    fun resume(src: Long, limit: Int, kind: Kind? = null): List<Resume> = db.rawQuery(
+        "SELECT kind, id, name, icon, ext, extra, pos, dur, series FROM progress WHERE source_id=? AND finished=0 AND pos > 0 " +
+            (if (kind != null) "AND kind='${kind.name}' " else "AND kind IN ('MOVIE','EPISODE') ") +
+            "ORDER BY updated DESC LIMIT $limit",
         args(src)
     ).use { c ->
         val out = ArrayList<Resume>()
         while (c.moveToNext()) {
-            val item = Item(Kind.valueOf(c.getString(0)), c.getString(1), c.str(2) ?: "?", c.str(3), c.str(4), extra = c.str(5))
+            val item = Item(Kind.valueOf(c.getString(0)), c.getString(1), c.str(2) ?: "?", c.str(3), c.str(4), extra = c.str(5), series = c.str(8))
             out.add(Resume(item, c.getLong(6), c.getLong(7)))
         }
         out
+    }
+
+    /** Dernier épisode regardé (en cours ou fini) de chaque série, de la plus récente à la plus ancienne. */
+    fun seriesActivity(src: Long, limit: Int): List<Pair<String, Resume>> {
+        val out = ArrayList<Pair<String, Resume>>()
+        val seen = HashSet<String>()
+        db.rawQuery(
+            "SELECT kind, id, name, icon, ext, extra, pos, dur, series, finished FROM progress WHERE source_id=? AND kind='EPISODE' " +
+                "AND series IS NOT NULL ORDER BY updated DESC LIMIT 400",
+            args(src)
+        ).use { c ->
+            while (c.moveToNext() && out.size < limit) {
+                val series = c.getString(8)
+                if (!seen.add(series)) continue
+                val item = Item(Kind.EPISODE, c.getString(1), c.str(2) ?: "?", c.str(3), c.str(4), extra = c.str(5), series = series)
+                val finished = c.getInt(9) == 1
+                out.add(series to Resume(item, if (finished) -1 else c.getLong(6), c.getLong(7)))
+            }
+        }
+        return out
+    }
+
+    // ---------- Petites valeurs (chaîne choisie pour un match, équipes suivies…) ----------
+
+    fun kvGet(key: String): String? =
+        db.rawQuery("SELECT value FROM kv WHERE key=?", arrayOf(key)).use { c -> if (c.moveToFirst()) c.getString(0) else null }
+
+    fun kvPut(key: String, value: String?) {
+        if (value == null) db.delete("kv", "key=?", arrayOf(key))
+        else db.insertWithOnConflict("kv", null, ContentValues().apply {
+            put("key", key)
+            put("value", value)
+        }, SQLiteDatabase.CONFLICT_REPLACE)
     }
 
     // ---------- Téléchargements ----------

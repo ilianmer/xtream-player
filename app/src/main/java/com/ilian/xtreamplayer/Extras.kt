@@ -10,8 +10,8 @@ import java.util.concurrent.LinkedBlockingQueue
 import java.util.concurrent.ThreadPoolExecutor
 import java.util.concurrent.TimeUnit
 
-private fun smallPool(queue: Int) = ThreadPoolExecutor(
-    2, 2, 30, TimeUnit.SECONDS, LinkedBlockingQueue(queue), ThreadPoolExecutor.DiscardOldestPolicy()
+private fun smallPool(queue: Int, threads: Int = 2) = ThreadPoolExecutor(
+    threads, threads, 30, TimeUnit.SECONDS, LinkedBlockingQueue(queue), ThreadPoolExecutor.DiscardOldestPolicy()
 )
 
 /** Guide TV : cache du programme en cours, chargé à la demande ou en avance (préchargement). */
@@ -19,7 +19,7 @@ object Epg {
     private class Entry(val at: Long, val list: List<EpgEntry>)
 
     private val cache = ConcurrentHashMap<String, Entry>()
-    private val pool = smallPool(80)
+    private val pool = smallPool(80, 4)
 
     fun cached(id: String): List<EpgEntry>? {
         val e = cache[id] ?: return null
@@ -130,6 +130,29 @@ object Tmdb {
         }
         Db.tmdbPut(cacheKey, (obj ?: JSONObject()).toString())
         return obj?.let { parse(it, tv) }
+    }
+
+    /** Identifiants TMDB des films ou séries les plus vus de la semaine (cache de 12 h). Bloquant. */
+    fun trending(tv: Boolean): List<String> {
+        if (!enabled) return emptyList()
+        val key = "trending:" + (if (tv) "tv" else "movie")
+        Db.tmdbGet(key)?.let { (json, at) ->
+            if (System.currentTimeMillis() - at < 12 * 3_600_000L) return idsOf(json)
+        }
+        val ids = ArrayList<String>()
+        for (page in 1..2) {
+            val res = get("/trending/${if (tv) "tv" else "movie"}/week", mapOf("page" to page.toString())).optJSONArray("results") ?: break
+            for (i in 0 until res.length()) res.optJSONObject(i)?.optInt("id", 0)?.takeIf { it > 0 }?.let { ids.add(it.toString()) }
+        }
+        Db.tmdbPut(key, org.json.JSONArray(ids).toString())
+        return ids
+    }
+
+    private fun idsOf(json: String): List<String> = try {
+        val a = org.json.JSONArray(json)
+        (0 until a.length()).map { a.getString(it) }
+    } catch (_: Exception) {
+        emptyList()
     }
 
     /** Charge l'affiche en arrière-plan quand le fournisseur n'en a pas. */

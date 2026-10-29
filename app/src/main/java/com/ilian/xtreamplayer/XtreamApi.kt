@@ -119,18 +119,24 @@ class XtreamApi(server: String, val user: String, val pass: String) {
 
     private fun toItem(kind: Kind, m: Map<String, String>): Item? = when (kind) {
         Kind.LIVE -> m["stream_id"]?.let {
-            Item(Kind.LIVE, it, m["name"] ?: "?", m["stream_icon"], null, catId = m["category_id"])
+            Item(
+                Kind.LIVE, it, m["name"] ?: "?", m["stream_icon"], null, catId = m["category_id"],
+                num = m["num"]?.toDoubleOrNull()?.toInt()?.takeIf { n -> n > 0 },
+                added = m["added"]?.toLongOrNull() ?: 0L
+            )
         }
         Kind.MOVIE -> m["stream_id"]?.let {
             Item(
                 Kind.MOVIE, it, m["name"] ?: "?", m["stream_icon"], m["container_extension"] ?: "mp4",
-                catId = m["category_id"], rating = m["rating"], tmdb = m["tmdb"] ?: m["tmdb_id"]
+                catId = m["category_id"], rating = m["rating"], tmdb = m["tmdb"] ?: m["tmdb_id"],
+                added = m["added"]?.toLongOrNull() ?: 0L
             )
         }
         else -> m["series_id"]?.let {
             Item(
                 Kind.SERIES, it, m["name"] ?: "?", m["cover"], null, plot = m["plot"],
-                catId = m["category_id"], rating = m["rating"], tmdb = m["tmdb"] ?: m["tmdb_id"]
+                catId = m["category_id"], rating = m["rating"], tmdb = m["tmdb"] ?: m["tmdb_id"],
+                added = (m["last_modified"] ?: m["added"])?.toLongOrNull() ?: 0L
             )
         }
     }
@@ -172,7 +178,8 @@ class XtreamApi(server: String, val user: String, val pass: String) {
                 Kind.EPISODE, id, e.str("title") ?: "Épisode $num",
                 ei?.str("movie_image") ?: cover,
                 e.str("container_extension") ?: "mp4",
-                ei?.str("plot"), extra
+                ei?.str("plot"), extra,
+                series = seriesId
             )
             bySeason.getOrPut(season) { mutableListOf() }.add(num to item)
         }
@@ -216,15 +223,20 @@ class XtreamApi(server: String, val user: String, val pass: String) {
     }
 
     /** Programme en cours et suivant d'une chaîne (titres encodés en base64 par l'API). */
-    fun shortEpg(streamId: String): List<EpgEntry> {
-        val o = JSONObject(call("get_short_epg", mapOf("stream_id" to streamId, "limit" to "3")))
+    fun shortEpg(streamId: String, limit: Int = 12): List<EpgEntry> {
+        val o = JSONObject(call("get_short_epg", mapOf("stream_id" to streamId, "limit" to limit.toString())))
         val arr = o.optJSONArray("epg_listings") ?: return emptyList()
         val out = ArrayList<EpgEntry>()
         for (i in 0 until arr.length()) {
             val e = arr.optJSONObject(i) ?: continue
-            out.add(EpgEntry(b64(e.str("title") ?: ""), e.optLong("start_timestamp", 0), e.optLong("stop_timestamp", 0)))
+            out.add(
+                EpgEntry(
+                    b64(e.str("title") ?: ""), e.optLong("start_timestamp", 0), e.optLong("stop_timestamp", 0),
+                    b64(e.str("description") ?: "")
+                )
+            )
         }
-        return out
+        return out.sortedBy { it.start }
     }
 
     fun streamUrl(item: Item, liveFormat: String): String {
@@ -248,7 +260,7 @@ class XtreamApi(server: String, val user: String, val pass: String) {
     companion object {
         private val WANTED = setOf(
             "stream_id", "series_id", "name", "stream_icon", "cover", "category_id",
-            "container_extension", "rating", "tmdb", "tmdb_id", "plot"
+            "container_extension", "rating", "tmdb", "tmdb_id", "plot", "num", "added", "last_modified"
         )
 
         /** Garde uniquement schéma + hôte + port : "exemple.com:8080/" -> "http://exemple.com:8080". */

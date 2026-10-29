@@ -66,7 +66,14 @@ object Catalog {
 }
 
 /** Liste paginée : ne charge que les pages affichées (pour les catégories de dizaines de milliers d'éléments). */
-class ItemList(val size: Int, private val loader: (Int, Int) -> List<Item>) {
+class ItemList(
+    val size: Int,
+    /** Recherche d'une chaîne par son numéro : renvoie sa position dans la liste. */
+    private val finder: ((Int) -> Int?)? = null,
+    private val loader: (Int, Int) -> List<Item>
+) {
+    fun indexOfNum(num: Int): Int? = finder?.invoke(num)
+
     private val pages = object : LinkedHashMap<Int, List<Item>>(16, 0.75f, true) {
         override fun removeEldestEntry(eldest: MutableMap.MutableEntry<Int, List<Item>>?): Boolean = this.size > 24
     }
@@ -82,9 +89,15 @@ class ItemList(val size: Int, private val loader: (Int, Int) -> List<Item>) {
         const val PAGE = 150
         val EMPTY = ItemList(0) { _, _ -> emptyList() }
 
-        fun of(list: List<Item>) = ItemList(list.size) { o, l ->
+        fun of(list: List<Item>) = ItemList(list.size, { n -> list.indexOfFirst { it.num == n }.takeIf { it >= 0 } }) { o, l ->
             val from = o.coerceIn(0, list.size)
             list.subList(from, (from + l).coerceAtMost(list.size))
         }
+
+        /** Liste paginée lue dans la base, avec recherche par numéro de chaîne. */
+        fun query(src: Long, kind: Kind, catIds: List<String>?, q: String?): ItemList =
+            ItemList(Db.count(src, kind, catIds, q), { n -> Db.indexOfNum(src, kind, catIds, q, n) }) { o, l ->
+                Db.page(src, kind, catIds, q, o, l)
+            }
     }
 }
