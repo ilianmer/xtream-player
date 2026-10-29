@@ -109,7 +109,10 @@ class ProfilesActivity : BaseActivity() {
             val avatar = v.findViewById<View>(R.id.avatar)
             avatar.background = Profiles.avatar(p, 18f, d)
             avatar.clipToOutline = true
-            v.findViewById<TextView>(R.id.initial).text = Profiles.initial(p)
+            v.findViewById<TextView>(R.id.initial).apply {
+                text = Profiles.initial(p)
+                alpha = if (manage) 0.35f else 1f
+            }
             v.findViewById<TextView>(R.id.name).text = p.name
             v.findViewById<TextView>(R.id.langs).text = Profiles.langsLabel(p)
             v.findViewById<View>(R.id.edit).visibility = if (manage) View.VISIBLE else View.GONE
