@@ -62,11 +62,15 @@ object LightsSettings {
     }
 
     private fun manage(act: Activity, reshow: () -> Unit) {
-        Ui.choose(act, "Spots connectés", listOf("Rechercher les spots sur le Wi-Fi", "Ajouter un spot par son adresse IP", "Retirer tous les spots")) { w ->
+        Ui.choose(
+            act, "Spots connectés",
+            listOf("Rechercher les spots (Wi-Fi et Bluetooth)", "Ajouter un spot par son adresse", "Voir les appareils Bluetooth à proximité", "Retirer tous les spots")
+        ) { w ->
             when (w) {
                 0 -> askThenScan(act, reshow)
                 1 -> addByIp(act, reshow)
-                2 -> {
+                2 -> askThen(act) { nearby(act) }
+                3 -> {
                     Lamps.save(emptyList())
                     reshow()
                 }
@@ -75,10 +79,12 @@ object LightsSettings {
     }
 
     /** Le Bluetooth demande une autorisation Android (une seule fois) avant de chercher. */
-    private fun askThenScan(act: Activity, reshow: () -> Unit) {
+    private fun askThenScan(act: Activity, reshow: () -> Unit) = askThen(act) { scan(act, reshow) }
+
+    private fun askThen(act: Activity, next: () -> Unit) {
         val missing = if (Ble.available(act)) Ble.missingPerms(act) else emptyArray()
         if (missing.isNotEmpty()) {
-            afterPermission = { scan(act, reshow) }
+            afterPermission = next
             try {
                 act.requestPermissions(missing, REQ_BLUETOOTH)
                 return
@@ -86,7 +92,21 @@ object LightsSettings {
                 afterPermission = null
             }
         }
-        scan(act, reshow)
+        next()
+    }
+
+    /** Liste brute de ce que le stick voit en Bluetooth (pour identifier des spots non reconnus). */
+    private fun nearby(act: Activity) {
+        if (act.isFinishing || act.isDestroyed) return
+        Ui.toast(act, "Recherche Bluetooth (6 s)…")
+        Bg.task(act, { Ble.nearby(act) }) { r ->
+            val lines = r.getOrNull() ?: listOf("Erreur pendant la recherche.")
+            AlertDialog.Builder(act, Ui.DIALOG)
+                .setTitle("Appareils Bluetooth à proximité")
+                .setMessage(lines.joinToString("\n\n"))
+                .setPositiveButton("Fermer", null)
+                .show()
+        }
     }
 
     private fun scan(act: Activity, reshow: () -> Unit) {
