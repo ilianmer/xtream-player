@@ -101,6 +101,66 @@ object Ble {
         return Lamp(brand, mac.uppercase(), n.ifBlank { brand })
     }
 
+    /** Tous les appareils Bluetooth à proximité, reconnus ou non (diagnostic, bloquant ≈ 6 s). */
+    fun nearby(ctx: Context, timeoutMs: Long = 6_000): List<String> {
+        val ad = adapter(ctx) ?: return listOf("Pas de Bluetooth sur cet appareil.")
+        if (!ad.isEnabled) return listOf("Le Bluetooth est désactivé.")
+        if (missingPerms(ctx).isNotEmpty()) return listOf("Accès Bluetooth refusé : autorise-le dans Paramètres Android > Applications > Xtream Player > Autorisations.")
+        val seen = ConcurrentHashMap<String, Pair<Int, String>>()
+        val scanner = try {
+            ad.bluetoothLeScanner
+        } catch (_: Exception) {
+            null
+        } ?: return listOf("Recherche Bluetooth indisponible.")
+        val cb = object : ScanCallback() {
+            override fun onScanResult(callbackType: Int, result: ScanResult) = note(result)
+            override fun onBatchScanResults(results: MutableList<ScanResult>) = results.forEach { note(it) }
+            fun note(r: ScanResult) {
+                try {
+                    val rec = r.scanRecord
+                    val mac = r.device.address ?: return
+                    val name = rec?.deviceName ?: try {
+                        r.device.name
+                    } catch (_: Exception) {
+                        null
+                    }
+                    val svc = LinkedHashSet<String>()
+                    rec?.serviceUuids?.forEach { svc.add(short(it.uuid)) }
+                    rec?.serviceData?.keys?.forEach { svc.add(short(it.uuid)) }
+                    val maker = rec?.manufacturerSpecificData
+                    val makers = if (maker == null) "" else (0 until maker.size()).joinToString(",") { "%04X".format(maker.keyAt(it)) }
+                    val kind = when {
+                        classify(mac, name, svc) != null -> "✓ reconnu"
+                        svc.any { it.contains("0a0b0c0d1910") } || makers.contains("0211") -> "mesh Telink"
+                        else -> ""
+                    }
+                    val line = buildString {
+                        append(name ?: "(sans nom)")
+                        append("  ·  ").append(mac)
+                        append("  ·  ").append(r.rssi).append(" dBm")
+                        if (svc.isNotEmpty()) append("\n   services : ").append(svc.joinToString(", ") { it.take(8) })
+                        if (makers.isNotEmpty()) append("\n   fabricant : ").append(makers)
+                        if (kind.isNotEmpty()) append("\n   → ").append(kind)
+                    }
+                    seen[mac] = r.rssi to line
+                } catch (_: Exception) {
+                }
+            }
+        }
+        try {
+            scanner.startScan(null, ScanSettings.Builder().setScanMode(ScanSettings.SCAN_MODE_LOW_LATENCY).build(), cb)
+            Thread.sleep(timeoutMs)
+        } catch (_: Exception) {
+        } finally {
+            try {
+                scanner.stopScan(cb)
+            } catch (_: Exception) {
+            }
+        }
+        if (seen.isEmpty()) return listOf(if (locationOff(ctx)) "Aucun appareil : active la localisation dans les Paramètres Android (obligatoire pour le Bluetooth sur ce stick)." else "Aucun appareil Bluetooth détecté.")
+        return seen.values.sortedByDescending { it.first }.map { it.second }
+    }
+
     /** Cherche les spots Bluetooth à proximité (bloquant, environ 5 s). */
     fun scan(ctx: Context, timeoutMs: Long = 5_000): List<Lamp> {
         val ad = adapter(ctx) ?: return emptyList()
