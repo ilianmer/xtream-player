@@ -242,8 +242,28 @@ object Db {
 
     // ---------- Catalogue ----------
 
-    /** Catégories dans l'ordre du fournisseur, avec leur état masqué pour le profil [prof] (le profil en cours par défaut). */
-    fun categories(src: Long, kind: Kind, prof: Long = profile): List<Pair<Category, Boolean>> =
+    /** Ordre choisi par le profil en cours (identifiants de catégories), vide = ordre du fournisseur. */
+    fun catOrder(src: Long, kind: Kind): List<String> =
+        kvGet(pkey("catorder:$src:${kind.name}"))?.split('\u0001')?.filter { it.isNotEmpty() }.orEmpty()
+
+    fun setCatOrder(src: Long, kind: Kind, ids: List<String>?) {
+        kvPut(pkey("catorder:$src:${kind.name}"), ids?.joinToString("\u0001"))
+        hiddenVersion++
+    }
+
+    /** Catégories dans l'ordre choisi (sinon celui du fournisseur), avec leur état masqué pour le profil [prof]. */
+    fun categories(src: Long, kind: Kind, prof: Long = profile): List<Pair<Category, Boolean>> {
+        val raw = providerCategories(src, kind, prof)
+        if (prof != profile) return raw
+        val order = catOrder(src, kind)
+        if (order.isEmpty()) return raw
+        val rank = HashMap<String, Int>(order.size * 2)
+        order.forEachIndexed { i, id -> rank[id] = i }
+        // Catégories rangées d'abord, dans l'ordre choisi ; les nouvelles du fournisseur ensuite
+        return raw.withIndex().sortedBy { (i, c) -> rank[c.first.id] ?: (order.size + i) }.map { it.value }
+    }
+
+    private fun providerCategories(src: Long, kind: Kind, prof: Long): List<Pair<Category, Boolean>> =
         db.rawQuery(
             "SELECT c.cat_id, c.name, CASE WHEN h.cat_id IS NULL THEN 0 ELSE 1 END FROM categories c " +
                 "LEFT JOIN hidden h ON h.profile=? AND h.source_id=c.source_id AND h.kind=c.kind AND h.cat_id=c.cat_id " +

@@ -27,10 +27,20 @@ import androidx.media3.exoplayer.DefaultLoadControl
 import androidx.media3.exoplayer.DefaultRenderersFactory
 import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.common.audio.AudioProcessor
+import androidx.media3.exoplayer.audio.AudioCapabilities
 import androidx.media3.exoplayer.audio.AudioSink
 import androidx.media3.exoplayer.audio.DefaultAudioSink
-import androidx.media3.exoplayer.audio.TeeAudioProcessor
+import androidx.media3.exoplayer.analytics.AnalyticsListener
+import androidx.media3.exoplayer.trackselection.DefaultTrackSelector
+import androidx.media3.exoplayer.video.VideoFrameMetadataListener
+import androidx.media3.datasource.DataSource
+import androidx.media3.datasource.DataSpec
+import androidx.media3.datasource.TransferListener
+import androidx.media3.ui.AspectRatioFrameLayout
 import android.content.Context
+import android.view.Gravity
+import android.widget.FrameLayout
+import java.util.concurrent.atomic.AtomicLong
 import androidx.media3.exoplayer.source.DefaultMediaSourceFactory
 import androidx.media3.extractor.DefaultExtractorsFactory
 import androidx.media3.extractor.ts.DefaultTsPayloadReaderFactory
@@ -167,6 +177,11 @@ class PlayerActivity : BaseActivity() {
 
     private val list: ItemList get() = Session.playlist
     private val current: Item? get() = list[index]
+
+    /** Version réellement lue pour la position en cours (autre qualité de la même chaîne, par exemple). */
+    private var playing: Item? = null
+    private var playingIndex = -1
+    private val now: Item? get() = playing?.takeIf { playingIndex == index } ?: current
     private val isLive: Boolean get() = current?.kind == Kind.LIVE
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -213,6 +228,25 @@ class PlayerActivity : BaseActivity() {
         ticker = findViewById(R.id.ticker)
 
         playerView.setShowBuffering(PlayerView.SHOW_BUFFERING_ALWAYS)
+        aspect = Prefs.aspectMode.coerceIn(0, ASPECTS.size - 1)
+        playerView.resizeMode = ASPECTS[aspect].first
+        displayRate = DisplayRate(this)
+        stats = TextView(this).apply {
+            setBackgroundResource(R.drawable.glass_dark)
+            setTextColor(getColor(R.color.text))
+            textSize = 11f
+            typeface = android.graphics.Typeface.MONOSPACE
+            val pad = (12 * resources.displayMetrics.density).toInt()
+            setPadding(pad, pad / 2, pad, pad / 2)
+            visibility = View.GONE
+        }
+        (playerView.parent as FrameLayout).addView(
+            stats,
+            FrameLayout.LayoutParams(FrameLayout.LayoutParams.WRAP_CONTENT, FrameLayout.LayoutParams.WRAP_CONTENT, Gravity.TOP or Gravity.END).apply {
+                val m = (24 * resources.displayMetrics.density).toInt()
+                setMargins(m, m * 3, m, m)
+            }
+        )
         playerView.useController = !isLive
         playerView.setShowSubtitleButton(true)
         applySubtitleStyle()
@@ -256,66 +290,182 @@ class PlayerActivity : BaseActivity() {
         Bg.main.removeCallbacks(endAlert)
         Bg.main.removeCallbacks(nextWatch)
         Bg.main.removeCallbacks(retry)
+        Bg.main.removeCallbacks(statsTick)
+        fpsToken++
         player?.release()
-        lightSync?.release()
-        lightSync = null
         player = null
         Session.index = index
         Session.lastStopAt = System.currentTimeMillis()
         super.onStop()
     }
 
-    /** Tampon réglé dans Réglages > Lecteur vidéo. */
-    private fun loadControl(): DefaultLoadControl {
+    /**
+     * Tampon. Films et séries : réglage « Durée du tampon ». Direct : démarrage rapide, puis plus de marge
+     * après une coupure (un flux en direct arrive en temps réel, l'avance prise au départ sert de coussin).
+     */
+    private fun loadControl(live: Boolean): DefaultLoadControl {
+        if (live) {
+            val (start, after) = when (Prefs.liveStart) {
+                0 -> 1_200 to 4_000
+                2 -> 4_000 to 10_000
+                else -> 2_000 to 6_000
+            }
+            return DefaultLoadControl.Builder()
+                .setBufferDurationsMs(20_000, 40_000, start, after)
+                .setTargetBufferBytes(48 * 1024 * 1024)
+                .setPrioritizeTimeOverSizeThresholds(true)
+                .build()
+        }
         val buf = Prefs.bufferSec.coerceIn(1, 60) * 1000
         val maxB = max(Prefs.maxBufferSec * 1000, buf + 5_000)
         val minB = min(max(buf * 2, 15_000), maxB)
         return DefaultLoadControl.Builder()
             .setBufferDurationsMs(minB, maxB, buf, min(buf * 2, minB))
+            .setTargetBufferBytes(64 * 1024 * 1024)
             .setPrioritizeTimeOverSizeThresholds(true)
             .build()
     }
 
+    // ---------- Mesures (infos techniques) ----------
+    private lateinit var displayRate: DisplayRate
+    private lateinit var stats: TextView
+    private var statsOn = false
+    @Volatile
+    private var videoDecoder: String? = null
+    @Volatile
+    private var audioDecoder: String? = null
+    private var dropped = 0L
+    private var measuredFps = 0f
+    private val bytesIn = AtomicLong()
+    private var lastBytes = 0L
+    private var lastBytesAt = 0L
+    private var bitrate = 0L
+    private var aspect = 0
+
+    /** Débit réel : on compte les octets reçus du serveur. */
+    private val meter = object : TransferListener {
+        override fun onTransferInitializing(source: DataSource, dataSpec: DataSpec, isNetwork: Boolean) {}
+        override fun onTransferStart(source: DataSource, dataSpec: DataSpec, isNetwork: Boolean) {}
+        override fun onBytesTransferred(source: DataSource, dataSpec: DataSpec, isNetwork: Boolean, bytesTransferred: Int) {
+            if (isNetwork) bytesIn.addAndGet(bytesTransferred.toLong())
+        }
+
+        override fun onTransferEnd(source: DataSource, dataSpec: DataSpec, isNetwork: Boolean) {}
+    }
+
+    // ---------- Cadence de la vidéo (pour caler l'écran en 50 / 60 Hz) ----------
+    @Volatile
+    private var fpsToken = 0
+    private val fpsLock = Any()
+    private val fpsDeltas = LongArray(60)
+    private var fpsN = 0
+    private var fpsSkip = 0
+    private var fpsLast = 0L
+    private var fpsDone = true
+
+    private fun resetFps() {
+        synchronized(fpsLock) {
+            fpsN = 0
+            fpsSkip = 0
+            fpsDone = false
+        }
+        fpsToken++
+        measuredFps = 0f
+    }
+
+    /** Appelé par le décodeur pour chaque image (fil de lecture : très court). */
+    private val frameListener = VideoFrameMetadataListener { pts, _, format, _ ->
+        var result = 0f
+        synchronized(fpsLock) {
+            if (!fpsDone) {
+                if (format.frameRate > 1f) {
+                    result = format.frameRate
+                } else if (fpsSkip < 15) {
+                    fpsSkip++
+                    fpsLast = pts
+                } else {
+                    val d = pts - fpsLast
+                    fpsLast = pts
+                    if (d in 4_000L..200_000L) fpsDeltas[fpsN++] = d
+                    if (fpsN >= fpsDeltas.size) result = 1_000_000f / fpsDeltas.sorted()[fpsN / 2]
+                }
+                if (result > 0f) fpsDone = true
+            }
+        }
+        if (result > 0f) {
+            val token = fpsToken
+            Bg.main.post { if (token == fpsToken && !isFinishing) onFrameRate(result) }
+        }
+    }
+
+    private fun onFrameRate(raw: Float) {
+        measuredFps = DisplayRate.snap(raw)
+        if (Prefs.autoFrameRate) displayRate.match(measuredFps)
+    }
+
     private fun initPlayer() {
+        val live = isLive
         val http = DefaultHttpDataSource.Factory()
             .setUserAgent(Prefs.userAgent)
             .setAllowCrossProtocolRedirects(true)
-            .setConnectTimeoutMs(15_000)
-            .setReadTimeoutMs(30_000)
+            .setKeepPostFor302Redirects(true)
+            .setConnectTimeoutMs(10_000)
+            .setReadTimeoutMs(if (live) 12_000 else 30_000)
+            .setTransferListener(meter)
         val dataSource = DefaultDataSource.Factory(this, http)
         val extractors = DefaultExtractorsFactory().setTsExtractorFlags(
             DefaultTsPayloadReaderFactory.FLAG_ALLOW_NON_IDR_KEYFRAMES or
                 DefaultTsPayloadReaderFactory.FLAG_DETECT_ACCESS_UNITS
         )
-        // Spots LED : le son passe aussi par LightSync (seulement si l'option est activée)
-        lightSync?.release()
-        val sync = if (Prefs.lightsOn) {
-            val app = applicationContext
-            LightSync({ Lamps.output(app) }, Prefs.lightsDelayMs)
-        } else null
-        lightSync = sync
-        val renderers = (if (sync == null) DefaultRenderersFactory(this) else object : DefaultRenderersFactory(this) {
+        val leveling = Prefs.volumeLeveling
+        val passthrough = Prefs.audioPassthrough
+        val renderers = object : DefaultRenderersFactory(this) {
             override fun buildAudioSink(context: Context, enableFloatOutput: Boolean, enableAudioTrackPlaybackParams: Boolean): AudioSink {
-                // Builder() sans contexte : pas de passthrough AC3 / E-AC3 vers l'ampli, le son reste en PCM et peut être analysé
-                @Suppress("DEPRECATION")
-                return DefaultAudioSink.Builder()
-                    .setEnableFloatOutput(enableFloatOutput)
+                val b = DefaultAudioSink.Builder(context)
+                    .setEnableFloatOutput(false)
                     .setEnableAudioTrackPlaybackParams(enableAudioTrackPlaybackParams)
-                    .setAudioProcessors(arrayOf<AudioProcessor>(TeeAudioProcessor(sync)))
-                    .build()
+                // Sans passthrough : le stick décode le Dolby lui-même (son garanti sur les enceintes de la TV)
+                if (!passthrough) b.setAudioCapabilities(AudioCapabilities.DEFAULT_AUDIO_CAPABILITIES)
+                if (leveling) b.setAudioProcessors(arrayOf<AudioProcessor>(VolumeLeveler()))
+                return b.build()
             }
-        }).setEnableDecoderFallback(true)
+        }.setEnableDecoderFallback(true)
+            // Décodeurs audio de secours (AC3, E-AC3, DTS, TrueHD…) quand le stick ne sait pas les lire
+            .setExtensionRendererMode(DefaultRenderersFactory.EXTENSION_RENDERER_MODE_ON)
+
+        val selector = DefaultTrackSelector(this)
+        selector.setParameters(
+            selector.buildUponParameters()
+                .setTunnelingEnabled(Prefs.tunneling)
+                .setPreferredAudioLanguages(Locale.getDefault().language, "fr")
+                .setExceedRendererCapabilitiesIfNecessary(true)
+        )
 
         val p = ExoPlayer.Builder(this, renderers)
             .setMediaSourceFactory(DefaultMediaSourceFactory(dataSource, extractors))
-            .setLoadControl(loadControl())
+            .setTrackSelector(selector)
+            .setLoadControl(loadControl(live))
+            .setVideoScalingMode(C.VIDEO_SCALING_MODE_SCALE_TO_FIT)
             .build()
-        p.setAudioAttributes(AudioAttributes.DEFAULT, true)
-        p.addListener(object : Player.Listener {
-            override fun onIsPlayingChanged(isPlaying: Boolean) {
-                lightSync?.setPlaying(isPlaying)
+        p.setAudioAttributes(
+            AudioAttributes.Builder().setUsage(C.USAGE_MEDIA).setContentType(C.AUDIO_CONTENT_TYPE_MOVIE).build(),
+            true
+        )
+        p.setVideoFrameMetadataListener(frameListener)
+        p.addAnalyticsListener(object : AnalyticsListener {
+            override fun onVideoDecoderInitialized(eventTime: AnalyticsListener.EventTime, decoderName: String, initializedTimestampMs: Long, initializationDurationMs: Long) {
+                videoDecoder = decoderName
             }
 
+            override fun onAudioDecoderInitialized(eventTime: AnalyticsListener.EventTime, decoderName: String, initializedTimestampMs: Long, initializationDurationMs: Long) {
+                audioDecoder = decoderName
+            }
+
+            override fun onDroppedVideoFrames(eventTime: AnalyticsListener.EventTime, droppedFrames: Int, elapsedMs: Long) {
+                dropped += droppedFrames
+            }
+        })
+        p.addListener(object : Player.Listener {
             override fun onPlayerError(error: PlaybackException) {
                 // En direct, si le format choisi ne passe pas, on tente l'autre (TS <-> HLS) une fois.
                 if (isLive && !useAltFormat) {
@@ -368,9 +518,6 @@ class PlayerActivity : BaseActivity() {
         player = p
     }
 
-    /** Spots LED sur la musique (null si l'option est désactivée). */
-    private var lightSync: LightSync? = null
-
     /** Reconnexions automatiques après une coupure (remis à zéro dès que la lecture repart). */
     private var retries = 0
     private var retryAt = 0L
@@ -387,21 +534,36 @@ class PlayerActivity : BaseActivity() {
     /** Resté plus d'une minute sur cette chaîne pendant un match : c'est la bonne, pour ce match seulement. */
     private fun learnMatchChannel() {
         val key = Session.sportMatchKey ?: return
-        val item = current ?: return
+        val item = now ?: return
         if (!isLive || channelStartAt == 0L) return
-        if (System.currentTimeMillis() - channelStartAt >= 60_000L) MatchFinder.learn(key, item)
+        if (System.currentTimeMillis() - channelStartAt >= 60_000L) {
+            MatchFinder.learn(key, item)
+            Sport.cached().firstOrNull { it.key == key }?.let { SportPrefs.noteWatched(it, 2f) }
+        }
     }
 
     private fun play(keepFormat: Boolean = false) {
-        val item = current ?: return finish()
+        val base = current ?: return finish()
         val p = player ?: return
         if (!keepFormat) useAltFormat = false
         if (!keepFormat) channelStartAt = System.currentTimeMillis()
+        // Qualité retenue pour cette chaîne, ou qualité préférée (pas pendant la recherche auto d'un match)
+        val item = if (base.kind == Kind.LIVE && !Session.autoFallback) LiveQuality.resolve(src.id, base) else base
+        playing = item
+        playingIndex = index
+        resetFps()
+        dropped = 0
+        videoDecoder = null
+        audioDecoder = null
 
         val format = if (useAltFormat) (if (Prefs.liveFormat == "ts") "m3u8" else "ts") else Prefs.liveFormat
         val url = api.streamUrl(item, format)
         val builder = MediaItem.Builder().setUri(url)
-        if (item.kind == Kind.LIVE && format == "m3u8") builder.setMimeType(MimeTypes.APPLICATION_M3U8)
+        if (item.kind == Kind.LIVE && format == "m3u8") {
+            builder.setMimeType(MimeTypes.APPLICATION_M3U8)
+            // Pas d'accélération / ralentissement pour rattraper le direct : c'est ce qui fait sauter l'image
+            builder.setLiveConfiguration(MediaItem.LiveConfiguration.Builder().setMinPlaybackSpeed(1f).setMaxPlaybackSpeed(1f).build())
+        }
 
         tvError.visibility = View.GONE
         hideNext()
@@ -418,6 +580,10 @@ class PlayerActivity : BaseActivity() {
         p.playWhenReady = true
         showInfo(item, withEpg = true)
         if (resume > 0 && !fromRetry) Ui.toast(this, "Reprise à ${Ui.time(resume)}")
+        if (statsOn) {
+            Bg.main.removeCallbacks(statsTick)
+            Bg.main.post(statsTick)
+        }
     }
 
     private fun showInfo(item: Item, withEpg: Boolean) {
@@ -425,7 +591,7 @@ class PlayerActivity : BaseActivity() {
         ovClock.text = hhmm(System.currentTimeMillis())
         ovTitle.text = if (live) "${item.num ?: (index + 1)} · ${item.name}" else item.name
         ovLive.visibility = if (live) View.VISIBLE else View.GONE
-        ovStar.visibility = if (Db.isFav(src.id, item)) View.VISIBLE else View.GONE
+        ovStar.visibility = if (Db.isFav(src.id, item) || current?.let { it.id != item.id && Db.isFav(src.id, it) } == true) View.VISIBLE else View.GONE
         ovLogo.visibility = if (live) View.VISIBLE else View.GONE
         if (live) Img.load(ovLogo, item.icon, R.drawable.ph_live)
         tracksBox.visibility = if (live) View.VISIBLE else View.GONE
@@ -543,44 +709,154 @@ class PlayerActivity : BaseActivity() {
         ovSubs.text = "Sous-titres : " + (subs.firstOrNull { it.selected }?.name ?: "aucun")
     }
 
+    /** Menu du lecteur : qualité, format d'image, audio, sous-titres, infos techniques. */
     private fun chooseTracks() {
         val audio = tracks(C.TRACK_TYPE_AUDIO)
         val subs = tracks(C.TRACK_TYPE_TEXT)
-        if (audio.size <= 1 && subs.isEmpty()) {
-            Ui.toast(this, "Cette chaîne n'a qu'une piste audio et pas de sous-titres.")
-            return
+        val base = current
+        val item = now
+        val options = ArrayList<Pair<String, () -> Unit>>()
+        if (isLive && base != null && item != null && !Session.autoFallback) {
+            options.add("Qualité · ${LiveQuality.label(item.name)}" to { chooseQuality(base, item) })
         }
-        val options = ArrayList<String>()
-        if (audio.size > 1) options.add("Audio")
-        if (subs.isNotEmpty()) options.add("Sous-titres")
-        val go = { what: String ->
-            val p = player
-            if (p != null) {
-                if (what == "Audio") {
-                    Ui.choose(this, "Piste audio", audio.map { (if (it.selected) "✓  " else "") + it.name }) { w ->
-                        val t = audio[w]
-                        p.trackSelectionParameters = p.trackSelectionParameters.buildUpon()
-                            .setOverrideForType(TrackSelectionOverride(t.group.mediaTrackGroup, t.index)).build()
-                        Bg.main.postDelayed({ if (!isDestroyed) paintTracks() }, 600)
-                    }
-                } else {
-                    val none = subs.none { it.selected }
-                    val labels = listOf((if (none) "✓  " else "") + "Aucun") + subs.map { (if (it.selected) "✓  " else "") + it.name }
-                    Ui.choose(this, "Sous-titres", labels) { w ->
-                        val b = p.trackSelectionParameters.buildUpon()
-                        if (w == 0) {
-                            b.setTrackTypeDisabled(C.TRACK_TYPE_TEXT, true)
-                        } else {
-                            val t = subs[w - 1]
-                            b.setTrackTypeDisabled(C.TRACK_TYPE_TEXT, false).setOverrideForType(TrackSelectionOverride(t.group.mediaTrackGroup, t.index))
-                        }
-                        p.trackSelectionParameters = b.build()
-                        Bg.main.postDelayed({ if (!isDestroyed) paintTracks() }, 600)
-                    }
-                }
+        options.add("Format d'image · ${ASPECTS[aspect].second}" to { chooseAspect() })
+        if (audio.size > 1) options.add("Audio · ${audio.firstOrNull { it.selected }?.name ?: audio[0].name}" to { chooseAudio(audio) })
+        if (subs.isNotEmpty()) options.add("Sous-titres · ${subs.firstOrNull { it.selected }?.name ?: "aucun"}" to { chooseSubs(subs) })
+        options.add((if (statsOn) "Masquer" else "Afficher") + " les infos techniques" to { toggleStats() })
+        Ui.choose(this, now?.name ?: "Lecture", options.map { it.first }) { w -> options[w].second() }
+    }
+
+    private fun chooseQuality(base: Item, item: Item) {
+        Bg.task(this, { LiveQuality.variants(src.id, base) }) { r ->
+            val vars = r.getOrNull().orEmpty()
+            if (vars.size <= 1) {
+                Ui.toast(this, "Une seule version de cette chaîne dans ta liste.")
+                return@task
+            }
+            val labels = vars.map { v -> (if (v.id == item.id) "✓  " else "") + LiveQuality.label(v.name) + "  ·  " + v.name }
+            Ui.choose(this, "Qualité de la chaîne", labels) { w ->
+                val v = vars[w]
+                if (v.id == item.id) return@choose
+                LiveQuality.remember(base, v)
+                Ui.toast(this, "${LiveQuality.label(v.name)} retenue pour cette chaîne.")
+                play()
             }
         }
-        if (options.size == 1) go(options[0]) else Ui.choose(this, "Changer", options) { w -> go(options[w]) }
+    }
+
+    private fun chooseAspect() {
+        Ui.choose(this, "Format d'image", ASPECTS.mapIndexed { i, a -> (if (i == aspect) "✓  " else "") + a.second }) { w ->
+            aspect = w
+            Prefs.aspectMode = w
+            playerView.resizeMode = ASPECTS[w].first
+        }
+    }
+
+    private fun chooseAudio(audio: List<Track>) {
+        val p = player ?: return
+        Ui.choose(this, "Piste audio", audio.map { (if (it.selected) "✓  " else "") + it.name }) { w ->
+            val t = audio[w]
+            p.trackSelectionParameters = p.trackSelectionParameters.buildUpon()
+                .setOverrideForType(TrackSelectionOverride(t.group.mediaTrackGroup, t.index)).build()
+            Bg.main.postDelayed({ if (!isDestroyed) paintTracks() }, 600)
+        }
+    }
+
+    private fun chooseSubs(subs: List<Track>) {
+        val p = player ?: return
+        val none = subs.none { it.selected }
+        val labels = listOf((if (none) "✓  " else "") + "Aucun") + subs.map { (if (it.selected) "✓  " else "") + it.name }
+        Ui.choose(this, "Sous-titres", labels) { w ->
+            val b = p.trackSelectionParameters.buildUpon()
+            if (w == 0) {
+                b.setTrackTypeDisabled(C.TRACK_TYPE_TEXT, true)
+            } else {
+                val t = subs[w - 1]
+                b.setTrackTypeDisabled(C.TRACK_TYPE_TEXT, false).setOverrideForType(TrackSelectionOverride(t.group.mediaTrackGroup, t.index))
+            }
+            p.trackSelectionParameters = b.build()
+            Bg.main.postDelayed({ if (!isDestroyed) paintTracks() }, 600)
+        }
+    }
+
+    // ---------- Infos techniques ----------
+
+    private fun toggleStats() {
+        statsOn = !statsOn
+        Bg.main.removeCallbacks(statsTick)
+        if (statsOn) {
+            lastBytes = bytesIn.get()
+            lastBytesAt = System.currentTimeMillis()
+            Bg.main.post(statsTick)
+        } else stats.visibility = View.GONE
+    }
+
+    private val statsTick = object : Runnable {
+        override fun run() {
+            if (!statsOn || isFinishing) return
+            paintStats()
+            Bg.main.postDelayed(this, 1_000)
+        }
+    }
+
+    private fun codecName(mime: String?): String = when (mime) {
+        MimeTypes.VIDEO_H264 -> "H.264"
+        MimeTypes.VIDEO_H265 -> "HEVC"
+        MimeTypes.VIDEO_MPEG2 -> "MPEG-2"
+        MimeTypes.VIDEO_AV1 -> "AV1"
+        MimeTypes.VIDEO_VP9 -> "VP9"
+        MimeTypes.AUDIO_AC3 -> "Dolby Digital"
+        MimeTypes.AUDIO_E_AC3, MimeTypes.AUDIO_E_AC3_JOC -> "Dolby Digital Plus"
+        MimeTypes.AUDIO_AAC -> "AAC"
+        MimeTypes.AUDIO_MPEG -> "MP3"
+        MimeTypes.AUDIO_MPEG_L2 -> "MPEG audio"
+        MimeTypes.AUDIO_DTS, MimeTypes.AUDIO_DTS_HD -> "DTS"
+        MimeTypes.AUDIO_OPUS -> "Opus"
+        else -> mime?.substringAfter('/')?.uppercase() ?: "?"
+    }
+
+    private fun num(v: Double, digits: Int): String =
+        String.format(Locale.FRANCE, "%.${digits}f", v).trimEnd('0').trimEnd(',')
+
+    private fun paintStats() {
+        val p = player ?: return
+        val t = System.currentTimeMillis()
+        val b = bytesIn.get()
+        if (t - lastBytesAt >= 900) {
+            bitrate = (b - lastBytes) * 8_000 / (t - lastBytesAt).coerceAtLeast(1)
+            lastBytes = b
+            lastBytesAt = t
+        }
+        val v = p.videoFormat
+        val a = p.audioFormat
+        val sb = StringBuilder()
+        if (v != null) {
+            sb.append("Image    ${v.width}×${v.height} · ${codecName(v.sampleMimeType)}")
+            if (measuredFps > 0) sb.append(" · ${num(measuredFps.toDouble(), 3)} i/s")
+            sb.append('\n')
+        }
+        sb.append("Écran    ${num(displayRate.hz().toDouble(), 2)} Hz")
+        if (!Prefs.autoFrameRate) sb.append(" (cadence auto coupée)")
+        if (Prefs.tunneling) sb.append(" · mode tunnel")
+        sb.append('\n')
+        videoDecoder?.let { sb.append("Décodeur ${it.removePrefix("OMX.").removePrefix("c2.")}\n") }
+        if (a != null) {
+            sb.append("Son      ${codecName(a.sampleMimeType)}")
+            if (a.channelCount > 0) sb.append(" · ${when (a.channelCount) { 6 -> "5.1"; 8 -> "7.1"; 2 -> "stéréo"; else -> "${a.channelCount} canaux" }}")
+            if (a.sampleRate > 0) sb.append(" · ${a.sampleRate / 1000} kHz")
+            sb.append('\n')
+            sb.append(
+                "         " + when {
+                    audioDecoder == null -> "envoyé tel quel à l'ampli"
+                    audioDecoder?.contains("ffmpeg", true) == true -> "décodé par l'appli"
+                    else -> "décodé par le stick"
+                } + (if (Prefs.volumeLeveling) " · volume égalisé" else "") + "\n"
+            )
+        }
+        sb.append("Débit    ${num(bitrate / 1_000_000.0, 1)} Mb/s · avance ${num(p.totalBufferedDuration / 1000.0, 1)} s\n")
+        sb.append("Images perdues  $dropped")
+        stats.text = sb
+        stats.visibility = View.VISIBLE
     }
 
     private fun showError(msg: String) {
@@ -682,11 +958,17 @@ class PlayerActivity : BaseActivity() {
                         else current?.let { showInfo(it, withEpg = true) }
                         return true
                     }
+                    KeyEvent.KEYCODE_MENU -> {
+                        chooseTracks(); return true
+                    }
                     KeyEvent.KEYCODE_DPAD_LEFT, KeyEvent.KEYCODE_DPAD_RIGHT, KeyEvent.KEYCODE_INFO -> {
                         current?.let { showInfo(it, withEpg = true) }
                         return true
                     }
                 }
+            } else if (event.keyCode == KeyEvent.KEYCODE_MENU || event.keyCode == KeyEvent.KEYCODE_INFO) {
+                chooseTracks()
+                return true
             } else if (!playerView.isControllerFullyVisible) {
                 // Films / séries : gauche / droite = reculer / avancer de 10 s sans ouvrir les commandes.
                 when (event.keyCode) {
@@ -781,6 +1063,12 @@ class PlayerActivity : BaseActivity() {
     }
 
     companion object {
+        /** Format d'image : adapté (bandes noires si besoin), plein écran étiré, zoom (rogne les bords). */
+        private val ASPECTS = listOf(
+            AspectRatioFrameLayout.RESIZE_MODE_FIT to "Adapté à l'écran",
+            AspectRatioFrameLayout.RESIZE_MODE_FILL to "Plein écran (étiré)",
+            AspectRatioFrameLayout.RESIZE_MODE_ZOOM to "Zoom (sans bandes noires)"
+        )
         private val RETRY_DELAYS = longArrayOf(1_500L, 3_000L, 6_000L)
         private val SE_LABEL = Regex("""Saison (\d+) · Épisode (\d+)""")
     }

@@ -62,6 +62,7 @@
             <Button android:id="@+id/btnAll" style="@style/Btn" android:layout_height="36dp" android:layout_marginTop="10dp" android:drawableStart="@drawable/ic_check_small" android:gravity="start|center_vertical" android:textSize="13sp" android:text="Tout cocher" />
             <Button android:id="@+id/btnNone" style="@style/Btn" android:layout_height="36dp" android:layout_marginTop="8dp" android:drawableStart="@drawable/ic_hide_small" android:gravity="start|center_vertical" android:textSize="13sp" android:text="Tout décocher" />
             <Button android:id="@+id/btnLang" style="@style/Btn" android:layout_height="36dp" android:layout_marginTop="8dp" android:drawableStart="@drawable/ic_refresh_small" android:gravity="start|center_vertical" android:textSize="13sp" android:text="Selon mes langues" />
+            <Button android:id="@+id/btnOrder" style="@style/Btn" android:layout_height="36dp" android:layout_marginTop="8dp" android:drawableStart="@drawable/ic_order_small" android:gravity="start|center_vertical" android:textSize="13sp" android:text="Changer l'ordre" />
 
             <View
                 android:layout_width="match_parent"
@@ -115,6 +116,7 @@
                     android:textSize="17sp" />
 
                 <TextView
+                    android:id="@+id/tvHint"
                     style="@style/Txt"
                     android:layout_width="wrap_content"
                     android:layout_height="wrap_content"

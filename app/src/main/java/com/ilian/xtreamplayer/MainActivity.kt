@@ -53,6 +53,7 @@ class MainActivity : BaseActivity() {
     /** Profil et catégories masquées au moment où l'écran a été construit. */
     private var seenProfile = 0L
     private var seenHidden = 0
+    private var seenSport = 0
     private var pendingTab: Tab? = null
     private val tabSwitch = Runnable {
         val t = pendingTab ?: return@Runnable
@@ -163,6 +164,7 @@ class MainActivity : BaseActivity() {
 
         seenProfile = Db.profile
         seenHidden = Db.hiddenVersion
+        seenSport = SportPrefs.version
         home.start()
         val start = savedInstanceState?.getString(KEY_TAB)?.let { n -> Tab.values().firstOrNull { it.name == n } }
             ?.takeIf { tabViews[it]?.visibility == View.VISIBLE } ?: Tab.HOME
@@ -208,7 +210,7 @@ class MainActivity : BaseActivity() {
     override fun onRestart() {
         super.onRestart()
         // Changement de profil ou de catégories affichées : on reconstruit tout l'écran (même onglet).
-        if (ready && (Db.profile != seenProfile || Db.hiddenVersion != seenHidden)) {
+        if (ready && (Db.profile != seenProfile || Db.hiddenVersion != seenHidden || SportPrefs.version != seenSport)) {
             recreate()
             return
         }

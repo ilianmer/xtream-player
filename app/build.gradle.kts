@@ -15,6 +15,10 @@ android {
         val build = System.getenv("GITHUB_RUN_NUMBER")?.toIntOrNull() ?: 6
         versionCode = build
         versionName = "6.0 · build $build"
+        // Sticks Android TV / Fire TV : processeurs ARM uniquement (garde l'appli légère)
+        ndk {
+            abiFilters += listOf("armeabi-v7a", "arm64-v8a")
+        }
     }
 
     // Clé de signature fixe : toutes les versions portent la même signature, donc les mises à jour
@@ -60,6 +64,9 @@ dependencies {
     implementation("androidx.media3:media3-exoplayer-hls:$media3")
     implementation("androidx.media3:media3-extractor:$media3")
     implementation("androidx.media3:media3-ui:$media3")
+    // Décodeurs audio FFmpeg de secours (Dolby AC3 / E-AC3, DTS, TrueHD…), version Jellyfin publiée sur Maven Central
+    implementation("org.jellyfin.media3:media3-ffmpeg-decoder:1.5.0+1")
+    implementation("androidx.media3:media3-decoder:$media3")
     implementation("androidx.recyclerview:recyclerview:1.3.2")
     implementation("androidx.core:core:1.13.1")
     implementation("com.google.zxing:core:3.5.3")

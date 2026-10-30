@@ -88,6 +88,20 @@ object MatchFinder {
         return s
     }
 
+    /** Palier de qualité annoncé dans le nom : 4 = 4K, 3 = Full HD, 2 = HD, 1 = SD, 0 = rien d'indiqué. */
+    fun tier(name: String): Int {
+        val n = plain(name)
+        return when {
+            R4K.containsMatchIn(n) -> 4
+            RFHD.containsMatchIn(n) -> 3
+            RHD.containsMatchIn(n) -> 2
+            RSD.containsMatchIn(n) -> 1
+            else -> 0
+        }
+    }
+
+    fun isPlus1(name: String): Boolean = RPLUS1.containsMatchIn(plain(name))
+
     // ---------- Textes ----------
 
     private fun clean(s: String): String =
@@ -336,7 +350,7 @@ object MatchFinder {
     }
 
     /** Mot le plus parlant du nom d'une chaîne, pour retrouver ses autres versions. */
-    private fun baseQuery(name: String): String {
+    fun baseQuery(name: String): String {
         val words = plain(name).replace(Rx.LANG_PREFIX, "")
             .split(Rx.NON_ALNUM_PLUS_RUN).filter { it.length >= 2 && it !in setOf("hd", "fhd", "uhd", "sd", "4k", "raw", "vip", "hevc", "fr") }
         return words.take(2).joinToString(" ").ifBlank { name }
@@ -397,6 +411,7 @@ object MatchFinder {
                 return@task
             }
             Session.sportMatchKey = m.key
+            SportPrefs.noteWatched(m, 1f)
             Ui.play(act, ItemList.of(f.list), 0, autoFallback = true)
             val more = if (f.list.size > 1) " · haut / bas : autres chaînes" else ""
             Ui.toast(act, (if (f.sure) first.name else "${first.name} (le plus probable)") + more)
