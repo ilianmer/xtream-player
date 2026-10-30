@@ -97,6 +97,11 @@ class PlayerActivity : BaseActivity() {
     private val nextWatch = object : Runnable {
         override fun run() {
             if (isFinishing) return
+            // Direct : rien à surveiller ici, on repasse rarement
+            if (isLive) {
+                Bg.main.postDelayed(this, 2_000)
+                return
+            }
             checkNextEpisode()
             Bg.main.postDelayed(this, 250)
         }
@@ -234,6 +239,12 @@ class PlayerActivity : BaseActivity() {
         playerView.setShowBuffering(PlayerView.SHOW_BUFFERING_ALWAYS)
         // Pendant une reconnexion ou un zapping, la dernière image reste affichée (pas d'écran noir)
         playerView.setKeepContentOnPlayerReset(true)
+        // Indicateur de chargement aux couleurs de l'appli (anneau doré, plus fin)
+        playerView.findViewById<android.widget.ProgressBar>(androidx.media3.ui.R.id.exo_buffering)?.let { pb ->
+            pb.indeterminateTintList = android.content.res.ColorStateList.valueOf(getColor(R.color.accent))
+            pb.scaleX = 0.8f
+            pb.scaleY = 0.8f
+        }
         aspect = Prefs.aspectMode.coerceIn(0, ASPECTS.size - 1)
         playerView.resizeMode = ASPECTS[aspect].first
         displayRate = DisplayRate(this)

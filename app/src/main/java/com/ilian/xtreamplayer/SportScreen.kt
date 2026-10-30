@@ -495,11 +495,7 @@ class SportScreen(
             m.status.takeIf { it.isNotBlank() },
             resultDetails(m)
         ).joinToString("\n\n")
-        android.app.AlertDialog.Builder(act, Ui.DIALOG)
-            .setTitle(m.title)
-            .setMessage(msg)
-            .setPositiveButton("Fermer", null)
-            .show()
+        Sheet.message(act, m.title, msg, primary = "Fermer", onPrimary = {}, secondary = null)
     }
 
     private fun bindResult(v: View, m: Sport.Match) {

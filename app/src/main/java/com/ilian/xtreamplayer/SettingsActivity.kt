@@ -119,6 +119,14 @@ class SettingsActivity : BaseActivity() {
             5 -> playerSettings()
             else -> downloads()
         }
+        // La section arrive en fondu en glissant légèrement (comme une page qu'on tourne)
+        content.animate().cancel()
+        content.alpha = 0f
+        content.translationY = 12 * resources.displayMetrics.density
+        content.animate().alpha(1f).translationY(0f).setDuration(260)
+            .setInterpolator(android.view.animation.PathInterpolator(0.22f, 1f, 0.36f, 1f)).start()
+        tvSection.alpha = 0.4f
+        tvSection.animate().alpha(1f).setDuration(220).start()
     }
 
     private fun reshow() {
@@ -295,18 +303,9 @@ class SettingsActivity : BaseActivity() {
             Ui.toast(this, "Mise à jour du guide déjà en cours…")
             return
         }
-        val d = resources.displayMetrics.density
-        val label = TextView(this).apply {
-            text = "Préparation…"
-            setTextColor(getColor(R.color.text_dim))
-            textSize = 13f
-            setPadding((24 * d).toInt(), (8 * d).toInt(), (24 * d).toInt(), (4 * d).toInt())
-        }
-        val dlg = android.app.AlertDialog.Builder(this, Ui.DIALOG)
-            .setTitle("Guide TV")
-            .setView(label)
-            .setCancelable(false)
-            .show()
+        val prog = Sheet.progress(this, "Guide TV", "Préparation…", null)
+        val label = prog.label
+        val dlg = prog.dialog
         Bg.task(this, {
             XmlTv.import(src, api) { msg -> Bg.main.post { label.text = msg } }
         }) { r ->
@@ -416,15 +415,14 @@ class SettingsActivity : BaseActivity() {
         rows.info("Version installée", Updater.installedLabel(this))
         Crash.last(this)?.let { log ->
             rows.action("Dernier incident", log.lineSequence().firstOrNull()?.take(60) ?: "") {
-                android.app.AlertDialog.Builder(this, Ui.DIALOG)
-                    .setTitle("Dernier incident")
-                    .setMessage(log.take(3_000))
-                    .setPositiveButton("Fermer", null)
-                    .setNeutralButton("Effacer") { _, _ ->
+                Sheet.message(
+                    this, "Dernier incident", log.take(3_000),
+                    primary = "Fermer", onPrimary = {},
+                    secondary = "Effacer", onSecondary = {
                         Crash.clear(this)
                         reshow()
                     }
-                    .show()
+                )
             }
         }
         rows.action("Rechercher une mise à jour", "L'appli télécharge la nouvelle version ; il ne reste qu'à confirmer l'installation. Tes données sont conservées.") {
@@ -487,42 +485,32 @@ class SettingsActivity : BaseActivity() {
         val all = SportPrefs.SPORTS
         val on = SportPrefs.sports()
         val checked = all.map { it in on }.toBooleanArray()
-        android.app.AlertDialog.Builder(this, Ui.DIALOG)
-            .setTitle("Sports affichés")
-            .setMultiChoiceItems(all.toTypedArray(), checked) { _, i, c -> checked[i] = c }
-            .setPositiveButton("Enregistrer") { _, _ ->
-                val sel = all.filterIndexed { i, _ -> checked[i] }.toSet()
-                if (sel.isEmpty()) {
-                    Ui.toast(this, "Garde au moins un sport.")
-                    return@setPositiveButton
-                }
-                SportPrefs.setSports(sel)
-                reshow()
+        Sheet.multi(this, "Sports affichés", all, checked) { c ->
+            val sel = all.filterIndexed { i, _ -> c[i] }.toSet()
+            if (sel.isEmpty()) {
+                Ui.toast(this, "Garde au moins un sport.")
+                return@multi
             }
-            .setNegativeButton("Annuler", null)
-            .show()
+            SportPrefs.setSports(sel)
+            reshow()
+        }
     }
 
     private fun chooseLeagues() {
         val list = Sport.LEAGUES.filter { it.group in SportPrefs.sports() }
         val off = SportPrefs.offLeagues()
-        val labels = list.map { if (SportPrefs.sports().size > 1) "${it.label}  ·  ${it.group}" else it.label }.toTypedArray()
+        val labels = list.map { if (SportPrefs.sports().size > 1) "${it.label}  ·  ${it.group}" else it.label }
         val checked = list.map { it.path !in off }.toBooleanArray()
-        android.app.AlertDialog.Builder(this, Ui.DIALOG)
-            .setTitle("Compétitions suivies")
-            .setMultiChoiceItems(labels, checked) { _, i, c -> checked[i] = c }
-            .setPositiveButton("Enregistrer") { _, _ ->
-                if (checked.none { it }) {
-                    Ui.toast(this, "Garde au moins une compétition.")
-                    return@setPositiveButton
-                }
-                // Compétitions des autres sports : leur choix est conservé
-                val others = off.filter { p -> list.none { it.path == p } }
-                SportPrefs.setOffLeagues((others + list.filterIndexed { i, _ -> !checked[i] }.map { it.path }).toSet())
-                reshow()
+        Sheet.multi(this, "Compétitions suivies", labels, checked) { c ->
+            if (c.none { it }) {
+                Ui.toast(this, "Garde au moins une compétition.")
+                return@multi
             }
-            .setNegativeButton("Annuler", null)
-            .show()
+            // Compétitions des autres sports : leur choix est conservé
+            val others = off.filter { p -> list.none { it.path == p } }
+            SportPrefs.setOffLeagues((others + list.filterIndexed { i, _ -> !c[i] }.map { it.path }).toSet())
+            reshow()
+        }
     }
 
     // ---------- Protection multi-écran ----------

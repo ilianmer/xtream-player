@@ -319,6 +319,7 @@ class StreamScreen(
     }
 
     private fun setHero(item: Item, rail: Rail) {
+        if (hero?.id != item.id) Fx.reveal(heroTitle, heroMeta, heroPlot)
         hero = item
         heroRail = rail
         heroTitle.text = Tmdb.cleanTitle(item.name).first
@@ -504,6 +505,7 @@ class StreamScreen(
             val layout = if (viewType == 1) R.layout.item_card_more else R.layout.item_card
             val v = LayoutInflater.from(parent.context).inflate(layout, parent, false)
             v.clipToOutline = true
+            if (viewType == 0) Fx.shine(v)
             return VH(v)
         }
 

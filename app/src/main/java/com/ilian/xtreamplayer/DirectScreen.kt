@@ -199,22 +199,12 @@ class DirectScreen(
     /** Liste des catégories : OK pour ouvrir, appui long pour en faire la catégorie par défaut (★). */
     private fun chooseGroup() {
         val def = LiveDefault.get()
-        val labels = groups.map { if (it.key == def) "★  ${it.name}" else it.name }
-        val dlg = android.app.AlertDialog.Builder(act, Ui.DIALOG)
-            .setTitle("Catégorie")
-            .setItems(labels.toTypedArray()) { _, w ->
-                groupIndex = w
-                reload()
-                focusDefault()
-            }
-            .setNegativeButton("Annuler", null)
-            .create()
-        dlg.setOnShowListener {
-            val lv = dlg.listView ?: return@setOnShowListener
-            lv.setSelection(groupIndex)
-            lv.setOnItemLongClickListener { _, _, w, _ ->
-                val g = groups.getOrNull(w) ?: return@setOnItemLongClickListener true
-                dlg.dismiss()
+        val labels = groups.mapIndexed { i, g -> (if (i == groupIndex) "✓  " else "") + (if (g.key == def) "★  " else "") + g.name }
+        Sheet.choose(
+            act, "Catégorie", labels,
+            hint = "Appui long : catégorie affichée à l'ouverture du Direct (★)",
+            onLong = { w ->
+                val g = groups.getOrNull(w) ?: return@choose
                 if (g.key == LiveDefault.get()) {
                     LiveDefault.set(null)
                     Ui.toast(act, "Plus de catégorie par défaut : le Direct s'ouvrira sur la première catégorie.")
@@ -225,10 +215,12 @@ class DirectScreen(
                 groupIndex = w
                 reload()
                 focusDefault()
-                true
             }
+        ) { w ->
+            groupIndex = w
+            reload()
+            focusDefault()
         }
-        dlg.show()
     }
 
     // ---------- Sélection ----------
