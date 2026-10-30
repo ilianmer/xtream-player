@@ -35,6 +35,7 @@ open class BaseActivity : Activity() {
         super.onResume()
         // Écran resté dans la cadence de la dernière lecture (évite un écran noir à chaque sortie du lecteur)
         DisplayRate.keep(this)
+        GlassToast.flushSoon(this)
     }
 
     override fun onContentChanged() {

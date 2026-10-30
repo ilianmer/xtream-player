@@ -98,9 +98,10 @@ class DirectScreen(
         rv.itemAnimator = null
         // Trait vertical de l'heure actuelle sur toute la hauteur du guide
         rv.addItemDecoration(object : RecyclerView.ItemDecoration() {
+            // Trait fin et translucide : repère discret qui ne gêne pas la lecture des titres
             private val p = Paint(Paint.ANTI_ALIAS_FLAG).apply {
-                color = 0xFFF5C451.toInt()
-                strokeWidth = act.resources.displayMetrics.density * 2
+                color = 0x8CF5C451.toInt()
+                strokeWidth = act.resources.displayMetrics.density * 1.5f
             }
 
             override fun onDrawOver(c: Canvas, parent: RecyclerView, s: RecyclerView.State) {

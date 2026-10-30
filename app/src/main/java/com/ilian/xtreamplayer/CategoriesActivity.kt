@@ -99,7 +99,7 @@ class CategoriesActivity : BaseActivity() {
         }
         findViewById<View>(R.id.btnDone).setOnClickListener {
             if (ordering) stopOrdering()
-            Ui.toast(this, "Catégories enregistrées.")
+            GlassToast.later("Catégories enregistrées.")
             finish()
         }
         // Colonne de gauche : haut / bas restent dans la colonne (on ne passe plus par la liste de droite)
