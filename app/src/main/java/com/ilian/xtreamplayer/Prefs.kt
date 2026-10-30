@@ -95,20 +95,40 @@ object Prefs {
         get() = bool("screen_protect", false)
         set(v) = putBool("screen_protect", v)
 
-    /** Spots LED connectés qui suivent la musique (voir LightSync). */
-    var lightsOn: Boolean
-        get() = bool("lights_on", false)
-        set(v) = putBool("lights_on", v)
+    /** Écran calé sur la cadence de la chaîne (50 Hz pour les chaînes françaises) : mouvements sans saccades. */
+    var autoFrameRate: Boolean
+        get() = bool("afr", true)
+        set(v) = putBool("afr", v)
 
-    /** Retard des spots sur l'analyse du son, pour coller à ce qu'on entend (ms). */
-    var lightsDelayMs: Int
-        get() = int("lights_delay", 150)
-        set(v) = putInt("lights_delay", v)
+    /** Mode tunnel : image et son synchronisés directement par le décodeur du stick (comme une box TV). */
+    var tunneling: Boolean
+        get() = bool("tunneling", false)
+        set(v) = putBool("tunneling", v)
 
-    /** Spots choisis (liste JSON, voir Lamps). */
-    var lightsDevices: String
-        get() = str("lights_devices", "[]")
-        set(v) = putStr("lights_devices", v)
+    /** Son Dolby / DTS envoyé tel quel à l'ampli ou à la barre de son quand ils le gèrent. */
+    var audioPassthrough: Boolean
+        get() = bool("passthrough", true)
+        set(v) = putBool("passthrough", v)
+
+    /** Volume égalisé : même niveau d'une chaîne à l'autre, sans sursaut sur les pubs. */
+    var volumeLeveling: Boolean
+        get() = bool("leveling", false)
+        set(v) = putBool("leveling", v)
+
+    /** Qualité préférée des chaînes (voir LiveQuality) : 0 = celle choisie dans la liste. */
+    var liveQuality: Int
+        get() = int("live_quality", 0)
+        set(v) = putInt("live_quality", v)
+
+    /** Format d'image du lecteur : 0 adapté, 1 plein écran, 2 zoom. */
+    var aspectMode: Int
+        get() = int("aspect", 0)
+        set(v) = putInt("aspect", v)
+
+    /** Démarrage des chaînes : 0 rapide, 1 équilibré, 2 sans coupure (plus de marge). */
+    var liveStart: Int
+        get() = int("live_start", 1)
+        set(v) = putInt("live_start", v)
 
     /** 0 petite, 1 normale, 2 grande, 3 très grande. */
     var subtitleSize: Int

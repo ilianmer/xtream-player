@@ -117,6 +117,8 @@ object Sport {
         val b = m.away.score?.toIntOrNull()
         if (m.live && a != null && b != null && m.league.sport == "soccer" && kotlin.math.abs(a - b) <= 1) s += 2
         if (involvesFollowed(m)) s += 20
+        // Ce que tu regardes d'habitude (compétitions, équipes, sport préféré)
+        s += SportPrefs.affinity(m)
         return s
     }
 
@@ -127,8 +129,14 @@ object Sport {
     @Volatile
     private var cachedAt = 0L
 
-    /** Derniers matchs connus sans attendre le réseau. */
-    fun cached(): List<Match> = cache
+    /** Derniers matchs connus sans attendre le réseau (seulement les sports et compétitions choisis). */
+    fun cached(): List<Match> = cache.filter { SportPrefs.enabled(it.league) }
+
+    /** Choix des sports modifié : prochain appel à [get] recharge. */
+    fun invalidate() {
+        cachedAt = 0L
+        fullAt = 0L
+    }
 
     fun cachedAge(): Long = if (cachedAt == 0L) Long.MAX_VALUE else System.currentTimeMillis() - cachedAt
 
@@ -141,12 +149,14 @@ object Sport {
      * qui ont un match en cours ou qui commence bientôt sont rechargées.
      */
     @Synchronized
-    fun get(maxAgeMs: Long = 60_000L): List<Match> {
+    fun get(maxAgeMs: Long = 60_000L): List<Match> = getAll(maxAgeMs).filter { SportPrefs.enabled(it.league) }
+
+    private fun getAll(maxAgeMs: Long): List<Match> {
         if (cachedAge() < maxAgeMs) return cache
         val now = System.currentTimeMillis()
         val fresh = if (cache.isEmpty() || now - fullAt > 10 * 60_000L) {
             fullAt = now
-            load()
+            load(SportPrefs.leagues())
         } else {
             val hot = cache.filter { it.live || (it.state == "pre" && it.start - now < 2 * 3_600_000L) }.map { it.league.path }.toSet()
             if (hot.isEmpty()) cache else {

@@ -20,7 +20,9 @@ class TeamsActivity : BaseActivity() {
     private lateinit var tvCount: TextView
     private lateinit var tvStatus: TextView
 
-    private val leagues = Sport.LEAGUES.filter { it.sport == "soccer" || it.sport == "basketball" || it.sport == "rugby" }
+    private val leagues = Sport.LEAGUES.filter { it.sport == "soccer" || it.sport == "basketball" || it.sport == "rugby" }.let { all ->
+        all.filter { it.group in SportPrefs.sports() }.ifEmpty { all }
+    }
     private val leagueAdapter = CategoryAdapter(R.layout.item_category, ::onLeagueFocus, ::onLeagueClick)
     private val teamAdapter = TeamAdapter()
     private val loaded = HashMap<String, List<Sport.Side>>()

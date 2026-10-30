@@ -124,11 +124,6 @@ class SettingsActivity : BaseActivity() {
         menuViews.getOrNull(s)?.requestFocus()
     }
 
-    override fun onRequestPermissionsResult(requestCode: Int, permissions: Array<out String>, grantResults: IntArray) {
-        super.onRequestPermissionsResult(requestCode, permissions, grantResults)
-        LightsSettings.onPermissionResult(requestCode)
-    }
-
     @Deprecated("Deprecated in Java")
     override fun onBackPressed() {
         // Retour depuis la partie droite : on revient au menu.
@@ -184,7 +179,7 @@ class SettingsActivity : BaseActivity() {
                 Profiles.chooseLangs(this, cur) { Session.profile()?.let { rows.value(v).text = Profiles.langsLabel(it) } }
             }
         }
-        rows.action("Catégories affichées", "Coche seulement les catégories que tu veux voir (Direct, Films, Séries).") {
+        rows.action("Catégories affichées et ordre", "Coche les catégories à voir et range-les dans l'ordre que tu veux (Manga en premier, par exemple), pour le Direct, les Films et les Séries.") {
             startActivity(Intent(this, CategoriesActivity::class.java))
         }
         rows.action("Profils", "Jusqu'à ${Profiles.MAX} profils sur cette source, chacun avec ses favoris, sa reprise, ses langues et ses équipes.", "${Db.profiles(src.id).size} / ${Profiles.MAX}") {
@@ -441,6 +436,21 @@ class SettingsActivity : BaseActivity() {
             { if (it) "Scores en direct et matchs à venir, avec la chaîne qui les diffuse." else "L'onglet Sport est masqué (effet au prochain retour à l'accueil)." },
             { Prefs.showSport }, { Prefs.showSport = it }
         )
+        val on = SportPrefs.sports()
+        rows.action(
+            "Sports affichés",
+            "Garde seulement ce que tu aimes (par exemple que le foot) : onglet Sport, scores de l'accueil et pendant le direct.",
+            if (on.size == SportPrefs.SPORTS.size) "Tous" else SportPrefs.SPORTS.filter { it in on }.joinToString(", ")
+        ) { chooseSports() }
+        val off = SportPrefs.offLeagues()
+        val avail = Sport.LEAGUES.filter { it.group in on }
+        val shown = avail.count { it.path !in off }
+        rows.action(
+            "Compétitions",
+            "Choisis les championnats et coupes à suivre parmi les sports affichés.",
+            if (shown == avail.size) "Toutes" else "$shown sur ${avail.size}"
+        ) { chooseLeagues() }
+        rows.note("L'accueil met aussi en avant ce que tu regardes souvent : tes compétitions et tes équipes passent en premier.")
         val n = Sport.followed().size
         rows.action("Mes équipes", if (n == 0) "Aucune équipe suivie" else "$n équipe(s) suivie(s) : leurs matchs passent en premier.") {
             startActivity(Intent(this, TeamsActivity::class.java))
@@ -467,6 +477,48 @@ class SettingsActivity : BaseActivity() {
             }
         }
         rows.note("Les scores viennent du site ESPN, sans compte. La chaîne de chaque match est trouvée dans le guide TV de ton fournisseur ; sinon l'appli affiche le diffuseur officiel et tu choisis la chaîne une fois.")
+    }
+
+    private fun chooseSports() {
+        val all = SportPrefs.SPORTS
+        val on = SportPrefs.sports()
+        val checked = all.map { it in on }.toBooleanArray()
+        android.app.AlertDialog.Builder(this, Ui.DIALOG)
+            .setTitle("Sports affichés")
+            .setMultiChoiceItems(all.toTypedArray(), checked) { _, i, c -> checked[i] = c }
+            .setPositiveButton("Enregistrer") { _, _ ->
+                val sel = all.filterIndexed { i, _ -> checked[i] }.toSet()
+                if (sel.isEmpty()) {
+                    Ui.toast(this, "Garde au moins un sport.")
+                    return@setPositiveButton
+                }
+                SportPrefs.setSports(sel)
+                reshow()
+            }
+            .setNegativeButton("Annuler", null)
+            .show()
+    }
+
+    private fun chooseLeagues() {
+        val list = Sport.LEAGUES.filter { it.group in SportPrefs.sports() }
+        val off = SportPrefs.offLeagues()
+        val labels = list.map { if (SportPrefs.sports().size > 1) "${it.label}  ·  ${it.group}" else it.label }.toTypedArray()
+        val checked = list.map { it.path !in off }.toBooleanArray()
+        android.app.AlertDialog.Builder(this, Ui.DIALOG)
+            .setTitle("Compétitions suivies")
+            .setMultiChoiceItems(labels, checked) { _, i, c -> checked[i] = c }
+            .setPositiveButton("Enregistrer") { _, _ ->
+                if (checked.none { it }) {
+                    Ui.toast(this, "Garde au moins une compétition.")
+                    return@setPositiveButton
+                }
+                // Compétitions des autres sports : leur choix est conservé
+                val others = off.filter { p -> list.none { it.path == p } }
+                SportPrefs.setOffLeagues((others + list.filterIndexed { i, _ -> !checked[i] }.map { it.path }).toSet())
+                reshow()
+            }
+            .setNegativeButton("Annuler", null)
+            .show()
     }
 
     // ---------- Protection multi-écran ----------
@@ -511,9 +563,42 @@ class SettingsActivity : BaseActivity() {
             listOf(0 to "Désactivé", 1 to "Jusqu'à la fin de la saison", 2 to "Toute la série"),
             { Prefs.autoplay }, { Prefs.autoplay = it }
         )
+        rows.header("Image et son")
+        rows.toggle(
+            "Cadence de l'écran automatique",
+            { if (it) "L'écran passe en 50 Hz pour les chaînes françaises, 24 Hz pour les films, 60 Hz sinon : mouvements fluides, sans saccades (comme une box TV). Un court écran noir au changement est normal." else "L'écran garde sa fréquence : les chaînes à 25 / 50 images par seconde peuvent saccader dans les mouvements." },
+            { Prefs.autoFrameRate }, { Prefs.autoFrameRate = it }
+        )
+        rows.toggle(
+            "Son Dolby vers l'ampli",
+            { if (it) "Le Dolby / DTS part tel quel vers l'ampli ou la barre de son qui le gèrent (meilleur son). Sinon le stick le décode." else "Le stick décode tout le son lui-même (à choisir si tu n'as pas de son sur certaines chaînes)." },
+            { Prefs.audioPassthrough }, { Prefs.audioPassthrough = it }
+        )
+        rows.toggle(
+            "Volume égal entre les chaînes",
+            { if (it) "Même niveau sonore d'une chaîne à l'autre, sans sursaut sur les pubs ni saturation." else "Le son de chaque chaîne est laissé tel quel." },
+            { Prefs.volumeLeveling }, { Prefs.volumeLeveling = it }
+        )
+        rows.toggle(
+            "Mode tunnel (avancé)",
+            { if (it) "Image et son synchronisés par le décodeur du stick, comme une box TV. Désactive-le si l'image reste noire ou se fige." else "Synchronisation classique (recommandé)." },
+            { Prefs.tunneling }, { Prefs.tunneling = it }
+        )
+
+        rows.header("Direct")
+        rows.choice(
+            "Qualité des chaînes", "Version lancée quand une chaîne existe en plusieurs qualités (4K, FHD, HD, SD). Dans le lecteur, OK puis « Qualité » change une chaîne en particulier.",
+            LiveQuality.CHOICES, { Prefs.liveQuality }, { Prefs.liveQuality = it }
+        )
+        rows.choice(
+            "Démarrage des chaînes", "Rapide : l'image arrive vite. Sans coupure : un peu plus d'attente au zapping, mais plus de marge si la connexion faiblit.",
+            listOf(0 to "Rapide", 1 to "Équilibré", 2 to "Sans coupure"), { Prefs.liveStart }, { Prefs.liveStart = it }
+        )
+
+        rows.header("Films et séries")
         rows.slider(
             "Durée du tampon",
-            "Ce que le lecteur précharge avant de lancer la lecture. Plus c'est élevé, moins il y a de coupures, mais le démarrage est plus long et le direct a plus de retard.",
+            "Ce que le lecteur précharge avant de lancer un film ou un épisode. Plus c'est élevé, moins il y a de coupures, mais le démarrage est plus long.",
             1, 30, 1, { "$it seconde${if (it > 1) "s" else ""}" }, { Prefs.bufferSec }, { Prefs.bufferSec = it }
         )
         rows.slider(
@@ -522,7 +607,6 @@ class SettingsActivity : BaseActivity() {
             10, 120, 5, { "$it secondes" }, { Prefs.maxBufferSec }, { Prefs.maxBufferSec = it }
         )
         rows.note("Les réglages du tampon s'appliquent à la prochaine lecture.")
-        LightsSettings.section(this, rows) { reshow() }
     }
 
     // ---------- Téléchargements ----------

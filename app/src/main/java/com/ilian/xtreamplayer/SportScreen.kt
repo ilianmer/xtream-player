@@ -79,7 +79,9 @@ class SportScreen(
         Fx.lockColumn(rvResults)
         Fx.lockColumn(rvUpcoming)
         resultsEmpty.text = "Aucun résultat pour l'instant."
-        for (g in Sport.GROUPS) {
+        // Seulement les sports choisis (Réglages > Sport)
+        if (filter !in SportPrefs.tabs()) filter = SportPrefs.tabs().first()
+        for (g in SportPrefs.tabs()) {
             val tv = act.layoutInflater.inflate(R.layout.item_sport_tab, chips, false) as TextView
             tv.text = g
             tv.tag = g

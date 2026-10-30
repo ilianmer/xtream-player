@@ -31,6 +31,12 @@ open class BaseActivity : Activity() {
     protected open val edgeBump = true
 
     /** Le zoom de sélection déborde un peu : les panneaux ne le coupent plus dans leur marge intérieure. */
+    override fun onResume() {
+        super.onResume()
+        // Écran resté dans la cadence de la dernière lecture (évite un écran noir à chaque sortie du lecteur)
+        DisplayRate.keep(this)
+    }
+
     override fun onContentChanged() {
         super.onContentChanged()
         (findViewById<View>(android.R.id.content) as? ViewGroup)?.let { content ->
