@@ -1,0 +1,113 @@
+Faux serveur Xtream sur le port 8080
+"GET /player_api.php?username=demo&password=demo HTTP/1.1" 200 -
+"GET /player_api.php?username=demo&password=demo HTTP/1.1" 200 -
+"GET /player_api.php?username=demo&password=demo&action=get_live_categories HTTP/1.1" 200 -
+"GET /player_api.php?username=demo&password=demo&action=get_live_streams HTTP/1.1" 200 -
+"GET /player_api.php?username=demo&password=demo&action=get_vod_categories HTTP/1.1" 200 -
+"GET /player_api.php?username=demo&password=demo&action=get_vod_streams HTTP/1.1" 200 -
+"GET /player_api.php?username=demo&password=demo&action=get_series_categories HTTP/1.1" 200 -
+"GET /player_api.php?username=demo&password=demo&action=get_series HTTP/1.1" 200 -
+"GET /player_api.php?username=demo&password=demo&action=get_vod_info&vod_id=20061 HTTP/1.1" 200 -
+"GET /player_api.php?username=demo&password=demo&action=get_live_streams HTTP/1.1" 200 -
+"GET /player_api.php?username=demo&password=demo&action=get_short_epg&stream_id=3012&limit=12 HTTP/1.1" 200 -
+"GET /player_api.php?username=demo&password=demo&action=get_short_epg&stream_id=1013&limit=12 HTTP/1.1" 200 -
+"GET /player_api.php?username=demo&password=demo&action=get_short_epg&stream_id=1003&limit=12 HTTP/1.1" 200 -
+"GET /player_api.php?username=demo&password=demo&action=get_short_epg&stream_id=1018&limit=12 HTTP/1.1" 200 -
+"GET /player_api.php?username=demo&password=demo&action=get_short_epg&stream_id=1012&limit=12 HTTP/1.1" 200 -
+"GET /player_api.php?username=demo&password=demo&action=get_short_epg&stream_id=1014&limit=12 HTTP/1.1" 200 -
+"GET /player_api.php?username=demo&password=demo&action=get_short_epg&stream_id=1016&limit=12 HTTP/1.1" 200 -
+"GET /player_api.php?username=demo&password=demo&action=get_short_epg&stream_id=3016&limit=12 HTTP/1.1" 200 -
+"GET /player_api.php?username=demo&password=demo&action=get_short_epg&stream_id=1033&limit=12 HTTP/1.1" 200 -
+"GET /player_api.php?username=demo&password=demo&action=get_short_epg&stream_id=1015&limit=12 HTTP/1.1" 200 -
+"GET /player_api.php?username=demo&password=demo&action=get_short_epg&stream_id=1020&limit=12 HTTP/1.1" 200 -
+"GET /player_api.php?username=demo&password=demo&action=get_short_epg&stream_id=1017&limit=12 HTTP/1.1" 200 -
+"GET /player_api.php?username=demo&password=demo&action=get_short_epg&stream_id=3020&limit=12 HTTP/1.1" 200 -
+"GET /player_api.php?username=demo&password=demo&action=get_short_epg&stream_id=1000&limit=12 HTTP/1.1" 200 -
+"GET /player_api.php?username=demo&password=demo&action=get_short_epg&stream_id=1019&limit=12 HTTP/1.1" 200 -
+"GET /player_api.php?username=demo&password=demo&action=get_short_epg&stream_id=1001&limit=12 HTTP/1.1" 200 -
+"GET /player_api.php?username=demo&password=demo&action=get_short_epg&stream_id=1030&limit=12 HTTP/1.1" 200 -
+"GET /player_api.php?username=demo&password=demo&action=get_short_epg&stream_id=3000&limit=12 HTTP/1.1" 200 -
+"GET /player_api.php?username=demo&password=demo&action=get_short_epg&stream_id=1005&limit=12 HTTP/1.1" 200 -
+"GET /player_api.php?username=demo&password=demo&action=get_short_epg&stream_id=1042&limit=12 HTTP/1.1" 200 -
+"GET /player_api.php?username=demo&password=demo&action=get_short_epg&stream_id=1002&limit=12 HTTP/1.1" 200 -
+"GET /player_api.php?username=demo&password=demo&action=get_vod_info&vod_id=20058 HTTP/1.1" 200 -
+"GET /player_api.php?username=demo&password=demo&action=get_series_info&series_id=40005 HTTP/1.1" 200 -
+"GET /player_api.php?username=demo&password=demo&action=get_vod_info&vod_id=20082 HTTP/1.1" 200 -
+"GET /player_api.php?username=demo&password=demo&action=get_vod_info&vod_id=20061 HTTP/1.1" 200 -
+"GET /logo/0.png HTTP/1.1" 200 -
+"GET /logo/2.png HTTP/1.1" 200 -
+"GET /logo/1.png HTTP/1.1" 200 -
+"GET /logo/0.png HTTP/1.1" 200 -
+"GET /logo/3.png HTTP/1.1" 200 -
+"GET /logo/4.png HTTP/1.1" 200 -
+"GET /logo/4.png HTTP/1.1" 200 -
+"GET /player_api.php?username=demo&password=demo&action=get_vod_info&vod_id=20061 HTTP/1.1" 200 -
+"GET /player_api.php?username=demo&password=demo&action=get_vod_info&vod_id=20061 HTTP/1.1" 200 -
+"GET /player_api.php?username=demo&password=demo&action=get_vod_info&vod_id=20050 HTTP/1.1" 200 -
+"GET /player_api.php?username=demo&password=demo&action=get_vod_info&vod_id=20052 HTTP/1.1" 200 -
+"GET /player_api.php?username=demo&password=demo&action=get_vod_info&vod_id=20003 HTTP/1.1" 200 -
+"GET /player_api.php?username=demo&password=demo&action=get_vod_info&vod_id=20053 HTTP/1.1" 200 -
+"GET /player_api.php?username=demo&password=demo&action=get_vod_info&vod_id=20061 HTTP/1.1" 200 -
+"GET /player_api.php?username=demo&password=demo&action=get_series_info&series_id=40020 HTTP/1.1" 200 -
+"GET /player_api.php?username=demo&password=demo&action=get_series_info&series_id=40023 HTTP/1.1" 200 -
+"GET /player_api.php?username=demo&password=demo&action=get_vod_info&vod_id=20061 HTTP/1.1" 200 -
+"GET /player_api.php?username=demo&password=demo&action=get_vod_info&vod_id=20004 HTTP/1.1" 200 -
+"GET /player_api.php?username=demo&password=demo&action=get_series_info&series_id=40001 HTTP/1.1" 200 -
+"GET /live/demo/demo/1000.ts HTTP/1.1" 200 -
+"GET /logo/45.png HTTP/1.1" 200 -
+"GET /player_api.php?username=demo&password=demo&action=get_short_epg&stream_id=1045&limit=12 HTTP/1.1" 200 -
+----------------------------------------
+Exception occurred during processing of request from ('127.0.0.1', 53364)
+Traceback (most recent call last):
+  File "/usr/lib/python3.12/socketserver.py", line 692, in process_request_thread
+    self.finish_request(request, client_address)
+  File "/usr/lib/python3.12/socketserver.py", line 362, in finish_request
+    self.RequestHandlerClass(request, client_address, self)
+  File "/usr/lib/python3.12/socketserver.py", line 761, in __init__
+    self.handle()
+  File "/usr/lib/python3.12/http/server.py", line 436, in handle
+    self.handle_one_request()
+  File "/usr/lib/python3.12/http/server.py", line 424, in handle_one_request
+    method()
+  File "/home/runner/work/xtream-player/xtream-player/tools/fake_xtream.py", line 309, in do_GET
+    return self.send(200, data, ctype)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/runner/work/xtream-player/xtream-player/tools/fake_xtream.py", line 268, in send
+    self.wfile.write(body)
+  File "/usr/lib/python3.12/socketserver.py", line 840, in write
+    self._sock.sendall(b)
+ConnectionResetError: [Errno 104] Connection reset by peer
+----------------------------------------
+"GET /live/demo/demo/1000.ts HTTP/1.1" 200 -
+"GET /live/demo/demo/1000.ts HTTP/1.1" 200 -
+"GET /logo/44.png HTTP/1.1" 200 -
+"GET /live/demo/demo/1045.ts HTTP/1.1" 200 -
+----------------------------------------
+Exception occurred during processing of request from ('127.0.0.1', 53376)
+Traceback (most recent call last):
+  File "/usr/lib/python3.12/socketserver.py", line 692, in process_request_thread
+    self.finish_request(request, client_address)
+  File "/usr/lib/python3.12/socketserver.py", line 362, in finish_request
+    self.RequestHandlerClass(request, client_address, self)
+  File "/usr/lib/python3.12/socketserver.py", line 761, in __init__
+    self.handle()
+  File "/usr/lib/python3.12/http/server.py", line 438, in handle
+    self.handle_one_request()
+  File "/usr/lib/python3.12/http/server.py", line 424, in handle_one_request
+    method()
+  File "/home/runner/work/xtream-player/xtream-player/tools/fake_xtream.py", line 309, in do_GET
+    return self.send(200, data, ctype)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/runner/work/xtream-player/xtream-player/tools/fake_xtream.py", line 268, in send
+    self.wfile.write(body)
+  File "/usr/lib/python3.12/socketserver.py", line 840, in write
+    self._sock.sendall(b)
+ConnectionResetError: [Errno 104] Connection reset by peer
+----------------------------------------
+"GET /live/demo/demo/1045.ts HTTP/1.1" 200 -
+"GET /live/demo/demo/1045.ts HTTP/1.1" 200 -
+"GET /player_api.php?username=demo&password=demo HTTP/1.1" 200 -
+"GET /player_api.php?username=demo&password=demo HTTP/1.1" 200 -
+"GET /player_api.php?username=demo&password=demo&action=get_vod_info&vod_id=20061 HTTP/1.1" 200 -
+"GET /player_api.php?username=demo&password=demo&action=get_short_epg&stream_id=1019&limit=12 HTTP/1.1" 200 -
+"GET /player_api.php?username=demo&password=demo&action=get_vod_info&vod_id=20058 HTTP/1.1" 200 -
