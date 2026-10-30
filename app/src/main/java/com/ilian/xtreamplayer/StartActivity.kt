@@ -255,9 +255,46 @@ class StartActivity : BaseActivity() {
         }
     }
 
+    /**
+     * Captures automatiques (version de test seulement) : ouvre directement l'écran demandé
+     * (« demo_go » = onglet, réglages, fiche, lecteur…), pour des captures toujours au même endroit.
+     */
+    private fun demoGo(src: Source): Boolean {
+        if (applicationInfo.flags and ApplicationInfo.FLAG_DEBUGGABLE == 0) return false
+        val go = intent.getStringExtra("demo_go") ?: return false
+        val main = Intent(this, MainActivity::class.java)
+        val target: Intent? = when {
+            go in listOf("HOME", "LIVE", "SPORT", "MOVIE", "SERIES", "FAV") -> main.putExtra("demo_tab", go)
+            go.startsWith("settings") -> Intent(this, SettingsActivity::class.java)
+                .putExtra(SettingsActivity.EXTRA_SECTION, go.substringAfter(':', "0").toIntOrNull() ?: 0)
+            go == "categories" -> Intent(this, CategoriesActivity::class.java).putExtra(CategoriesActivity.EXTRA_KIND, Kind.MOVIE.name)
+            go == "profiles" -> Intent(this, ProfilesActivity::class.java)
+            go == "search" -> Intent(this, SearchActivity::class.java)
+            go == "movie" -> Db.page(src.id, Kind.MOVIE, null, null, 3, 1).firstOrNull()?.let {
+                Intent(this, MovieActivity::class.java).putExtra(MainActivity.EXTRA_ITEM, it.toJson().toString())
+            }
+            go == "serie" -> Db.page(src.id, Kind.SERIES, null, null, 0, 1).firstOrNull()?.let {
+                Intent(this, SeriesActivity::class.java).putExtra(MainActivity.EXTRA_ITEM, it.toJson().toString())
+            }
+            go == "player" -> {
+                startActivity(main)
+                Ui.play(this, ItemList.query(src.id, Kind.LIVE, null, null), 0)
+                null
+            }
+            else -> null
+        }
+        if (target != null) {
+            if (target.component?.className != MainActivity::class.java.name) startActivity(main)
+            startActivity(target)
+        }
+        finish()
+        return true
+    }
+
     /** Plusieurs profils : « Qui regarde ? ». Sinon l'accueil directement. */
     private fun next() {
         val src = Session.source() ?: return
+        if (demoGo(src)) return
         val many = Db.profiles(src.id).size > 1
         startActivity(Intent(this, if (many) ProfilesActivity::class.java else MainActivity::class.java))
         overridePendingTransition(android.R.anim.fade_in, android.R.anim.fade_out)

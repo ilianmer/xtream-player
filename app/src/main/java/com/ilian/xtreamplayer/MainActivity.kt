@@ -170,7 +170,9 @@ class MainActivity : BaseActivity() {
         seenHidden = Db.hiddenVersion
         seenSport = SportPrefs.version
         home.start()
-        val start = savedInstanceState?.getString(KEY_TAB)?.let { n -> Tab.values().firstOrNull { it.name == n } }
+        // Captures automatiques (version de test seulement) : onglet demandé au lancement
+        val demoTab = if (applicationInfo.flags and android.content.pm.ApplicationInfo.FLAG_DEBUGGABLE != 0) intent.getStringExtra("demo_tab") else null
+        val start = (savedInstanceState?.getString(KEY_TAB) ?: demoTab)?.let { n -> Tab.values().firstOrNull { it.name == n } }
             ?.takeIf { tabViews[it]?.visibility == View.VISIBLE } ?: Tab.HOME
         showTab(start)
         if (start == Tab.HOME) homeView.post { home.focusDefault() } else tabViews[start]?.post { tabViews[start]?.requestFocus() }
