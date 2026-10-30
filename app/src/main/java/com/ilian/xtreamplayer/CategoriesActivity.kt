@@ -31,6 +31,7 @@ class CategoriesActivity : BaseActivity() {
 
     /** Rangement : OK prend une catégorie, les flèches la déplacent, OK la pose. */
     private var ordering = false
+    private var tabPill: TabPill? = null
     private var held = -1
     private val adapter = RowAdapter()
     private var pendingKind = Kind.LIVE
@@ -57,6 +58,9 @@ class CategoriesActivity : BaseActivity() {
             Kind.MOVIE to findViewById(R.id.tabMovie),
             Kind.SERIES to findViewById(R.id.tabSeries)
         )
+        val pill = TabPill(tabs.getValue(Kind.LIVE).parent as android.view.ViewGroup)
+        tabPill = pill
+        tabs.values.forEach { pill.adopt(it) }
         for ((k, v) in tabs) {
             // Même logique que la barre du haut : on change en passant dessus.
             v.setOnFocusChangeListener { _, has ->
@@ -117,6 +121,7 @@ class CategoriesActivity : BaseActivity() {
         if (ordering) stopOrdering(save = held >= 0)
         kind = k
         for ((kk, v) in tabs) v.isSelected = kk == k
+        tabs[k]?.let { v -> v.post { tabPill?.select(v) } }
         tabs[k]?.let { findViewById<View>(R.id.btnAll).nextFocusUpId = it.id }
         tvKind.text = when (k) {
             Kind.LIVE -> "Chaînes en direct"

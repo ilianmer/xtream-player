@@ -26,6 +26,7 @@ class SportScreen(
     private val onTheme: (Int) -> Unit
 ) {
     private val chips: LinearLayout = root.findViewById(R.id.sportChips)
+    private val chipPill = TabPill(chips)
     private val updated: TextView = root.findViewById(R.id.sportUpdated)
     private val liveCount: TextView = root.findViewById(R.id.liveCount)
     private val rvLive: RecyclerView = root.findViewById(R.id.rvLive)
@@ -103,7 +104,9 @@ class SportScreen(
                 if (g != filter) setFilter(g)
                 (rvLive.getChildAt(0) ?: rvUpcoming.getChildAt(0))?.requestFocus()
             }
+            chipPill.adopt(tv)
             chips.addView(tv)
+            if (g == filter) chips.post { chipPill.select(tv) }
         }
         btnTeams.setOnClickListener { act.startActivity(Intent(act, TeamsActivity::class.java)) }
         // En arrivant sur la barre des sports depuis ailleurs, on se pose sur le sport en cours.
@@ -117,6 +120,7 @@ class SportScreen(
     private fun setFilter(g: String) {
         filter = g
         for (i in 0 until chips.childCount) chips.getChildAt(i).let { c -> c.isSelected = c.tag == g }
+        chipPill.select(chips.findViewWithTag(g))
         onTheme(theme())
         paint()
     }

@@ -17,6 +17,7 @@ class MainActivity : BaseActivity() {
     private lateinit var src: Source
     private lateinit var api: XtreamApi
     private lateinit var tabViews: Map<Tab, TextView>
+    private lateinit var tabPill: TabPill
     private lateinit var root: View
     private lateinit var topBar: View
     private lateinit var bgImage: ImageView
@@ -109,6 +110,9 @@ class MainActivity : BaseActivity() {
             Tab.FAV to findViewById(R.id.tabFav),
             Tab.DL to findViewById(R.id.tabDl)
         )
+        // Pastille qui glisse sous les onglets (blanche au focus, en verre sur l'onglet affiché)
+        tabPill = TabPill(findViewById(R.id.tabsBar))
+        tabViews.values.forEach { tabPill.adopt(it) }
         for ((t, v) in tabViews) {
             v.setOnClickListener { if (t != tab || gridMode) showTab(t) }
             // Comme sur les grandes plateformes : on change d'onglet en passant dessus (après un court instant).
@@ -262,6 +266,7 @@ class MainActivity : BaseActivity() {
         tab = t
         gridMode = false
         tabViews.forEach { (k, v) -> v.isSelected = k == t }
+        tabPill.select(tabViews[t])
         when (t) {
             Tab.HOME -> {
                 showOnly(homeView)
@@ -304,6 +309,7 @@ class MainActivity : BaseActivity() {
         tab = t
         gridMode = true
         tabViews.forEach { (k, v) -> v.isSelected = k == t }
+        tabPill.select(tabViews[t])
         showGrid(key, title)
         rvItems.post { focusFirstItem() }
     }

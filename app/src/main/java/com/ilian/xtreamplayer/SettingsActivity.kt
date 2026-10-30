@@ -30,6 +30,7 @@ class SettingsActivity : BaseActivity() {
         R.drawable.ic_menu_shield, R.drawable.ic_menu_player, R.drawable.ic_download
     ).let { if (Features.DOWNLOADS) it else it.dropLast(1) }
     private lateinit var tvSection: TextView
+    private lateinit var menuPill: TabPill
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -45,6 +46,7 @@ class SettingsActivity : BaseActivity() {
             "Xtream Player"
         }
 
+        menuPill = TabPill(menu, 10f)
         val inf = LayoutInflater.from(this)
         val iconPx = (18 * resources.displayMetrics.density).toInt()
         sections.forEachIndexed { i, name ->
@@ -63,6 +65,7 @@ class SettingsActivity : BaseActivity() {
                 show(i)
                 firstRow()?.requestFocus()
             }
+            menuPill.adopt(tv)
             menu.addView(tv)
             menuViews.add(tv)
         }
@@ -103,6 +106,7 @@ class SettingsActivity : BaseActivity() {
         section = i
         tvSection.text = sections.getOrNull(i) ?: ""
         menuViews.forEachIndexed { j, tv -> tv.isSelected = j == i }
+        menuViews.getOrNull(i)?.let { v -> v.post { menuPill.select(v) } }
         Bg.main.removeCallbacks(refreshDownloads)
         rows.clear()
         scroll.scrollTo(0, 0)

@@ -72,6 +72,8 @@ object Updater {
     /** Au lancement (une fois par session) : propose la nouvelle version s'il y en a une. */
     fun checkOnLaunch(act: Activity) {
         if (askedThisSession) return
+        // Version de test (captures automatiques) : jamais de proposition de mise à jour
+        if (act.applicationInfo.flags and android.content.pm.ApplicationInfo.FLAG_DEBUGGABLE != 0) return
         askedThisSession = true
         if (System.currentTimeMillis() < Prefs.updateSnoozeUntil) return
         Bg.task(act, { latest() }) { r ->
@@ -97,22 +99,41 @@ object Updater {
         }
     }
 
+    /** Notes de version mises en forme : titre en blanc, puces, rappel en petit. */
+    private fun notes(act: Activity, rel: Release): CharSequence {
+        val sb = android.text.SpannableStringBuilder()
+        fun span(start: Int, vararg what: Any) {
+            for (w in what) sb.setSpan(w, start, sb.length, android.text.Spanned.SPAN_EXCLUSIVE_EXCLUSIVE)
+        }
+        var st = sb.length
+        sb.append("Version ${rel.build}  ·  tu as la ${installedBuild(act)}")
+        span(st, android.text.style.ForegroundColorSpan(act.getColor(R.color.accent)), android.text.style.RelativeSizeSpan(0.92f))
+        val lines = rel.notes.lines().map { it.trim() }.filter { it.isNotEmpty() }
+        lines.forEachIndexed { i, line ->
+            sb.append(if (i == 0) "\n\n" else "\n")
+            st = sb.length
+            if (line.startsWith("- ") || line.startsWith("• ")) {
+                sb.append("•  ").append(line.drop(2))
+                span(st, android.text.style.ForegroundColorSpan(act.getColor(R.color.text)))
+            } else {
+                sb.append(line)
+                span(st, android.text.style.ForegroundColorSpan(act.getColor(R.color.white)), android.text.style.RelativeSizeSpan(1.06f))
+            }
+        }
+        sb.append("\n\n")
+        st = sb.length
+        sb.append("Ta source, tes profils et tes favoris sont conservés.")
+        span(st, android.text.style.RelativeSizeSpan(0.88f))
+        return sb
+    }
+
     private fun propose(act: Activity, rel: Release, fromLaunch: Boolean) {
-        val msg = buildString {
-            append("Version ").append(rel.build).append(" (tu as la ").append(installedBuild(act)).append(").")
-            if (rel.notes.isNotBlank()) append("\n\nNouveautés :\n").append(rel.notes)
-            append("\n\nTa source, tes profils et tes favoris sont conservés.")
-        }
-        val b = AlertDialog.Builder(act, Ui.DIALOG)
-            .setTitle("Nouvelle version disponible")
-            .setMessage(msg)
-            .setPositiveButton("Mettre à jour") { _, _ -> download(act, rel) }
-        if (fromLaunch) {
-            b.setNegativeButton("Plus tard") { _, _ -> Prefs.updateSnoozeUntil = System.currentTimeMillis() + 24 * 3_600_000L }
-        } else {
-            b.setNegativeButton("Annuler", null)
-        }
-        b.show().getButton(AlertDialog.BUTTON_POSITIVE)?.requestFocus()
+        Sheet.message(
+            act, "Nouvelle version disponible", notes(act, rel),
+            primary = "Mettre à jour", onPrimary = { download(act, rel) },
+            secondary = if (fromLaunch) "Plus tard" else "Annuler",
+            onSecondary = { if (fromLaunch) Prefs.updateSnoozeUntil = System.currentTimeMillis() + 24 * 3_600_000L }
+        )
     }
 
     private fun clearCache(ctx: Context) {
@@ -120,30 +141,11 @@ object Updater {
     }
 
     private fun download(act: Activity, rel: Release) {
-        val d = act.resources.displayMetrics.density
-        val box = LinearLayout(act).apply {
-            orientation = LinearLayout.VERTICAL
-            setPadding((24 * d).toInt(), (8 * d).toInt(), (24 * d).toInt(), 0)
-        }
-        val label = TextView(act).apply {
-            text = "Téléchargement…"
-            setTextColor(act.getColor(R.color.text_dim))
-            textSize = 13f
-        }
-        val bar = ProgressBar(act, null, android.R.attr.progressBarStyleHorizontal).apply {
-            max = 100
-            isIndeterminate = true
-            progressTintList = ColorStateList.valueOf(act.getColor(R.color.accent))
-        }
-        box.addView(label)
-        box.addView(bar, LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, (18 * d).toInt()).apply { topMargin = (10 * d).toInt() })
         val cancelled = AtomicBoolean(false)
-        val dlg = AlertDialog.Builder(act, Ui.DIALOG)
-            .setTitle("Mise à jour · version ${rel.build}")
-            .setView(box)
-            .setCancelable(false)
-            .setNegativeButton("Annuler") { _, _ -> cancelled.set(true) }
-            .show()
+        val prog = Sheet.progress(act, "Mise à jour · version ${rel.build}", "Téléchargement…") { cancelled.set(true) }
+        val dlg = prog.dialog
+        val bar = prog.bar
+        val label = prog.label
 
         thread(isDaemon = true, name = "update") {
             val dir = File(act.cacheDir, "updates").apply { mkdirs() }
@@ -172,7 +174,7 @@ object Updater {
                                     Bg.main.post {
                                         if (pct >= 0) {
                                             bar.isIndeterminate = false
-                                            bar.progress = pct
+                                            bar.setProgress(pct * 10, true)
                                             label.text = "Téléchargement… $pct %  ($mb Mo)"
                                         } else label.text = "Téléchargement… $mb Mo"
                                     }
@@ -211,10 +213,11 @@ object Updater {
         if (Build.VERSION.SDK_INT >= 26 && !act.packageManager.canRequestPackageInstalls()) {
             // Première fois : Android demande d'autoriser Xtream Player à installer des applis.
             pendingApk = f
-            AlertDialog.Builder(act, Ui.DIALOG)
-                .setTitle("Une autorisation, une seule fois")
-                .setMessage("Pour s'installer elle-même, l'appli doit être autorisée à installer des applis.\n\nSur l'écran suivant, active Xtream Player, puis reviens avec la touche Retour : l'installation se lance.")
-                .setPositiveButton("Ouvrir le réglage") { _, _ ->
+            Sheet.message(
+                act, "Une autorisation, une seule fois",
+                "Pour s'installer elle-même, l'appli doit être autorisée à installer des applis.\n\nSur l'écran suivant, active Xtream Player, puis reviens avec la touche Retour : l'installation se lance.",
+                primary = "Ouvrir le réglage",
+                onPrimary = {
                     try {
                         act.startActivity(Intent(Settings.ACTION_MANAGE_UNKNOWN_APP_SOURCES, Uri.parse("package:" + act.packageName)))
                     } catch (_: ActivityNotFoundException) {
@@ -222,9 +225,9 @@ object Updater {
                         pendingApk = null
                         launchInstaller(act, f)
                     }
-                }
-                .setNegativeButton("Annuler") { _, _ -> pendingApk = null }
-                .show()
+                },
+                onSecondary = { pendingApk = null }
+            )
             return
         }
         launchInstaller(act, f)
