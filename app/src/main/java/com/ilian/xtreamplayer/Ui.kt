@@ -22,7 +22,7 @@ object Ui {
     val DIALOG = R.style.GlassDialog
 
     fun toast(ctx: Context, s: String) {
-        Toast.makeText(ctx, s, Toast.LENGTH_LONG).show()
+        if (ctx is Activity) GlassToast.show(ctx, s) else Toast.makeText(ctx, s, Toast.LENGTH_LONG).show()
     }
 
     fun date(ms: Long): String = SimpleDateFormat("d MMMM yyyy", Locale.FRANCE).format(Date(ms))
@@ -37,40 +37,17 @@ object Ui {
         else String.format(Locale.FRANCE, "%d:%02d", m, sec)
     }
 
-    fun confirm(act: Activity, title: String, msg: String, yes: String, onYes: () -> Unit) {
-        AlertDialog.Builder(act, DIALOG).setTitle(title).setMessage(msg)
-            .setPositiveButton(yes) { _, _ -> onYes() }
-            .setNegativeButton("Annuler", null)
-            .show()
-    }
+    fun confirm(act: Activity, title: String, msg: String, yes: String, onYes: () -> Unit) =
+        Sheet.confirm(act, title, msg, yes, onYes)
 
-    fun choose(act: Activity, title: String, options: List<String>, onPick: (Int) -> Unit) {
-        AlertDialog.Builder(act, DIALOG).setTitle(title)
-            .setItems(options.toTypedArray()) { _, which -> onPick(which) }
-            .setNegativeButton("Annuler", null)
-            .show()
-    }
+    fun choose(act: Activity, title: String, options: List<String>, onPick: (Int) -> Unit) =
+        Sheet.choose(act, title, options, onPick = onPick)
 
     /** Saisie d'un texte, à la télécommande ou depuis le téléphone. */
     fun textInput(act: Activity, title: String, value: String, hint: String, onDone: (String) -> Unit) {
-        val et = EditText(act).apply {
-            setText(value)
-            this.hint = hint
-            setSingleLine()
-            inputType = InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_FLAG_NO_SUGGESTIONS
-        }
-        val pad = (22 * act.resources.displayMetrics.density).toInt()
-        val box = FrameLayout(act).apply {
-            setPadding(pad, pad / 2, pad, 0)
-            addView(et)
-        }
-        AlertDialog.Builder(act, DIALOG).setTitle(title).setView(box)
-            .setPositiveButton("Valider") { _, _ -> onDone(et.text.toString().trim()) }
-            .setNeutralButton("Depuis le téléphone") { _, _ ->
-                phoneInput(act, title, listOf(PhoneInput.Field("v", title, value, hint = hint))) { m -> onDone(m["v"].orEmpty().trim()) }
-            }
-            .setNegativeButton("Annuler", null)
-            .show()
+        Sheet.input(act, title, value, hint, onPhone = {
+            phoneInput(act, title, listOf(PhoneInput.Field("v", title, value, hint = hint))) { m -> onDone(m["v"].orEmpty().trim()) }
+        }, onDone = onDone)
     }
 
     /** Affiche l'adresse et le QR code de la page de saisie sur téléphone. */
@@ -123,15 +100,13 @@ object Ui {
             if (a == null || a.maxConn <= 0 || a.activeCons < a.maxConn) {
                 go()
             } else {
-                AlertDialog.Builder(act, DIALOG)
-                    .setTitle("Écran déjà utilisé")
-                    .setMessage(
-                        "Ton compte est déjà en lecture sur ${a.activeCons} écran(s) pour ${a.maxConn} autorisé(s), " +
-                            "sur un autre appareil ou dans une autre appli IPTV.\n\nSi tu lances quand même, l'autre lecture risque d'être coupée."
-                    )
-                    .setPositiveButton("Lancer quand même") { _, _ -> go() }
-                    .setNegativeButton("Annuler", null)
-                    .show()
+                Sheet.message(
+                    act, "Écran déjà utilisé",
+                    "Ton compte est déjà en lecture sur ${a.activeCons} écran(s) pour ${a.maxConn} autorisé(s), " +
+                        "sur un autre appareil ou dans une autre appli IPTV.\n\nSi tu lances quand même, l'autre lecture risque d'être coupée.",
+                    primary = "Lancer quand même", onPrimary = { go() },
+                    secondary = "Annuler", focusSecondary = true
+                )
             }
         }
     }
@@ -197,7 +172,7 @@ class Rows(private val act: Activity, private val box: LinearLayout) {
         } else {
             v.findViewById<View>(R.id.chevron).visibility = View.VISIBLE
         }
-        if (danger) v.findViewById<TextView>(R.id.title).setTextColor(act.getColor(R.color.danger))
+        if (danger) v.findViewById<TextView>(R.id.title).setTextColor(act.getColorStateList(R.color.row_danger_text))
         v.setOnClickListener { onClick(v) }
         return v
     }
@@ -208,20 +183,31 @@ class Rows(private val act: Activity, private val box: LinearLayout) {
         val knob = v.findViewById<View>(R.id.knob)
         val d = v.findViewById<TextView>(R.id.desc)
         sw.visibility = View.VISIBLE
-        fun paint() {
+        // Interrupteur animé : le fond passe du gris au vert en fondu, la pastille glisse avec un léger ressort
+        val track = android.graphics.drawable.TransitionDrawable(
+            arrayOf(act.getDrawable(R.drawable.switch_off), act.getDrawable(R.drawable.switch_on))
+        ).apply { isCrossFadeEnabled = true }
+        sw.background = track
+        val dp = act.resources.displayMetrics.density
+        val travel = (46 - 21 - 6) * dp
+        fun paint(animate: Boolean) {
             val on = get()
-            sw.setBackgroundResource(if (on) R.drawable.switch_on else R.drawable.switch_off)
-            val lp = knob.layoutParams as FrameLayout.LayoutParams
-            lp.gravity = (if (on) android.view.Gravity.END else android.view.Gravity.START) or android.view.Gravity.CENTER_VERTICAL
-            knob.layoutParams = lp
+            if (animate) {
+                if (on) track.startTransition(180) else track.reverseTransition(180)
+                knob.animate().translationX(if (on) travel else 0f)
+                    .setInterpolator(android.view.animation.OvershootInterpolator(1.6f)).setDuration(260).start()
+            } else {
+                if (on) track.startTransition(0) else track.resetTransition()
+                knob.translationX = if (on) travel else 0f
+            }
             val text = desc(on)
             d.text = text ?: ""
             d.visibility = if (text.isNullOrBlank()) View.GONE else View.VISIBLE
         }
-        paint()
+        paint(false)
         v.setOnClickListener {
             set(!get())
-            paint()
+            paint(true)
         }
         return v
     }
@@ -242,16 +228,12 @@ class Rows(private val act: Activity, private val box: LinearLayout) {
         }
         paint()
         v.setOnClickListener {
-            val cur = options.indexOfFirst { it.first == get() }
-            AlertDialog.Builder(act, Ui.DIALOG).setTitle(title)
-                .setSingleChoiceItems(options.map { it.second }.toTypedArray(), cur) { d, which ->
-                    set(options[which].first)
-                    paint()
-                    d.dismiss()
-                    after?.invoke()
-                }
-                .setNegativeButton("Annuler", null)
-                .show()
+            val cur = get()
+            Sheet.choose(act, title, options.map { (if (it.first == cur) "✓  " else "") + it.second }) { which ->
+                set(options[which].first)
+                paint()
+                after?.invoke()
+            }
         }
         return v
     }
@@ -264,10 +246,10 @@ class Rows(private val act: Activity, private val box: LinearLayout) {
         tv.visibility = View.VISIBLE
         bar.visibility = View.VISIBLE
         bar.max = max - min
-        fun paint() {
+        fun paint(animate: Boolean = false) {
             val x = get()
             tv.text = label(x)
-            bar.progress = x - min
+            bar.setProgress(x - min, animate)
         }
         paint()
         v.setOnKeyListener { _, code, e ->
@@ -280,8 +262,9 @@ class Rows(private val act: Activity, private val box: LinearLayout) {
             if (d == 0) {
                 false
             } else {
-                set((get() + d).coerceIn(min, max))
-                paint()
+                val before = get()
+                set((before + d).coerceIn(min, max))
+                if (get() == before) Fx.bump(bar, if (d < 0) -1 else 1, 0) else paint(true)
                 true
             }
         }

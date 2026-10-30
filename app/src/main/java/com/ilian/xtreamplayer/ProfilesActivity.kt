@@ -45,26 +45,23 @@ object Profiles {
             Ui.toast(act, "Impossible de reconnaître les langues des catégories de cette source.")
             return
         }
-        val labels = langs.map { "${it.label}  (${stats[it.code]} catégories)" }.toTypedArray()
+        val labels = langs.map { "${it.label}  (${stats[it.code]} catégories)" }
         val checked = langs.map { it.code in p.langSet }.toBooleanArray()
-        AlertDialog.Builder(act, Ui.DIALOG)
-            .setTitle("Langue du contenu · ${p.name}")
-            .setMultiChoiceItems(labels, checked) { _, i, c -> checked[i] = c }
-            .setPositiveButton("Appliquer") { _, _ ->
-                val set = langs.filterIndexed { i, _ -> checked[i] }.map { it.code }.toSet()
-                Db.setProfileLangs(p.id, set.joinToString(","))
-                Langs.apply(p.sourceId, p.id, set)
-                Ui.toast(act, if (set.isEmpty()) "Toutes les langues sont affichées." else "Préréglage appliqué : ${set.joinToString(", ") { Langs.label(it) }}")
-                after()
-            }
-            .setNeutralButton("Tout afficher") { _, _ ->
+        Sheet.multi(
+            act, "Langue du contenu · ${p.name}", labels, checked, apply = "Appliquer",
+            neutral = "Tout afficher" to {
                 Db.setProfileLangs(p.id, "")
                 Langs.apply(p.sourceId, p.id, emptySet())
                 Ui.toast(act, "Toutes les langues sont affichées.")
                 after()
             }
-            .setNegativeButton("Annuler", null)
-            .show()
+        ) { c ->
+            val set = langs.filterIndexed { i, _ -> c[i] }.map { it.code }.toSet()
+            Db.setProfileLangs(p.id, set.joinToString(","))
+            Langs.apply(p.sourceId, p.id, set)
+            Ui.toast(act, if (set.isEmpty()) "Toutes les langues sont affichées." else "Préréglage appliqué : ${set.joinToString(", ") { Langs.label(it) }}")
+            after()
+        }
     }
 }
 
@@ -134,7 +131,25 @@ class ProfilesActivity : BaseActivity() {
         }
         val f = focus
         f?.post { f.requestFocus() }
+        // Arrivée en cascade : le titre descend, puis chaque profil éclot l'un après l'autre
+        val title = findViewById<View>(R.id.tvTitle)
+        title.alpha = 0f
+        title.translationY = -10 * d
+        title.animate().alpha(1f).translationY(0f).setDuration(420).setInterpolator(EASE).start()
+        hint.alpha = 0f
+        hint.animate().alpha(1f).setStartDelay(120).setDuration(420).start()
+        for (i in 0 until row.childCount) {
+            val c = row.getChildAt(i).findViewById<View>(R.id.avatar) ?: continue
+            c.alpha = 0f
+            c.scaleX = 0.8f
+            c.scaleY = 0.8f
+            c.animate().alpha(1f).scaleX(1f).scaleY(1f).setStartDelay(140L + i * 70L).setDuration(460).setInterpolator(EASE).withLayer().start()
+        }
+        btnManage.alpha = 0f
+        btnManage.animate().alpha(1f).setStartDelay(260L + row.childCount * 70L).setDuration(380).start()
     }
+
+    private val EASE = android.view.animation.PathInterpolator(0.22f, 1f, 0.36f, 1f)
 
     private fun open(p: Profile) {
         Session.selectProfile(p)

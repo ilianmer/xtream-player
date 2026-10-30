@@ -17,6 +17,7 @@ class MainActivity : BaseActivity() {
     private lateinit var src: Source
     private lateinit var api: XtreamApi
     private lateinit var tabViews: Map<Tab, TextView>
+    private lateinit var tabPill: TabPill
     private lateinit var root: View
     private lateinit var topBar: View
     private lateinit var bgImage: ImageView
@@ -109,6 +110,9 @@ class MainActivity : BaseActivity() {
             Tab.FAV to findViewById(R.id.tabFav),
             Tab.DL to findViewById(R.id.tabDl)
         )
+        // Pastille qui glisse sous les onglets (blanche au focus, en verre sur l'onglet affiché)
+        tabPill = TabPill(findViewById(R.id.tabsBar))
+        tabViews.values.forEach { tabPill.adopt(it) }
         for ((t, v) in tabViews) {
             v.setOnClickListener { if (t != tab || gridMode) showTab(t) }
             // Comme sur les grandes plateformes : on change d'onglet en passant dessus (après un court instant).
@@ -166,7 +170,9 @@ class MainActivity : BaseActivity() {
         seenHidden = Db.hiddenVersion
         seenSport = SportPrefs.version
         home.start()
-        val start = savedInstanceState?.getString(KEY_TAB)?.let { n -> Tab.values().firstOrNull { it.name == n } }
+        // Captures automatiques (version de test seulement) : onglet demandé au lancement
+        val demoTab = if (applicationInfo.flags and android.content.pm.ApplicationInfo.FLAG_DEBUGGABLE != 0) intent.getStringExtra("demo_tab") else null
+        val start = (savedInstanceState?.getString(KEY_TAB) ?: demoTab)?.let { n -> Tab.values().firstOrNull { it.name == n } }
             ?.takeIf { tabViews[it]?.visibility == View.VISIBLE } ?: Tab.HOME
         showTab(start)
         if (start == Tab.HOME) homeView.post { home.focusDefault() } else tabViews[start]?.post { tabViews[start]?.requestFocus() }
@@ -262,6 +268,7 @@ class MainActivity : BaseActivity() {
         tab = t
         gridMode = false
         tabViews.forEach { (k, v) -> v.isSelected = k == t }
+        tabPill.select(tabViews[t])
         when (t) {
             Tab.HOME -> {
                 showOnly(homeView)
@@ -304,6 +311,7 @@ class MainActivity : BaseActivity() {
         tab = t
         gridMode = true
         tabViews.forEach { (k, v) -> v.isSelected = k == t }
+        tabPill.select(tabViews[t])
         showGrid(key, title)
         rvItems.post { focusFirstItem() }
     }
@@ -599,14 +607,11 @@ class MainActivity : BaseActivity() {
     }
 
     private fun confirmExit() {
-        val dlg = android.app.AlertDialog.Builder(this, Ui.DIALOG)
-            .setTitle("Quitter Xtream Player ?")
-            .setMessage("Tu pourras revenir quand tu veux depuis l'écran d'accueil du stick.")
-            .setPositiveButton("Quitter") { _, _ -> finish() }
-            .setNegativeButton("Rester", null)
-            .create()
-        dlg.setOnShowListener { dlg.getButton(android.app.AlertDialog.BUTTON_NEGATIVE)?.requestFocus() }
-        dlg.show()
+        Sheet.message(
+            this, "Quitter Xtream Player ?", "Tu pourras revenir quand tu veux depuis l'écran d'accueil du stick.",
+            primary = "Quitter", onPrimary = { finish() },
+            secondary = "Rester", focusSecondary = true
+        )
     }
 
     override fun onDestroy() {

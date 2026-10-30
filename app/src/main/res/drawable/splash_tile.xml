@@ -1,0 +1,20 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Tuile du logo : dégradé profond, liseré clair, reflet en haut (comme l'icône de l'identité) -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:aapt="http://schemas.android.com/aapt"
+    android:width="132dp"
+    android:height="132dp"
+    android:viewportWidth="120"
+    android:viewportHeight="120">
+    <path android:pathData="M34,4h52a30,30 0 0,1 30,30v52a30,30 0 0,1 -30,30h-52a30,30 0 0,1 -30,-30v-52a30,30 0 0,1 30,-30z">
+        <aapt:attr name="android:fillColor">
+            <gradient android:endColor="#0E1018" android:endX="116" android:endY="116" android:startColor="#262A3A" android:startX="4" android:startY="4" android:type="linear" />
+        </aapt:attr>
+    </path>
+    <path android:pathData="M34,4h52a30,30 0 0,1 30,30v14h-112v-14a30,30 0 0,1 30,-30z">
+        <aapt:attr name="android:fillColor">
+            <gradient android:endColor="#00FFFFFF" android:endX="60" android:endY="48" android:startColor="#14FFFFFF" android:startX="60" android:startY="4" android:type="linear" />
+        </aapt:attr>
+    </path>
+    <path android:fillColor="#00000000" android:strokeColor="#29FFFFFF" android:strokeWidth="1" android:pathData="M34,4.5h52a29.5,29.5 0 0,1 29.5,29.5v52a29.5,29.5 0 0,1 -29.5,29.5h-52a29.5,29.5 0 0,1 -29.5,-29.5v-52a29.5,29.5 0 0,1 29.5,-29.5z" />
+</vector>

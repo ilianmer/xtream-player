@@ -92,6 +92,7 @@ class ItemAdapter(
         val layout = if (viewType == 0) R.layout.item_live else R.layout.item_poster
         val v = LayoutInflater.from(parent.context).inflate(layout, parent, false)
         v.findViewById<View>(R.id.frame)?.clipToOutline = true
+        if (viewType != 0) Fx.shine(v.findViewById(R.id.frame))
         val zoom = if (viewType == 0) 1.03f else 1.08f
         v.setOnFocusChangeListener { view, hasFocus -> Fx.focus(view, hasFocus, zoom) }
         val h = VH(v)
@@ -259,6 +260,7 @@ class SmallPosterAdapter(
     override fun onCreateViewHolder(parent: ViewGroup, viewType: Int): VH {
         val v = LayoutInflater.from(parent.context).inflate(R.layout.item_poster_small, parent, false)
         v.clipToOutline = true
+        Fx.shine(v)
         return VH(v)
     }
 
