@@ -2,6 +2,7 @@ name: Build APK
 
 on:
   push:
+    branches-ignore: [design, screens]
   workflow_dispatch:
 
 permissions:
