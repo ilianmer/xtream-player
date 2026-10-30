@@ -35,6 +35,7 @@ open class BaseActivity : Activity() {
         super.onResume()
         // Écran resté dans la cadence de la dernière lecture (évite un écran noir à chaque sortie du lecteur)
         DisplayRate.keep(this)
+        GlassToast.flushSoon(this)
     }
 
     override fun onContentChanged() {
@@ -51,6 +52,14 @@ open class BaseActivity : Activity() {
     }
 
     override fun dispatchKeyEvent(event: KeyEvent): Boolean {
+        // OK : l'élément s'enfonce légèrement puis rebondit (retour visuel de l'appui, comme sur Apple TV)
+        if (event.keyCode == KeyEvent.KEYCODE_DPAD_CENTER || event.keyCode == KeyEvent.KEYCODE_ENTER || event.keyCode == KeyEvent.KEYCODE_NUMPAD_ENTER) {
+            val v = currentFocus
+            if (v != null && v.isClickable && v !is android.widget.EditText) {
+                if (event.action == KeyEvent.ACTION_DOWN && event.repeatCount == 0) Fx.press(v, true)
+                else if (event.action == KeyEvent.ACTION_UP) Fx.press(v, false)
+            }
+        }
         // Bas sur la dernière ligne d'une liste : on reste dedans, avec un petit rebond (comme les plateformes de streaming)
         if (edgeBump && event.action == KeyEvent.ACTION_DOWN && event.keyCode == KeyEvent.KEYCODE_DPAD_DOWN && Fx.atListBottom(currentFocus)) {
             if (event.repeatCount % 3 == 0) Fx.bump(Fx.listItemOf(currentFocus) ?: currentFocus, 0, 1)
@@ -226,6 +235,7 @@ object Fx {
             }
         }
         v.animate().cancel()
+        v.setTag(R.id.focus_scale, if (has) scale else 1f)
         // withLayer : pendant le zoom, la carte est dessinée une fois dans une texture puis agrandie
         // (au lieu d'être entièrement redessinée à chaque image)
         v.animate().scaleX(if (has) scale else 1f).scaleY(if (has) scale else 1f)
@@ -316,6 +326,42 @@ object Fx {
         val curMid = a[1] + v.height / 2
         val nextMid = b[1] + next.height / 2
         return if (down) nextMid < curMid - 8 else nextMid > curMid + 8
+    }
+
+    /** Ajoute le reflet de focus (voir ShineDrawable) au premier plan d'une affiche. */
+    fun shine(v: View?, radiusDp: Float = 9f) {
+        v ?: return
+        val fg = v.foreground
+        if (fg is android.graphics.drawable.LayerDrawable && fg.numberOfLayers > 1 && fg.getDrawable(1) is ShineDrawable) return
+        val s = ShineDrawable(radiusDp * density(v))
+        v.foreground = if (fg == null) s else android.graphics.drawable.LayerDrawable(arrayOf(fg, s))
+    }
+
+    private val soft = android.view.animation.PathInterpolator(0.22f, 1f, 0.36f, 1f)
+
+    /** Textes qui changent (titre, résumé…) : ils réapparaissent en fondu en glissant de quelques points. */
+    fun reveal(vararg views: View?) {
+        for ((i, v) in views.withIndex()) {
+            v ?: continue
+            v.animate().cancel()
+            v.alpha = 0f
+            v.translationX = 8 * density(v)
+            v.animate().alpha(1f).translationX(0f).setStartDelay(i * 40L).setDuration(320).setInterpolator(soft).start()
+        }
+    }
+
+    private val pressIn = DecelerateInterpolator(1.6f)
+    private val pressOut = OvershootInterpolator(2.4f)
+
+    /** Appui sur OK : l'élément s'enfonce (94 %) puis revient à sa taille avec un petit rebond. */
+    fun press(v: View, down: Boolean) {
+        val rest = (v.getTag(R.id.focus_scale) as? Float) ?: 1f
+        v.animate().cancel()
+        if (down) {
+            v.animate().scaleX(rest * 0.94f).scaleY(rest * 0.94f).setInterpolator(pressIn).setDuration(90).withLayer().start()
+        } else {
+            v.animate().scaleX(rest).scaleY(rest).setInterpolator(pressOut).setDuration(280).withLayer().start()
+        }
     }
 
     /** Petit rebond : on ne peut pas aller plus loin dans cette direction. */

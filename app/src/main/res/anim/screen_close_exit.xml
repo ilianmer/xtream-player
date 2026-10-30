@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Écran fermé : il s'efface en s'approchant légèrement -->
+<set xmlns:android="http://schemas.android.com/apk/res/android"
+    android:interpolator="@android:interpolator/accelerate_quad"
+    android:shareInterpolator="true"
+    android:zAdjustment="top">
+    <alpha android:duration="200" android:fromAlpha="1" android:toAlpha="0" />
+    <scale android:duration="220" android:fromXScale="1" android:fromYScale="1"
+        android:pivotX="50%" android:pivotY="50%" android:toXScale="1.03" android:toYScale="1.03" />
+</set>

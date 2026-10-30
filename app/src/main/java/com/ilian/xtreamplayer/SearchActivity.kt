@@ -180,7 +180,10 @@ class SearchActivity : BaseActivity() {
         override fun onCreateViewHolder(parent: ViewGroup, viewType: Int): VH {
             val layout = if (viewType == 0) R.layout.item_search_channel else R.layout.item_card
             val v = LayoutInflater.from(parent.context).inflate(layout, parent, false)
-            if (viewType == 1) v.clipToOutline = true
+            if (viewType == 1) {
+                v.clipToOutline = true
+                Fx.shine(v)
+            }
             v.setOnFocusChangeListener { view, has -> Fx.focus(view, has, if (viewType == 0) 1.04f else 1.08f) }
             return VH(v)
         }

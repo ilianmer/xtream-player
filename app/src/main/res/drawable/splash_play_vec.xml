@@ -1,0 +1,34 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Le « play » doré du logo, prêt à être dessiné trait par trait puis rempli (voir avd_splash_play) -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:aapt="http://schemas.android.com/aapt"
+    android:width="132dp"
+    android:height="132dp"
+    android:viewportWidth="120"
+    android:viewportHeight="120">
+    <group
+        android:name="playGroup"
+        android:pivotX="66"
+        android:pivotY="60">
+        <path
+            android:name="play"
+            android:fillAlpha="0"
+            android:pathData="M44,34Q44,28 50,31L88,56Q93,60 88,64L50,89Q44,92 44,86Z"
+            android:strokeWidth="2.6"
+            android:strokeColor="#FFE7A8"
+            android:strokeLineCap="round"
+            android:strokeLineJoin="round"
+            android:trimPathEnd="0">
+            <aapt:attr name="android:fillColor">
+                <gradient
+                    android:endColor="#F2A93B"
+                    android:endX="92"
+                    android:endY="90"
+                    android:startColor="#FFE29A"
+                    android:startX="44"
+                    android:startY="30"
+                    android:type="linear" />
+            </aapt:attr>
+        </path>
+    </group>
+</vector>

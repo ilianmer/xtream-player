@@ -250,7 +250,19 @@ class HomeScreen(
         for (j in 0 until heroDots.childCount) {
             val d = heroDots.getChildAt(j)
             d.setBackgroundResource(if (j == i) R.drawable.dot_on else R.drawable.dot_off)
-            d.layoutParams = d.layoutParams.apply { width = ((if (j == i) 16 else 6) * dp).toInt() }
+            // L'indicateur actif s'allonge en douceur (et le précédent se rétracte)
+            val target = ((if (j == i) 16 else 6) * dp).toInt()
+            val from = d.layoutParams.width
+            if (!animate || from == target || from <= 0) {
+                d.layoutParams = d.layoutParams.apply { width = target }
+            } else {
+                android.animation.ValueAnimator.ofInt(from, target).apply {
+                    duration = 320
+                    interpolator = android.view.animation.PathInterpolator(0.22f, 1f, 0.36f, 1f)
+                    addUpdateListener { a -> d.layoutParams = d.layoutParams.apply { width = a.animatedValue as Int } }
+                    start()
+                }
+            }
         }
         val apply = {
             heroTitle.text = Tmdb.cleanTitle(item.name).first
@@ -637,6 +649,7 @@ class HomeScreen(
             val v = LayoutInflater.from(parent.context).inflate(R.layout.item_resume_card, parent, false)
             v.findViewById<View>(R.id.frame).clipToOutline = true
             v.findViewById<View>(R.id.thumb).clipToOutline = true
+            Fx.shine(v.findViewById(R.id.frame))
             v.setOnFocusChangeListener { view, has -> Fx.focus(view, has, 1.06f) }
             return VH(v)
         }

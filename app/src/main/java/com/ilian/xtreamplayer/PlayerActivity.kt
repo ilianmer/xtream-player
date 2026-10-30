@@ -38,6 +38,10 @@ import androidx.media3.datasource.DataSpec
 import androidx.media3.datasource.TransferListener
 import androidx.media3.ui.AspectRatioFrameLayout
 import android.content.Context
+import android.net.ConnectivityManager
+import android.net.Network
+import android.os.SystemClock
+import android.util.Log
 import android.view.Gravity
 import android.widget.FrameLayout
 import java.util.concurrent.atomic.AtomicLong
@@ -93,6 +97,11 @@ class PlayerActivity : BaseActivity() {
     private val nextWatch = object : Runnable {
         override fun run() {
             if (isFinishing) return
+            // Direct : rien à surveiller ici, on repasse rarement
+            if (isLive) {
+                Bg.main.postDelayed(this, 2_000)
+                return
+            }
             checkNextEpisode()
             Bg.main.postDelayed(this, 250)
         }
@@ -103,9 +112,32 @@ class PlayerActivity : BaseActivity() {
     private var useAltFormat = false
     private var epgToken = 0
 
+    /** Le bandeau s'efface en fondu (et non d'un coup). */
     private val hideOverlay = Runnable {
-        overlay.visibility = View.GONE
-        if (!alerting) ticker.visibility = View.GONE
+        overlay.animate().cancel()
+        overlay.animate().alpha(0f).setDuration(280).withEndAction {
+            overlay.visibility = View.GONE
+            overlay.alpha = 1f
+        }.start()
+        if (!alerting) ticker.animate().alpha(0f).setDuration(280).withEndAction {
+            if (!alerting) ticker.visibility = View.GONE
+            ticker.alpha = 1f
+        }.start()
+    }
+
+    /** Le bandeau apparaît en fondu, le panneau du bas glisse légèrement vers le haut. */
+    private fun showOverlay() {
+        overlay.animate().cancel()
+        val wasHidden = overlay.visibility != View.VISIBLE
+        overlay.visibility = View.VISIBLE
+        if (wasHidden) {
+            overlay.alpha = 0f
+            findViewById<View>(R.id.band)?.let { b ->
+                b.translationY = 18 * resources.displayMetrics.density
+                b.animate().translationY(0f).setDuration(320).setInterpolator(android.view.animation.PathInterpolator(0.22f, 1f, 0.36f, 1f)).start()
+            }
+        }
+        overlay.animate().alpha(1f).setDuration(220).start()
     }
 
     // ---------- Bandeau des scores ----------
@@ -131,7 +163,7 @@ class PlayerActivity : BaseActivity() {
     }
     private val endAlert = Runnable {
         alerting = false
-        ticker.setBackgroundResource(R.drawable.glass_dark)
+        ticker.setBackgroundResource(R.drawable.player_glass)
         ticker.setTextColor(getColor(R.color.text))
         if (overlay.visibility == View.VISIBLE && tickerItems.isNotEmpty()) paintTicker() else ticker.visibility = View.GONE
     }
@@ -159,6 +191,8 @@ class PlayerActivity : BaseActivity() {
     private fun paintTicker() {
         val m = tickerItems.getOrNull(tickerIndex) ?: return
         ticker.text = (if (Sport.involvesFollowed(m)) "Mes équipes  ·  " else "") + scoreLine(m)
+        ticker.animate().cancel()
+        ticker.alpha = 1f
         ticker.visibility = View.VISIBLE
     }
 
@@ -167,6 +201,8 @@ class PlayerActivity : BaseActivity() {
         ticker.setBackgroundResource(R.drawable.accent_pill)
         ticker.setTextColor(getColor(R.color.on_accent))
         ticker.text = "Score ! " + scoreLine(m)
+        ticker.animate().cancel()
+        ticker.alpha = 1f
         ticker.visibility = View.VISIBLE
         Bg.main.removeCallbacks(endAlert)
         Bg.main.postDelayed(endAlert, 8_000)
@@ -228,11 +264,19 @@ class PlayerActivity : BaseActivity() {
         ticker = findViewById(R.id.ticker)
 
         playerView.setShowBuffering(PlayerView.SHOW_BUFFERING_ALWAYS)
+        // Pendant une reconnexion ou un zapping, la dernière image reste affichée (pas d'écran noir)
+        playerView.setKeepContentOnPlayerReset(true)
+        // Indicateur de chargement aux couleurs de l'appli (anneau doré, plus fin)
+        playerView.findViewById<android.widget.ProgressBar>(androidx.media3.ui.R.id.exo_buffering)?.let { pb ->
+            pb.indeterminateTintList = android.content.res.ColorStateList.valueOf(getColor(R.color.accent))
+            pb.scaleX = 0.8f
+            pb.scaleY = 0.8f
+        }
         aspect = Prefs.aspectMode.coerceIn(0, ASPECTS.size - 1)
         playerView.resizeMode = ASPECTS[aspect].first
         displayRate = DisplayRate(this)
         stats = TextView(this).apply {
-            setBackgroundResource(R.drawable.glass_dark)
+            setBackgroundResource(R.drawable.player_glass)
             setTextColor(getColor(R.color.text))
             textSize = 11f
             typeface = android.graphics.Typeface.MONOSPACE
@@ -270,6 +314,13 @@ class PlayerActivity : BaseActivity() {
         super.onStart()
         if (list.size == 0) return
         initPlayer()
+        Bg.main.removeCallbacks(guard)
+        Bg.main.postDelayed(guard, 1_000)
+        try {
+            (getSystemService(Context.CONNECTIVITY_SERVICE) as ConnectivityManager).registerDefaultNetworkCallback(netCallback)
+            netRegistered = true
+        } catch (_: Exception) {
+        }
         play()
         Bg.main.removeCallbacks(nextWatch)
         Bg.main.postDelayed(nextWatch, 1_000)
@@ -291,6 +342,14 @@ class PlayerActivity : BaseActivity() {
         Bg.main.removeCallbacks(nextWatch)
         Bg.main.removeCallbacks(retry)
         Bg.main.removeCallbacks(statsTick)
+        Bg.main.removeCallbacks(guard)
+        if (netRegistered) {
+            try {
+                (getSystemService(Context.CONNECTIVITY_SERVICE) as ConnectivityManager).unregisterNetworkCallback(netCallback)
+            } catch (_: Exception) {
+            }
+            netRegistered = false
+        }
         fpsToken++
         player?.release()
         player = null
@@ -375,6 +434,7 @@ class PlayerActivity : BaseActivity() {
 
     /** Appelé par le décodeur pour chaque image (fil de lecture : très court). */
     private val frameListener = VideoFrameMetadataListener { pts, _, format, _ ->
+        lastFrameAt = SystemClock.elapsedRealtime()
         var result = 0f
         synchronized(fpsLock) {
             if (!fpsDone) {
@@ -405,6 +465,7 @@ class PlayerActivity : BaseActivity() {
 
     private fun initPlayer() {
         val live = isLive
+        tunnelOn = true
         val http = DefaultHttpDataSource.Factory()
             .setUserAgent(Prefs.userAgent)
             .setAllowCrossProtocolRedirects(true)
@@ -434,6 +495,7 @@ class PlayerActivity : BaseActivity() {
             .setExtensionRendererMode(DefaultRenderersFactory.EXTENSION_RENDERER_MODE_ON)
 
         val selector = DefaultTrackSelector(this)
+        trackSelector = selector
         selector.setParameters(
             selector.buildUponParameters()
                 .setTunnelingEnabled(Prefs.tunneling)
@@ -467,6 +529,21 @@ class PlayerActivity : BaseActivity() {
         })
         p.addListener(object : Player.Listener {
             override fun onPlayerError(error: PlaybackException) {
+                Log.w("Player", "erreur ${error.errorCodeName}", error)
+                val p = player ?: return
+                // HLS : trop loin derrière le direct, on y revient simplement
+                if (error.errorCode == PlaybackException.ERROR_CODE_BEHIND_LIVE_WINDOW) {
+                    p.seekToDefaultPosition()
+                    p.prepare()
+                    return
+                }
+                // Mode tunnel refusé par le décodeur de cette chaîne : on repasse en mode classique
+                if (Prefs.tunneling && tunnelOn && error.errorCode in 4001..4005) {
+                    tunnelOn = false
+                    trackSelector?.let { ts -> ts.setParameters(ts.buildUponParameters().setTunnelingEnabled(false)) }
+                    play(keepFormat = true)
+                    return
+                }
                 // En direct, si le format choisi ne passe pas, on tente l'autre (TS <-> HLS) une fois.
                 if (isLive && !useAltFormat) {
                     useAltFormat = true
@@ -480,12 +557,15 @@ class PlayerActivity : BaseActivity() {
                     play()
                     return
                 }
-                // Coupure passagère (réseau, serveur saturé) : on se reconnecte tout seul avant d'abandonner
-                if (retries < RETRY_DELAYS.size) {
-                    val delay = RETRY_DELAYS[retries]
+                // Coupure passagère (réseau, serveur saturé) : on se reconnecte tout seul.
+                // En direct, comme une box TV : on ne renonce jamais (on espace juste les essais).
+                val delays = if (isLive) LIVE_RETRY_DELAYS else RETRY_DELAYS
+                if (isLive || retries < delays.size) {
+                    val delay = delays[retries.coerceAtMost(delays.size - 1)]
                     retries++
                     retryAt = if (isLive) 0L else (player?.currentPosition ?: 0L)
-                    tvError.text = "Connexion perdue, reconnexion…"
+                    tvError.text = if (retries <= 6) "Reconnexion…" else
+                        "La chaîne ne répond pas, nouvel essai toutes les ${delay / 1000} s.\nEssaie une autre chaîne, ou change le format du direct dans Réglages."
                     tvError.visibility = View.VISIBLE
                     Bg.main.removeCallbacks(retry)
                     Bg.main.postDelayed(retry, delay)
@@ -498,7 +578,12 @@ class PlayerActivity : BaseActivity() {
                 if (state == Player.STATE_READY) {
                     tvError.visibility = View.GONE
                     retries = 0
+                    if (readyAt == 0L) {
+                        readyAt = SystemClock.elapsedRealtime()
+                        readyPos = player?.currentPosition ?: 0L
+                    }
                 }
+                if (state == Player.STATE_BUFFERING && readyAt > 0L && isLive) noteStall()
                 if (state != Player.STATE_ENDED) return
                 val item = current ?: return
                 if (item.kind == Kind.LIVE) {
@@ -516,6 +601,134 @@ class PlayerActivity : BaseActivity() {
         })
         playerView.player = p
         player = p
+    }
+
+    // ---------- Garde du direct : jamais figé, jamais en retard ----------
+
+    private var trackSelector: DefaultTrackSelector? = null
+    private var tunnelOn = true
+    private var netRegistered = false
+    private var readyAt = 0L
+    private var readyPos = 0L
+    private var bufferingSince = 0L
+    @Volatile
+    private var lastFrameAt = 0L
+    private var lastPos = -1L
+    private var lastPosAt = 0L
+    private var lastReconnectAt = 0L
+    private val stalls = ArrayList<Long>()
+    /** Version plus légère choisie automatiquement après des coupures répétées (pour cette séance). */
+    private var lighter: Item? = null
+
+    /** Retour du réseau (Wi-Fi revenu) : on relance tout de suite au lieu d'attendre le prochain essai. */
+    private val netCallback = object : ConnectivityManager.NetworkCallback() {
+        override fun onAvailable(network: Network) {
+            Bg.main.post {
+                val p = player ?: return@post
+                if (isFinishing) return@post
+                if (tvError.visibility == View.VISIBLE || p.playbackState == Player.STATE_IDLE) {
+                    Bg.main.removeCallbacks(retry)
+                    useAltFormat = false
+                    play(keepFormat = true)
+                }
+            }
+        }
+    }
+
+    /** Ce que la lecture du direct tolère avant de se reconnecter, selon le réglage « Démarrage des chaînes ». */
+    private fun stallLimitMs(): Long = when (Prefs.liveStart) {
+        0 -> 6_000L
+        2 -> 12_000L
+        else -> 8_000L
+    }
+
+    private fun driftLimitMs(): Long = when (Prefs.liveStart) {
+        0 -> 8_000L
+        2 -> 25_000L
+        else -> 14_000L
+    }
+
+    /**
+     * Vérifie le direct chaque seconde : chargement qui n'en finit pas, image figée, position bloquée,
+     * retard accumulé sur le direct après des coupures. Dans chaque cas : reconnexion immédiate
+     * (le serveur renvoie aussitôt quelques secondes d'avance, bien plus vite que d'attendre).
+     */
+    private val guard = object : Runnable {
+        override fun run() {
+            if (isFinishing) return
+            Bg.main.postDelayed(this, 1_000)
+            val p = player ?: return
+            if (!isLive || !p.playWhenReady || tvError.visibility == View.VISIBLE) return
+            val now = SystemClock.elapsedRealtime()
+            when (p.playbackState) {
+                Player.STATE_BUFFERING -> {
+                    if (bufferingSince == 0L) bufferingSince = now
+                    // Au démarrage, le serveur peut mettre un peu plus de temps à répondre
+                    val limit = if (readyAt == 0L) stallLimitMs() + 6_000L else stallLimitMs()
+                    if (now - bufferingSince > limit) reconnect("chargement trop long")
+                }
+                Player.STATE_READY -> {
+                    bufferingSince = 0L
+                    val pos = p.currentPosition
+                    if (p.isPlaying) {
+                        if (pos != lastPos) {
+                            lastPos = pos
+                            lastPosAt = now
+                        } else if (now - lastPosAt > 5_000L) {
+                            reconnect("lecture bloquée")
+                            return
+                        }
+                        if (tunnelOn.not() || !Prefs.tunneling) {
+                            if (p.videoFormat != null && lastFrameAt > 0L && now - lastFrameAt > 4_000L) {
+                                reconnect("image figée")
+                                return
+                            }
+                        }
+                    }
+                    // Retard pris à cause des coupures : on revient au direct
+                    if (readyAt > 0L && now - readyAt > 20_000L) {
+                        val drift = (now - readyAt) - (pos - readyPos)
+                        if (drift > driftLimitMs()) reconnect("retour au direct")
+                    }
+                }
+                else -> bufferingSince = 0L
+            }
+        }
+    }
+
+    private fun reconnect(why: String) {
+        val now = SystemClock.elapsedRealtime()
+        if (now - lastReconnectAt < 4_000L) return
+        lastReconnectAt = now
+        Log.i("Player", "direct : $why")
+        noteStall()
+        useAltFormat = false
+        play(keepFormat = true)
+    }
+
+    /**
+     * Coupures répétées (3 en 2 minutes) sur une chaîne qui existe en version plus légère :
+     * on passe sur celle-ci pour la séance, comme le ferait une box TV, plutôt que de couper sans cesse.
+     */
+    private fun noteStall() {
+        val t = SystemClock.elapsedRealtime()
+        stalls.add(t)
+        stalls.removeAll { t - it > 120_000L }
+        if (stalls.size < 3 || Session.autoFallback) return
+        val base = current ?: return
+        val cur = this.now ?: return
+        val tier = MatchFinder.tier(cur.name).let { if (it == 0) 2 else it }
+        if (tier <= 1) return
+        Bg.task(this, { LiveQuality.variants(src.id, base) }) { r ->
+            val next = r.getOrNull().orEmpty()
+                .filter { MatchFinder.tier(it.name).let { t -> if (t == 0) 2 else t } < tier }
+                .maxByOrNull { MatchFinder.tier(it.name) } ?: return@task
+            if (isFinishing || current?.id != base.id) return@task
+            stalls.clear()
+            lighter = next
+            Ui.toast(this, "Connexion lente : passage en ${LiveQuality.label(next.name)} pour rester fluide.")
+            play(keepFormat = true)
+        }
     }
 
     /** Reconnexions automatiques après une coupure (remis à zéro dès que la lecture repart). */
@@ -548,10 +761,15 @@ class PlayerActivity : BaseActivity() {
         if (!keepFormat) useAltFormat = false
         if (!keepFormat) channelStartAt = System.currentTimeMillis()
         // Qualité retenue pour cette chaîne, ou qualité préférée (pas pendant la recherche auto d'un match)
-        val item = if (base.kind == Kind.LIVE && !Session.autoFallback) LiveQuality.resolve(src.id, base) else base
+        if (!keepFormat) lighter = null
+        val item = lighter ?: if (base.kind == Kind.LIVE && !Session.autoFallback) LiveQuality.resolve(src.id, base) else base
         playing = item
         playingIndex = index
         resetFps()
+        readyAt = 0L
+        bufferingSince = 0L
+        lastFrameAt = 0L
+        lastPos = -1L
         dropped = 0
         videoDecoder = null
         audioDecoder = null
@@ -608,7 +826,7 @@ class PlayerActivity : BaseActivity() {
             ovNext.text = ""
             paintVodProgress()
         }
-        overlay.visibility = View.VISIBLE
+        showOverlay()
         Bg.main.removeCallbacks(hideOverlay)
         Bg.main.postDelayed(hideOverlay, 5_000)
         if (live && !alerting && tickerItems.isNotEmpty() && Prefs.sportTicker) {
@@ -872,7 +1090,7 @@ class PlayerActivity : BaseActivity() {
         index = ((index + step) % n + n) % n
         current?.let { showInfo(it, withEpg = false) }
         Bg.main.removeCallbacks(zapNow)
-        Bg.main.postDelayed(zapNow, 450)
+        Bg.main.postDelayed(zapNow, 320)
     }
 
     private fun seekBy(deltaMs: Long) {
@@ -900,7 +1118,7 @@ class PlayerActivity : BaseActivity() {
         ovNow.text = ""
         ovNext.text = ""
         ovProgress.visibility = View.GONE
-        overlay.visibility = View.VISIBLE
+        showOverlay()
         Bg.main.removeCallbacks(hideOverlay)
         Bg.main.removeCallbacks(applyDigits)
         Bg.main.postDelayed(applyDigits, 1_300)
@@ -1069,7 +1287,8 @@ class PlayerActivity : BaseActivity() {
             AspectRatioFrameLayout.RESIZE_MODE_FILL to "Plein écran (étiré)",
             AspectRatioFrameLayout.RESIZE_MODE_ZOOM to "Zoom (sans bandes noires)"
         )
-        private val RETRY_DELAYS = longArrayOf(1_500L, 3_000L, 6_000L)
+        private val RETRY_DELAYS = longArrayOf(1_500L, 3_000L, 6_000L, 10_000L)
+        private val LIVE_RETRY_DELAYS = longArrayOf(800L, 1_500L, 3_000L, 5_000L, 8_000L, 10_000L, 15_000L)
         private val SE_LABEL = Regex("""Saison (\d+) · Épisode (\d+)""")
     }
 }

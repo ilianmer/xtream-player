@@ -2,6 +2,8 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
 
     <uses-permission android:name="android.permission.INTERNET" />
+    <!-- Retour du réseau détecté : le direct se relance aussitôt -->
+    <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
     <!-- Mise à jour depuis l'appli (Android demande quand même une confirmation) -->
     <uses-permission android:name="android.permission.REQUEST_INSTALL_PACKAGES" />
 
