@@ -16,8 +16,11 @@ android {
         versionCode = build
         versionName = "6.0 · build $build"
         // Sticks Android TV / Fire TV : processeurs ARM uniquement (garde l'appli légère)
-        ndk {
-            abiFilters += listOf("armeabi-v7a", "arm64-v8a")
+        // (sauf pour les captures d'écran automatiques, qui tournent sur un émulateur x86)
+        if (System.getenv("ALL_ABIS") == null) {
+            ndk {
+                abiFilters += listOf("armeabi-v7a", "arm64-v8a")
+            }
         }
     }
 

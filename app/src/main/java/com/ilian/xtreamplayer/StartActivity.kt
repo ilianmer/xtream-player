@@ -1,6 +1,7 @@
 package com.ilian.xtreamplayer
 
 import android.content.Intent
+import android.content.pm.ApplicationInfo
 import android.os.Bundle
 import android.view.View
 import android.view.WindowManager
@@ -48,6 +49,7 @@ class StartActivity : BaseActivity() {
             startActivity(Intent(this, SettingsActivity::class.java))
         }
 
+        demoSetup()
         val src = Session.source()
         if (src != null) {
             Session.profile()
@@ -62,6 +64,16 @@ class StartActivity : BaseActivity() {
             }
         }
         playIntro()
+    }
+
+    /** Captures d'écran automatiques (version de test seulement, jamais dans l'appli publiée) : source de démonstration. */
+    private fun demoSetup() {
+        val server = intent.getStringExtra("demo_server") ?: return
+        if (applicationInfo.flags and ApplicationInfo.FLAG_DEBUGGABLE == 0) return
+        if (Db.sources().isNotEmpty()) return
+        val api = XtreamApi(server, "demo", "demo")
+        Prefs.activeSourceId = Db.addSource("Démo", api.base, "demo", "demo")
+        Session.reset()
     }
 
     // ---------- Animation ----------
