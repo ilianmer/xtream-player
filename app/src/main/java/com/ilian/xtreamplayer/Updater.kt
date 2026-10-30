@@ -108,7 +108,9 @@ object Updater {
         var st = sb.length
         sb.append("Version ${rel.build}  ·  tu as la ${installedBuild(act)}")
         span(st, android.text.style.ForegroundColorSpan(act.getColor(R.color.accent)), android.text.style.RelativeSizeSpan(0.92f))
-        val lines = rel.notes.lines().map { it.trim() }.filter { it.isNotEmpty() }
+        // Les lignes techniques de fin de message (signatures) ne concernent pas l'utilisateur
+        val trailer = Regex("^(Co-Authored-By|Claude-Session|Signed-off-by):", RegexOption.IGNORE_CASE)
+        val lines = rel.notes.lines().map { it.trim() }.filter { it.isNotEmpty() && !trailer.containsMatchIn(it) }
         lines.forEachIndexed { i, line ->
             sb.append(if (i == 0) "\n\n" else "\n")
             st = sb.length

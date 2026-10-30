@@ -22,6 +22,26 @@ import kotlin.math.min
  */
 object GlassToast {
     private val ease = DecelerateInterpolator(2f)
+    private var pending: String? = null
+
+    /** Message à montrer sur l'écran suivant (celui-ci se ferme). */
+    fun later(text: String) {
+        pending = text
+    }
+
+    /**
+     * Montre le message en attente, une fois l'écran posé. Le léger délai laisse passer
+     * une éventuelle reconstruction de l'écran (le message s'affiche alors sur le nouveau).
+     */
+    fun flushSoon(act: Activity) {
+        if (pending == null) return
+        Bg.main.postDelayed({
+            val t = pending ?: return@postDelayed
+            if (act.isFinishing || act.isDestroyed) return@postDelayed
+            pending = null
+            show(act, t)
+        }, 380)
+    }
 
     fun show(act: Activity, text: String) {
         if (act.isFinishing || act.isDestroyed) return

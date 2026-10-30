@@ -64,12 +64,18 @@ jobs:
           path: XtreamPlayer.apk
       # Publie l'APK à une adresse fixe :
       # https://github.com/ilianmer/xtream-player/releases/latest/download/XtreamPlayer.apk
+      # Notes affichées dans l'appli : le message du commit, sans les lignes de signature
+      - name: Préparer les notes
+        if: github.ref == 'refs/heads/main'
+        env:
+          MSG: ${{ github.event.head_commit.message }}
+        run: printf '%s\n' "$MSG" | grep -viE '^(co-authored-by|claude-session|signed-off-by):' > notes.md || true
       - name: Publier la version
         if: github.ref == 'refs/heads/main'
         uses: softprops/action-gh-release@v2
         with:
           tag_name: build-${{ github.run_number }}
           name: Xtream Player (version ${{ github.run_number }})
-          body: ${{ github.event.head_commit.message }}
+          body_path: notes.md
           files: XtreamPlayer.apk
           make_latest: "true"
