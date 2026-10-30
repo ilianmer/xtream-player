@@ -112,9 +112,32 @@ class PlayerActivity : BaseActivity() {
     private var useAltFormat = false
     private var epgToken = 0
 
+    /** Le bandeau s'efface en fondu (et non d'un coup). */
     private val hideOverlay = Runnable {
-        overlay.visibility = View.GONE
-        if (!alerting) ticker.visibility = View.GONE
+        overlay.animate().cancel()
+        overlay.animate().alpha(0f).setDuration(280).withEndAction {
+            overlay.visibility = View.GONE
+            overlay.alpha = 1f
+        }.start()
+        if (!alerting) ticker.animate().alpha(0f).setDuration(280).withEndAction {
+            if (!alerting) ticker.visibility = View.GONE
+            ticker.alpha = 1f
+        }.start()
+    }
+
+    /** Le bandeau apparaît en fondu, le panneau du bas glisse légèrement vers le haut. */
+    private fun showOverlay() {
+        overlay.animate().cancel()
+        val wasHidden = overlay.visibility != View.VISIBLE
+        overlay.visibility = View.VISIBLE
+        if (wasHidden) {
+            overlay.alpha = 0f
+            findViewById<View>(R.id.band)?.let { b ->
+                b.translationY = 18 * resources.displayMetrics.density
+                b.animate().translationY(0f).setDuration(320).setInterpolator(android.view.animation.PathInterpolator(0.22f, 1f, 0.36f, 1f)).start()
+            }
+        }
+        overlay.animate().alpha(1f).setDuration(220).start()
     }
 
     // ---------- Bandeau des scores ----------
@@ -140,7 +163,7 @@ class PlayerActivity : BaseActivity() {
     }
     private val endAlert = Runnable {
         alerting = false
-        ticker.setBackgroundResource(R.drawable.glass_dark)
+        ticker.setBackgroundResource(R.drawable.player_glass)
         ticker.setTextColor(getColor(R.color.text))
         if (overlay.visibility == View.VISIBLE && tickerItems.isNotEmpty()) paintTicker() else ticker.visibility = View.GONE
     }
@@ -168,6 +191,8 @@ class PlayerActivity : BaseActivity() {
     private fun paintTicker() {
         val m = tickerItems.getOrNull(tickerIndex) ?: return
         ticker.text = (if (Sport.involvesFollowed(m)) "Mes équipes  ·  " else "") + scoreLine(m)
+        ticker.animate().cancel()
+        ticker.alpha = 1f
         ticker.visibility = View.VISIBLE
     }
 
@@ -176,6 +201,8 @@ class PlayerActivity : BaseActivity() {
         ticker.setBackgroundResource(R.drawable.accent_pill)
         ticker.setTextColor(getColor(R.color.on_accent))
         ticker.text = "Score ! " + scoreLine(m)
+        ticker.animate().cancel()
+        ticker.alpha = 1f
         ticker.visibility = View.VISIBLE
         Bg.main.removeCallbacks(endAlert)
         Bg.main.postDelayed(endAlert, 8_000)
@@ -249,7 +276,7 @@ class PlayerActivity : BaseActivity() {
         playerView.resizeMode = ASPECTS[aspect].first
         displayRate = DisplayRate(this)
         stats = TextView(this).apply {
-            setBackgroundResource(R.drawable.glass_dark)
+            setBackgroundResource(R.drawable.player_glass)
             setTextColor(getColor(R.color.text))
             textSize = 11f
             typeface = android.graphics.Typeface.MONOSPACE
@@ -799,7 +826,7 @@ class PlayerActivity : BaseActivity() {
             ovNext.text = ""
             paintVodProgress()
         }
-        overlay.visibility = View.VISIBLE
+        showOverlay()
         Bg.main.removeCallbacks(hideOverlay)
         Bg.main.postDelayed(hideOverlay, 5_000)
         if (live && !alerting && tickerItems.isNotEmpty() && Prefs.sportTicker) {
@@ -1091,7 +1118,7 @@ class PlayerActivity : BaseActivity() {
         ovNow.text = ""
         ovNext.text = ""
         ovProgress.visibility = View.GONE
-        overlay.visibility = View.VISIBLE
+        showOverlay()
         Bg.main.removeCallbacks(hideOverlay)
         Bg.main.removeCallbacks(applyDigits)
         Bg.main.postDelayed(applyDigits, 1_300)
