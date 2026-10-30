@@ -18,6 +18,11 @@ object Img {
 
     fun load(iv: ImageView, url: String?, placeholder: Int, maxPx: Int = 360) {
         iv.tag = url
+        // Vue recyclée pendant un fondu : on la remet nette
+        if (iv.alpha != 1f) {
+            iv.animate().cancel()
+            iv.alpha = 1f
+        }
         if (url.isNullOrBlank() || !url.startsWith("http", ignoreCase = true)) {
             iv.setImageResource(placeholder)
             return
@@ -38,7 +43,14 @@ object Img {
             }
             if (bmp != null) {
                 cache.put(url, bmp)
-                Bg.main.post { if (iv.tag == url) iv.setImageBitmap(bmp) }
+                Bg.main.post {
+                    if (iv.tag == url) {
+                        // L'image arrive en fondu (comme sur les plateformes), pas d'un coup
+                        iv.alpha = 0f
+                        iv.setImageBitmap(bmp)
+                        iv.animate().alpha(1f).setDuration(240).start()
+                    }
+                }
             }
         }
     }

@@ -1,5 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
-<selector xmlns:android="http://schemas.android.com/apk/res/android">
-    <item android:state_focused="true"><shape><solid android:color="#26FFFFFF" /><stroke android:width="2dp" android:color="#FFFFFF" /><corners android:radius="12dp" /></shape></item>
-    <item><shape><solid android:color="#00000000" /><corners android:radius="12dp" /></shape></item>
+<!-- Ligne de réglage : au focus, elle s'illumine en blanc (texte foncé), comme les réglages d'Apple TV -->
+<selector xmlns:android="http://schemas.android.com/apk/res/android" android:enterFadeDuration="150" android:exitFadeDuration="120">
+    <item android:state_focused="true"><shape><solid android:color="#FFFFFF" /><corners android:radius="14dp" /></shape></item>
+    <item><shape><solid android:color="#0AFFFFFF" /><corners android:radius="14dp" /></shape></item>
 </selector>
