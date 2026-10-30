@@ -1,0 +1,5 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Reflet qui balaie la tuile -->
+<shape xmlns:android="http://schemas.android.com/apk/res/android">
+    <gradient android:angle="0" android:centerColor="#47FFFFFF" android:endColor="#00FFFFFF" android:startColor="#00FFFFFF" android:type="linear" />
+</shape>

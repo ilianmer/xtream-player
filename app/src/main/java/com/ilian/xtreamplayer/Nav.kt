@@ -327,6 +327,28 @@ object Fx {
         return if (down) nextMid < curMid - 8 else nextMid > curMid + 8
     }
 
+    /** Ajoute le reflet de focus (voir ShineDrawable) au premier plan d'une affiche. */
+    fun shine(v: View?, radiusDp: Float = 9f) {
+        v ?: return
+        val fg = v.foreground
+        if (fg is android.graphics.drawable.LayerDrawable && fg.numberOfLayers > 1 && fg.getDrawable(1) is ShineDrawable) return
+        val s = ShineDrawable(radiusDp * density(v))
+        v.foreground = if (fg == null) s else android.graphics.drawable.LayerDrawable(arrayOf(fg, s))
+    }
+
+    private val soft = android.view.animation.PathInterpolator(0.22f, 1f, 0.36f, 1f)
+
+    /** Textes qui changent (titre, résumé…) : ils réapparaissent en fondu en glissant de quelques points. */
+    fun reveal(vararg views: View?) {
+        for ((i, v) in views.withIndex()) {
+            v ?: continue
+            v.animate().cancel()
+            v.alpha = 0f
+            v.translationX = 8 * density(v)
+            v.animate().alpha(1f).translationX(0f).setStartDelay(i * 40L).setDuration(320).setInterpolator(soft).start()
+        }
+    }
+
     private val pressIn = DecelerateInterpolator(1.6f)
     private val pressOut = OvershootInterpolator(2.4f)
 

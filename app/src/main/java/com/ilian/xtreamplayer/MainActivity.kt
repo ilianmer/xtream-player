@@ -605,14 +605,11 @@ class MainActivity : BaseActivity() {
     }
 
     private fun confirmExit() {
-        val dlg = android.app.AlertDialog.Builder(this, Ui.DIALOG)
-            .setTitle("Quitter Xtream Player ?")
-            .setMessage("Tu pourras revenir quand tu veux depuis l'écran d'accueil du stick.")
-            .setPositiveButton("Quitter") { _, _ -> finish() }
-            .setNegativeButton("Rester", null)
-            .create()
-        dlg.setOnShowListener { dlg.getButton(android.app.AlertDialog.BUTTON_NEGATIVE)?.requestFocus() }
-        dlg.show()
+        Sheet.message(
+            this, "Quitter Xtream Player ?", "Tu pourras revenir quand tu veux depuis l'écran d'accueil du stick.",
+            primary = "Quitter", onPrimary = { finish() },
+            secondary = "Rester", focusSecondary = true
+        )
     }
 
     override fun onDestroy() {

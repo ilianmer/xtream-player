@@ -164,8 +164,18 @@ object Sheet {
         }
     }
 
-    /** Liste de choix. Les libellés qui commencent par « ✓ » sont affichés cochés, et le focus s'y pose. */
-    fun choose(act: Activity, title: String, options: List<String>, onPick: (Int) -> Unit) {
+    /**
+     * Liste de choix. Les libellés qui commencent par « ✓ » sont affichés cochés, et le focus s'y pose.
+     * [onLong] : appui long sur une ligne (par exemple « catégorie par défaut »). [hint] : aide en bas.
+     */
+    fun choose(
+        act: Activity,
+        title: String,
+        options: List<String>,
+        onLong: ((Int) -> Unit)? = null,
+        hint: String = "Retour pour annuler",
+        onPick: (Int) -> Unit
+    ) {
         if (act.isFinishing || act.isDestroyed) return
         val d = act.resources.displayMetrics.density
         val (dlg, panel, list) = base(act, title, null)
@@ -176,6 +186,11 @@ object Sheet {
             val r = row(act, label, checked) {
                 dlg.dismiss()
                 onPick(i)
+            }
+            if (onLong != null) r.setOnLongClickListener {
+                dlg.dismiss()
+                onLong(i)
+                true
             }
             if (checked && focusRow == null) focusRow = r
             list.addView(r)
@@ -191,9 +206,126 @@ object Sheet {
         val maxH = (screenH * 0.66f).toInt()
         val want = options.size * (52 * d).toInt() + (16 * d).toInt()
         panel.addView(scroll, LinearLayout.LayoutParams((440 * d).toInt(), min(want, maxH)).apply { topMargin = (6 * d).toInt() })
-        panel.addView(hint(act, "Retour pour annuler"))
+        panel.addView(hint(act, hint))
         dlg.show()
         (focusRow ?: list.getChildAt(0))?.let { v -> v.post { v.requestFocus() } }
+    }
+
+    /**
+     * Choix multiple : chaque ligne se coche / décoche avec OK (case animée), puis « Enregistrer ».
+     * [neutral] : bouton supplémentaire à gauche (par exemple « Tout afficher »).
+     */
+    fun multi(
+        act: Activity,
+        title: String,
+        labels: List<String>,
+        checked: BooleanArray,
+        apply: String = "Enregistrer",
+        neutral: Pair<String, () -> Unit>? = null,
+        onApply: (BooleanArray) -> Unit
+    ) {
+        if (act.isFinishing || act.isDestroyed) return
+        val d = act.resources.displayMetrics.density
+        val (dlg, panel, list) = base(act, title, null)
+        val boxTint = act.getColorStateList(R.color.sheet_box_tint)
+        fun paint(r: TextView, on: Boolean) {
+            val ic = act.getDrawable(if (on) R.drawable.sheet_box_on else R.drawable.sheet_box_off)?.mutate()
+            if (!on) ic?.setTintList(boxTint)
+            r.setCompoundDrawablesRelativeWithIntrinsicBounds(ic, null, null, null)
+        }
+        labels.forEachIndexed { i, label ->
+            lateinit var r: TextView
+            r = row(act, label, false) {
+                checked[i] = !checked[i]
+                paint(r, checked[i])
+                // Petit battement de la ligne quand on coche
+                r.animate().cancel()
+                r.scaleX = 0.97f
+                r.scaleY = 0.97f
+                r.animate().scaleX(1.025f).scaleY(1.025f).setInterpolator(OvershootInterpolator(3f)).setDuration(220).start()
+            }
+            r.compoundDrawablePadding = (14 * d).toInt()
+            paint(r, checked[i])
+            list.addView(r)
+        }
+        val scroll = ScrollView(act).apply {
+            isVerticalScrollBarEnabled = false
+            clipToPadding = false
+            setPadding(0, (8 * d).toInt(), 0, (8 * d).toInt())
+            addView(list)
+        }
+        val maxH = (act.resources.displayMetrics.heightPixels * 0.56f).toInt()
+        val want = labels.size * (52 * d).toInt() + (16 * d).toInt()
+        panel.addView(scroll, LinearLayout.LayoutParams((460 * d).toInt(), min(want, maxH)).apply { topMargin = (6 * d).toInt() })
+        val bar = LinearLayout(act).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.END or Gravity.CENTER_VERTICAL
+            clipChildren = false
+            clipToPadding = false
+            setPadding(0, (14 * d).toInt(), 0, (2 * d).toInt())
+        }
+        if (neutral != null) {
+            bar.addView(pill(act, neutral.first, false, false) {
+                dlg.dismiss()
+                neutral.second()
+            })
+        }
+        bar.addView(pill(act, "Annuler", false, false) { dlg.dismiss() })
+        bar.addView(pill(act, apply, true, false) {
+            dlg.dismiss()
+            onApply(checked)
+        })
+        panel.addView(bar, LinearLayout.LayoutParams((460 * d).toInt(), ViewGroup.LayoutParams.WRAP_CONTENT))
+        dlg.show()
+        list.getChildAt(0)?.let { v -> v.post { v.requestFocus() } }
+    }
+
+    /** Saisie d'un texte (clavier de la télécommande), avec un bouton optionnel « Depuis le téléphone ». */
+    fun input(act: Activity, title: String, value: String, hint: String, onPhone: (() -> Unit)?, onDone: (String) -> Unit) {
+        if (act.isFinishing || act.isDestroyed) return
+        val d = act.resources.displayMetrics.density
+        val (dlg, panel, _) = base(act, title, null)
+        val et = android.widget.EditText(act).apply {
+            setText(value)
+            setSelection(text.length)
+            this.hint = hint
+            setSingleLine()
+            inputType = android.text.InputType.TYPE_CLASS_TEXT or android.text.InputType.TYPE_TEXT_FLAG_NO_SUGGESTIONS
+            imeOptions = android.view.inputmethod.EditorInfo.IME_ACTION_DONE
+            setBackgroundResource(R.drawable.sheet_field_bg)
+            setTextColor(act.getColor(R.color.text))
+            setHintTextColor(act.getColor(R.color.text_faint))
+            typeface = GlassToast.font(act, R.font.outfit_medium)
+            textSize = 16f
+            setPadding((16 * d).toInt(), 0, (16 * d).toInt(), 0)
+        }
+        panel.addView(et, LinearLayout.LayoutParams((460 * d).toInt(), (50 * d).toInt()).apply { topMargin = (16 * d).toInt() })
+        val bar = LinearLayout(act).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.END or Gravity.CENTER_VERTICAL
+            clipChildren = false
+            clipToPadding = false
+            setPadding(0, (16 * d).toInt(), 0, (2 * d).toInt())
+        }
+        if (onPhone != null) bar.addView(pill(act, "Depuis le téléphone", false, false) {
+            dlg.dismiss()
+            onPhone()
+        })
+        bar.addView(pill(act, "Annuler", false, false) { dlg.dismiss() })
+        val ok = pill(act, "Valider", true, false) {
+            dlg.dismiss()
+            onDone(et.text.toString().trim())
+        }
+        bar.addView(ok)
+        et.setOnEditorActionListener { _, action, _ ->
+            if (action == android.view.inputmethod.EditorInfo.IME_ACTION_DONE) {
+                ok.requestFocus()
+                true
+            } else false
+        }
+        panel.addView(bar, LinearLayout.LayoutParams((460 * d).toInt(), ViewGroup.LayoutParams.WRAP_CONTENT))
+        dlg.show()
+        et.post { et.requestFocus() }
     }
 
     /** Confirmation : deux boutons (le bouton rouge pour une action qui supprime). */
@@ -235,7 +367,8 @@ object Sheet {
         onPrimary: () -> Unit,
         secondary: String? = "Annuler",
         onSecondary: () -> Unit = {},
-        cancelable: Boolean = true
+        cancelable: Boolean = true,
+        focusSecondary: Boolean = false
     ): Dialog? {
         if (act.isFinishing || act.isDestroyed) return null
         val d = act.resources.displayMetrics.density
@@ -277,7 +410,7 @@ object Sheet {
             bar.addView(pill(act, secondary, false, false) {
                 dlg.dismiss()
                 onSecondary()
-            }.also { if (danger) first = it })
+            }.also { if (danger || focusSecondary) first = it })
         }
         val ok = pill(act, primary, true, danger) {
             dlg.dismiss()
@@ -293,7 +426,7 @@ object Sheet {
     /** Fenêtre d'attente avec barre de progression et bouton d'annulation. */
     class Progress(val dialog: Dialog, val label: TextView, val bar: android.widget.ProgressBar)
 
-    fun progress(act: Activity, title: String, label: String, onCancel: () -> Unit): Progress {
+    fun progress(act: Activity, title: String, label: String, onCancel: (() -> Unit)?): Progress {
         val d = act.resources.displayMetrics.density
         val (dlg, panel, _) = base(act, title, null)
         dlg.setCancelable(false)
@@ -319,14 +452,19 @@ object Sheet {
             clipToPadding = false
             setPadding(0, (18 * d).toInt(), 0, (2 * d).toInt())
         }
-        val cancel = pill(act, "Annuler", false, false) {
-            dlg.dismiss()
-            onCancel()
+        if (onCancel != null) {
+            val cancel = pill(act, "Annuler", false, false) {
+                dlg.dismiss()
+                onCancel()
+            }
+            row.addView(cancel)
+            panel.addView(row, LinearLayout.LayoutParams((440 * d).toInt(), ViewGroup.LayoutParams.WRAP_CONTENT))
+            dlg.show()
+            cancel.post { cancel.requestFocus() }
+        } else {
+            panel.setPadding(panel.paddingLeft, panel.paddingTop, panel.paddingRight, (24 * d).toInt())
+            dlg.show()
         }
-        row.addView(cancel)
-        panel.addView(row, LinearLayout.LayoutParams((440 * d).toInt(), ViewGroup.LayoutParams.WRAP_CONTENT))
-        dlg.show()
-        cancel.post { cancel.requestFocus() }
         return Progress(dlg, tv, bar)
     }
 

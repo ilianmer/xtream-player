@@ -148,3 +148,87 @@ class PillDrawable(private val radius: Float) : Drawable() {
         }
     }
 }
+
+/**
+ * Reflet de lumière qui traverse une affiche quand elle prend le focus (une seule fois, discret),
+ * comme sur les jaquettes d'Apple TV. Ne coûte rien au repos : rien n'est dessiné hors de l'animation.
+ */
+class ShineDrawable(private val radius: Float) : Drawable() {
+    private val paint = Paint(Paint.ANTI_ALIAS_FLAG)
+    private val clip = android.graphics.Path()
+    private val box = RectF()
+    private val matrix = android.graphics.Matrix()
+    private var shader: android.graphics.LinearGradient? = null
+    private var shaderW = 0
+    private var progress = -1f
+    private var anim: ValueAnimator? = null
+    private var focused = false
+
+    override fun isStateful() = true
+
+    override fun onStateChange(state: IntArray): Boolean {
+        val f = state.contains(android.R.attr.state_focused)
+        if (f != focused) {
+            focused = f
+            if (f) sweep() else {
+                anim?.cancel()
+                progress = -1f
+                invalidateSelf()
+            }
+        }
+        return false
+    }
+
+    private fun sweep() {
+        anim?.cancel()
+        anim = ValueAnimator.ofFloat(0f, 1f).apply {
+            startDelay = 140
+            duration = 820
+            interpolator = android.view.animation.AccelerateDecelerateInterpolator()
+            addUpdateListener {
+                progress = it.animatedValue as Float
+                invalidateSelf()
+            }
+            addListener(object : android.animation.AnimatorListenerAdapter() {
+                override fun onAnimationEnd(animation: android.animation.Animator) {
+                    progress = -1f
+                    invalidateSelf()
+                }
+            })
+            start()
+        }
+    }
+
+    override fun draw(canvas: Canvas) {
+        if (progress < 0f) return
+        val b = bounds
+        val w = b.width()
+        if (w <= 0) return
+        if (shader == null || shaderW != w) {
+            val band = w * 0.5f
+            shader = android.graphics.LinearGradient(
+                0f, 0f, band, band * 0.45f,
+                intArrayOf(0x00FFFFFF, 0x38FFFFFF, 0x00FFFFFF), floatArrayOf(0f, 0.5f, 1f),
+                android.graphics.Shader.TileMode.CLAMP
+            )
+            shaderW = w
+        }
+        val band = w * 0.5f
+        val x = b.left - band + (w + band) * progress
+        matrix.setTranslate(x, b.top.toFloat() + b.height() * (progress - 0.5f) * 0.3f)
+        shader?.setLocalMatrix(matrix)
+        paint.shader = shader
+        box.set(b)
+        clip.reset()
+        clip.addRoundRect(box, radius, radius, android.graphics.Path.Direction.CW)
+        canvas.save()
+        canvas.clipPath(clip)
+        canvas.drawRect(b, paint)
+        canvas.restore()
+    }
+
+    override fun setAlpha(alpha: Int) {}
+    override fun setColorFilter(colorFilter: ColorFilter?) {}
+    @Deprecated("Deprecated in Java")
+    override fun getOpacity(): Int = PixelFormat.TRANSLUCENT
+}

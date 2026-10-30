@@ -41,28 +41,13 @@ object Ui {
         Sheet.confirm(act, title, msg, yes, onYes)
 
     fun choose(act: Activity, title: String, options: List<String>, onPick: (Int) -> Unit) =
-        Sheet.choose(act, title, options, onPick)
+        Sheet.choose(act, title, options, onPick = onPick)
 
     /** Saisie d'un texte, à la télécommande ou depuis le téléphone. */
     fun textInput(act: Activity, title: String, value: String, hint: String, onDone: (String) -> Unit) {
-        val et = EditText(act).apply {
-            setText(value)
-            this.hint = hint
-            setSingleLine()
-            inputType = InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_FLAG_NO_SUGGESTIONS
-        }
-        val pad = (22 * act.resources.displayMetrics.density).toInt()
-        val box = FrameLayout(act).apply {
-            setPadding(pad, pad / 2, pad, 0)
-            addView(et)
-        }
-        AlertDialog.Builder(act, DIALOG).setTitle(title).setView(box)
-            .setPositiveButton("Valider") { _, _ -> onDone(et.text.toString().trim()) }
-            .setNeutralButton("Depuis le téléphone") { _, _ ->
-                phoneInput(act, title, listOf(PhoneInput.Field("v", title, value, hint = hint))) { m -> onDone(m["v"].orEmpty().trim()) }
-            }
-            .setNegativeButton("Annuler", null)
-            .show()
+        Sheet.input(act, title, value, hint, onPhone = {
+            phoneInput(act, title, listOf(PhoneInput.Field("v", title, value, hint = hint))) { m -> onDone(m["v"].orEmpty().trim()) }
+        }, onDone = onDone)
     }
 
     /** Affiche l'adresse et le QR code de la page de saisie sur téléphone. */
@@ -115,15 +100,13 @@ object Ui {
             if (a == null || a.maxConn <= 0 || a.activeCons < a.maxConn) {
                 go()
             } else {
-                AlertDialog.Builder(act, DIALOG)
-                    .setTitle("Écran déjà utilisé")
-                    .setMessage(
-                        "Ton compte est déjà en lecture sur ${a.activeCons} écran(s) pour ${a.maxConn} autorisé(s), " +
-                            "sur un autre appareil ou dans une autre appli IPTV.\n\nSi tu lances quand même, l'autre lecture risque d'être coupée."
-                    )
-                    .setPositiveButton("Lancer quand même") { _, _ -> go() }
-                    .setNegativeButton("Annuler", null)
-                    .show()
+                Sheet.message(
+                    act, "Écran déjà utilisé",
+                    "Ton compte est déjà en lecture sur ${a.activeCons} écran(s) pour ${a.maxConn} autorisé(s), " +
+                        "sur un autre appareil ou dans une autre appli IPTV.\n\nSi tu lances quand même, l'autre lecture risque d'être coupée.",
+                    primary = "Lancer quand même", onPrimary = { go() },
+                    secondary = "Annuler", focusSecondary = true
+                )
             }
         }
     }

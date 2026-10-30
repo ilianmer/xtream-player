@@ -237,15 +237,12 @@ class SeriesActivity : BaseActivity() {
                 append(seasonName(s)).append("  ·  ").append(if (n == 1) "1 épisode" else "$n épisodes")
                 if (seen == n && n > 0) append("  ·  vue") else if (seen > 0) append("  ·  $seen/$n vus")
             }
-        }.toTypedArray()
-        android.app.AlertDialog.Builder(this, Ui.DIALOG)
-            .setTitle(Tmdb.cleanTitle(series.name).first)
-            .setSingleChoiceItems(labels, season.coerceAtLeast(0)) { d, w ->
-                d.dismiss()
-                selectSeason(w)
-                rvEpisodes.post { rvEpisodes.getChildAt(0)?.requestFocus() }
-            }
-            .show()
+        }
+        val current = season.coerceAtLeast(0)
+        Ui.choose(this, Tmdb.cleanTitle(series.name).first, labels.mapIndexed { i, l -> (if (i == current) "✓  " else "") + l }) { w ->
+            selectSeason(w)
+            rvEpisodes.post { rvEpisodes.getChildAt(0)?.requestFocus() }
+        }
     }
 
     private fun selectSeason(position: Int) {
