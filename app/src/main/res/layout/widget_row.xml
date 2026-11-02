@@ -1,0 +1,57 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Widget de l'accueil : Reprendre la lecture / favoris / dernières sorties -->
+        <LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+            android:id="@+id/rowBox"
+            android:layout_width="match_parent"
+            android:layout_height="match_parent"
+            android:background="@drawable/glass_panel"
+            android:clipChildren="false"
+            android:clipToPadding="false"
+            android:orientation="vertical"
+            android:paddingTop="8dp">
+
+            <!-- Ce que l'on veut voir dans cette rangée : en cours, favoris, dernières sorties -->
+            <LinearLayout
+                android:id="@+id/rowTabs"
+                android:layout_width="wrap_content"
+                android:layout_height="36dp"
+                android:layout_marginStart="8dp"
+                android:background="@drawable/glass_pill"
+                android:gravity="center_vertical"
+                android:orientation="horizontal"
+                android:paddingStart="3dp"
+                android:paddingEnd="3dp">
+
+                <TextView android:id="@+id/rowTabResume" style="@style/Tab" android:text="En cours" />
+                <TextView android:id="@+id/rowTabFav" style="@style/Tab" android:text="Mes favoris" />
+                <TextView android:id="@+id/rowTabLatest" style="@style/Tab" android:layout_marginEnd="0dp" android:text="Dernières sorties" />
+            </LinearLayout>
+
+            <FrameLayout
+                android:layout_width="match_parent"
+                android:layout_height="match_parent">
+
+            <TextView
+                android:id="@+id/rowEmpty"
+                style="@style/Txt"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_marginStart="12dp"
+                android:layout_marginTop="16dp"
+                android:textColor="@color/text_dim"
+                android:textSize="12sp"
+                android:visibility="gone" />
+
+            <androidx.recyclerview.widget.RecyclerView
+                android:id="@+id/rvResume"
+                android:layout_width="match_parent"
+                android:layout_height="match_parent"
+                android:clipChildren="false"
+                android:clipToPadding="false"
+                android:paddingStart="10dp"
+                android:paddingTop="9dp"
+                android:paddingEnd="20dp"
+                android:paddingBottom="6dp"
+                android:scrollbars="none" />
+            </FrameLayout>
+        </LinearLayout>

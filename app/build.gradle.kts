@@ -14,7 +14,8 @@ android {
         // Numéro de version = numéro de build GitHub : l'appli compare directement avec la dernière version publiée.
         val build = System.getenv("GITHUB_RUN_NUMBER")?.toIntOrNull() ?: 6
         versionCode = build
-        versionName = "6.0 · build $build"
+        // Nom affiché (V4.01 … V4.20, puis V5.01 …), calculé par la CI à partir des versions publiées
+        versionName = System.getenv("VERSION_NAME") ?: "build $build"
         // Sticks Android TV / Fire TV : processeurs ARM uniquement (garde l'appli légère)
         // (sauf pour les captures d'écran automatiques, qui tournent sur un émulateur x86)
         if (System.getenv("ALL_ABIS") == null) {

@@ -38,7 +38,9 @@ class StreamScreen(
         var badge: String? = null,
         var badgeIds: Set<String> = emptySet(),
         /** Groupe ouvert par « Voir tout » (null : pas de carte Voir tout). */
-        val seeAll: String? = null
+        val seeAll: String? = null,
+        /** Rangée Top 10 : grands chiffres à côté des affiches. */
+        val top10: Boolean = false
     )
 
     private val rvRails: RecyclerView = root.findViewById(R.id.rvRails)
@@ -52,6 +54,7 @@ class StreamScreen(
     private val cardPool = RecyclerView.RecycledViewPool().apply {
         setMaxRecycledViews(0, 48)
         setMaxRecycledViews(1, 6)
+        setMaxRecycledViews(2, 12)
     }
     private var preloadToken = 0
     private var hero: Item? = null
@@ -105,6 +108,7 @@ class StreamScreen(
         built = true
         rails.clear()
         resumeRail()?.let { rails.add(it) }
+        Top10.cached(src.id, kind)?.takeIf { it.size >= 3 }?.let { rails.add(top10Rail(it)) }
         val latest = Db.latest(src.id, kind, 40)
         if (latest.isNotEmpty()) {
             val recent = System.currentTimeMillis() / 1000 - (if (isSeries) 7 else 14) * 86_400L
@@ -133,6 +137,23 @@ class StreamScreen(
         }
         loadTrending()
         refreshTopRated()
+        loadTop10()
+    }
+
+    private fun top10Rail(list: List<Item>) =
+        Rail("top10", if (isSeries) "Top 10 des séries aujourd'hui" else "Top 10 des films aujourd'hui", list, top10 = true)
+
+    /** Top 10 du jour : calculé en arrière-plan la première fois de la journée, puis instantané. */
+    private fun loadTop10() {
+        if (rails.any { it.key == "top10" }) return
+        Bg.task(act, { Top10.get(src.id, kind) }) { r ->
+            val list = r.getOrNull() ?: return@task
+            if (list.size < 3 || rails.any { it.key == "top10" }) return@task
+            val at = rails.indexOfFirst { it.key == "resume" }.let { if (it < 0) 0 else it + 1 }
+            rails.add(at, top10Rail(list))
+            adapter.notifyItemInserted(at)
+            if (activeRail >= at) activeRail++
+        }
     }
 
     /** Classement TMDB recalculé en arrière-plan (au plus une fois par jour), puis la rangée est mise à jour. */
@@ -495,13 +516,26 @@ class StreamScreen(
             val bar: ProgressBar? = v.findViewById(R.id.bar)
             val badge: TextView? = v.findViewById(R.id.badge)
             val overlay: View? = v.findViewById(R.id.overlay)
+            val rank: RankView? = v.findViewById(R.id.rank)
         }
 
         override fun getItemCount() = rail?.let { cardCount(it) } ?: 0
 
-        override fun getItemViewType(position: Int) = if (position >= (rail?.items?.size ?: 0)) 1 else 0
+        override fun getItemViewType(position: Int) = when {
+            rail?.top10 == true -> 2
+            position >= (rail?.items?.size ?: 0) -> 1
+            else -> 0
+        }
 
         override fun onCreateViewHolder(parent: ViewGroup, viewType: Int): VH {
+            if (viewType == 2) {
+                val v = LayoutInflater.from(parent.context).inflate(R.layout.item_top10, parent, false)
+                v.findViewById<View>(R.id.frame).let {
+                    it.clipToOutline = true
+                    Fx.shine(it)
+                }
+                return VH(v)
+            }
             val layout = if (viewType == 1) R.layout.item_card_more else R.layout.item_card
             val v = LayoutInflater.from(parent.context).inflate(layout, parent, false)
             v.clipToOutline = true
@@ -544,8 +578,10 @@ class StreamScreen(
                     else -> false
                 }
             }
+            h.rank?.rank = position + 1
             h.itemView.setOnFocusChangeListener { view, has ->
-                Fx.focus(view, has, 1.08f)
+                Fx.focus(view, has, if (h.rank != null) 1.05f else 1.08f)
+                h.rank?.lit = has
                 if (has) {
                     railFocus[r.key] = position
                     val p = railPos()

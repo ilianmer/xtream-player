@@ -38,6 +38,14 @@ jobs:
           fi
           echo "SIGNING_STORE=$RUNNER_TEMP/release.p12" >> "$GITHUB_ENV"
           echo "SIGNING_PASSWORD=$PW" >> "$GITHUB_ENV"
+      # Nom de version : V4.01 pour la première publiée à partir du build 30, puis +1 à chaque version
+      # publiée (un build raté ne consomme pas de numéro). V4.20 est suivie de V5.01.
+      - name: Nom de version
+        run: |
+          N=$(git ls-remote --tags origin 'build-*' | grep -oE 'refs/tags/build-[0-9]+$' | grep -oE '[0-9]+$' | awk '$1>=30' | wc -l)
+          V=$(printf 'V%d.%02d' $(( 4 + N / 20 )) $(( N % 20 + 1 )))
+          echo "VERSION_NAME=$V" >> "$GITHUB_ENV"
+          echo "Version : $V"
       - name: Compiler l'APK
         run: |
           chmod +x gradlew
@@ -69,13 +77,14 @@ jobs:
         if: github.ref == 'refs/heads/main'
         env:
           MSG: ${{ github.event.head_commit.message }}
-        run: printf '%s\n' "$MSG" | grep -viE '^(co-authored-by|claude-session|signed-off-by):' > notes.md || true
+        run: |
+          printf '%s\n' "$MSG" | grep -viE '^(co-authored-by|claude-session|signed-off-by):' > notes.md || true
       - name: Publier la version
         if: github.ref == 'refs/heads/main'
         uses: softprops/action-gh-release@v2
         with:
           tag_name: build-${{ github.run_number }}
-          name: Xtream Player (version ${{ github.run_number }})
+          name: Xtream Player ${{ env.VERSION_NAME }}
           body_path: notes.md
           files: XtreamPlayer.apk
           make_latest: "true"

@@ -275,6 +275,8 @@ class PlayerActivity : BaseActivity() {
         aspect = Prefs.aspectMode.coerceIn(0, ASPECTS.size - 1)
         playerView.resizeMode = ASPECTS[aspect].first
         displayRate = DisplayRate(this)
+        // Pas de 4K téléchargée et décodée pour rien sur un écran Full HD
+        LiveQuality.deviceMax = displayRate.maxTier()
         stats = TextView(this).apply {
             setBackgroundResource(R.drawable.player_glass)
             setTextColor(getColor(R.color.text))
@@ -310,9 +312,35 @@ class PlayerActivity : BaseActivity() {
         }
     }
 
+    /**
+     * Wi-Fi en mode « faible latence » pendant la lecture (économie d'énergie du Wi-Fi coupée) :
+     * sur un stick, c'est elle qui crée des trous de réception et des micro-coupures du direct.
+     */
+    private var wifiLock: android.net.wifi.WifiManager.WifiLock? = null
+
+    private fun holdWifi(on: Boolean) {
+        try {
+            if (on) {
+                if (wifiLock?.isHeld == true) return
+                val wm = applicationContext.getSystemService(Context.WIFI_SERVICE) as android.net.wifi.WifiManager
+                val mode = if (android.os.Build.VERSION.SDK_INT >= 29) android.net.wifi.WifiManager.WIFI_MODE_FULL_LOW_LATENCY
+                else @Suppress("DEPRECATION") android.net.wifi.WifiManager.WIFI_MODE_FULL_HIGH_PERF
+                wifiLock = wm.createWifiLock(mode, "xtream:lecture").apply {
+                    setReferenceCounted(false)
+                    acquire()
+                }
+            } else {
+                wifiLock?.let { if (it.isHeld) it.release() }
+                wifiLock = null
+            }
+        } catch (_: Exception) {
+        }
+    }
+
     override fun onStart() {
         super.onStart()
         if (list.size == 0) return
+        holdWifi(true)
         initPlayer()
         Bg.main.removeCallbacks(guard)
         Bg.main.postDelayed(guard, 1_000)
@@ -353,6 +381,7 @@ class PlayerActivity : BaseActivity() {
         fpsToken++
         player?.release()
         player = null
+        holdWifi(false)
         Session.index = index
         Session.lastStopAt = System.currentTimeMillis()
         super.onStop()
@@ -460,6 +489,7 @@ class PlayerActivity : BaseActivity() {
 
     private fun onFrameRate(raw: Float) {
         measuredFps = DisplayRate.snap(raw)
+        now?.let { FPS_MEMO[it.id] = measuredFps }
         if (Prefs.autoFrameRate) displayRate.match(measuredFps)
     }
 
@@ -470,13 +500,15 @@ class PlayerActivity : BaseActivity() {
             .setUserAgent(Prefs.userAgent)
             .setAllowCrossProtocolRedirects(true)
             .setKeepPostFor302Redirects(true)
-            .setConnectTimeoutMs(10_000)
-            .setReadTimeoutMs(if (live) 12_000 else 30_000)
+            // Direct : un serveur qui ne répond pas est vite lâché (le prochain essai part aussitôt)
+            .setConnectTimeoutMs(if (live) 6_000 else 10_000)
+            .setReadTimeoutMs(if (live) 8_000 else 30_000)
             .setTransferListener(meter)
         val dataSource = DefaultDataSource.Factory(this, http)
         val extractors = DefaultExtractorsFactory().setTsExtractorFlags(
             DefaultTsPayloadReaderFactory.FLAG_ALLOW_NON_IDR_KEYFRAMES or
-                DefaultTsPayloadReaderFactory.FLAG_DETECT_ACCESS_UNITS
+                DefaultTsPayloadReaderFactory.FLAG_DETECT_ACCESS_UNITS or
+                DefaultTsPayloadReaderFactory.FLAG_ENABLE_HDMV_DTS_AUDIO_STREAMS
         )
         val leveling = Prefs.volumeLeveling
         val passthrough = Prefs.audioPassthrough
@@ -525,6 +557,7 @@ class PlayerActivity : BaseActivity() {
 
             override fun onDroppedVideoFrames(eventTime: AnalyticsListener.EventTime, droppedFrames: Int, elapsedMs: Long) {
                 dropped += droppedFrames
+                if (isLive && droppedFrames >= 30) noteDrops()
             }
         })
         p.addListener(object : Player.Listener {
@@ -544,6 +577,8 @@ class PlayerActivity : BaseActivity() {
                     play(keepFormat = true)
                     return
                 }
+                // Image que le décodeur du stick ne sait pas lire (4K, HEVC 10 bits…) : version plus légère
+                if (isLive && error.errorCode in 4001..4005 && goLighter("Image trop lourde pour ton appareil")) return
                 // En direct, si le format choisi ne passe pas, on tente l'autre (TS <-> HLS) une fois.
                 if (isLive && !useAltFormat) {
                     useAltFormat = true
@@ -701,7 +736,8 @@ class PlayerActivity : BaseActivity() {
         if (now - lastReconnectAt < 4_000L) return
         lastReconnectAt = now
         Log.i("Player", "direct : $why")
-        noteStall()
+        // Coupures à répétition : autre chaîne (match) ou version plus légère, qui se lance d'elle-même
+        if (noteStall()) return
         useAltFormat = false
         play(keepFormat = true)
     }
@@ -710,25 +746,59 @@ class PlayerActivity : BaseActivity() {
      * Coupures répétées (3 en 2 minutes) sur une chaîne qui existe en version plus légère :
      * on passe sur celle-ci pour la séance, comme le ferait une box TV, plutôt que de couper sans cesse.
      */
-    private fun noteStall() {
+    private fun noteStall(): Boolean {
         val t = SystemClock.elapsedRealtime()
         stalls.add(t)
         stalls.removeAll { t - it > 120_000L }
-        if (stalls.size < 3 || Session.autoFallback) return
-        val base = current ?: return
-        val cur = this.now ?: return
-        val tier = MatchFinder.tier(cur.name).let { if (it == 0) 2 else it }
-        if (tier <= 1) return
-        Bg.task(this, { LiveQuality.variants(src.id, base) }) { r ->
-            val next = r.getOrNull().orEmpty()
-                .filter { MatchFinder.tier(it.name).let { t -> if (t == 0) 2 else t } < tier }
-                .maxByOrNull { MatchFinder.tier(it.name) } ?: return@task
-            if (isFinishing || current?.id != base.id) return@task
+        if (stalls.size < 3) return false
+        // Match lancé depuis Sport : la chaîne flanche, on passe sur la suivante déjà testée
+        if (Session.autoFallback && isLive && index + 1 < list.size) {
             stalls.clear()
-            lighter = next
-            Ui.toast(this, "Connexion lente : passage en ${LiveQuality.label(next.name)} pour rester fluide.")
-            play(keepFormat = true)
+            index++
+            Ui.toast(this, "Chaîne instable : passage sur ${current?.name ?: "la suivante"}.")
+            play()
+            return true
         }
+        if (goLighter("Connexion lente")) {
+            stalls.clear()
+            return true
+        }
+        return false
+    }
+
+    /** Images perdues en rafale (le stick n'arrive pas à suivre) : version plus légère si elle existe. */
+    private val dropBursts = ArrayList<Long>()
+
+    private fun noteDrops() {
+        val t = SystemClock.elapsedRealtime()
+        // Juste après le lancement ou un changement de cadence de l'écran, quelques pertes sont normales
+        if (readyAt == 0L || t - readyAt < 8_000L) return
+        dropBursts.add(t)
+        dropBursts.removeAll { t - it > 60_000L }
+        if (dropBursts.size >= 3 && goLighter("Image trop lourde pour ton appareil")) dropBursts.clear()
+    }
+
+    /**
+     * Passe sur la version immédiatement plus légère de la chaîne en cours (pour cette séance).
+     * false si aucune n'existe (ou pendant la recherche automatique d'un match, qui change déjà de chaîne).
+     */
+    private fun goLighter(why: String): Boolean {
+        if (Session.autoFallback || !isLive) return false
+        val base = current ?: return false
+        val cur = this.now ?: return false
+        val tier = MatchFinder.tier(cur.name).let { if (it == 0) 2 else it }
+        if (tier <= 1) return false
+        // Recherche rapide en base (quelques millisecondes) : on décide tout de suite
+        val next = try {
+            LiveQuality.variants(src.id, base)
+        } catch (_: Exception) {
+            emptyList()
+        }.filter { MatchFinder.tier(it.name).let { t -> if (t == 0) 2 else t } < tier }
+            .maxByOrNull { MatchFinder.tier(it.name) } ?: return false
+        lighter = next
+        Ui.toast(this, "$why : passage en ${LiveQuality.label(next.name)} pour rester fluide.")
+        play(keepFormat = true)
+        return true
     }
 
     /** Reconnexions automatiques après une coupure (remis à zéro dès que la lecture repart). */
@@ -761,10 +831,16 @@ class PlayerActivity : BaseActivity() {
         if (!keepFormat) useAltFormat = false
         if (!keepFormat) channelStartAt = System.currentTimeMillis()
         // Qualité retenue pour cette chaîne, ou qualité préférée (pas pendant la recherche auto d'un match)
-        if (!keepFormat) lighter = null
+        if (!keepFormat) {
+            lighter = null
+            stalls.clear()
+            dropBursts.clear()
+        }
         val item = lighter ?: if (base.kind == Kind.LIVE && !Session.autoFallback) LiveQuality.resolve(src.id, base) else base
         playing = item
         playingIndex = index
+        // Cadence déjà connue pour cette chaîne : l'écran bascule avant la première image (pas en pleine lecture)
+        if (Prefs.autoFrameRate) FPS_MEMO[item.id]?.let { displayRate.match(it) }
         resetFps()
         readyAt = 0L
         bufferingSince = 0L
@@ -1281,6 +1357,9 @@ class PlayerActivity : BaseActivity() {
     }
 
     companion object {
+        /** Cadence mesurée par chaîne (pendant que l'appli est ouverte). */
+        private val FPS_MEMO = java.util.concurrent.ConcurrentHashMap<String, Float>()
+
         /** Format d'image : adapté (bandes noires si besoin), plein écran étiré, zoom (rogne les bords). */
         private val ASPECTS = listOf(
             AspectRatioFrameLayout.RESIZE_MODE_FIT to "Adapté à l'écran",

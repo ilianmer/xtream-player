@@ -1,0 +1,46 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Carte du Top 10 : grand chiffre à gauche, affiche qui le recouvre en partie -->
+<FrameLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="160dp"
+    android:layout_height="144dp"
+    android:layout_marginEnd="6dp"
+    android:clickable="true"
+    android:clipChildren="false"
+    android:focusable="true">
+
+    <com.ilian.xtreamplayer.RankView
+        android:id="@+id/rank"
+        android:layout_width="80dp"
+        android:layout_height="128dp"
+        android:layout_gravity="start|bottom" />
+
+    <FrameLayout
+        android:id="@+id/frame"
+        android:layout_width="92dp"
+        android:layout_height="138dp"
+        android:layout_gravity="end|bottom"
+        android:background="@drawable/poster_bg"
+        android:duplicateParentState="true"
+        android:elevation="4dp"
+        android:foreground="@drawable/focus_ring_9">
+
+        <ImageView
+            android:id="@+id/img"
+            android:layout_width="match_parent"
+            android:layout_height="match_parent"
+            android:scaleType="centerCrop" />
+
+        <TextView
+            android:id="@+id/name"
+            style="@style/Title"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_gravity="bottom"
+            android:background="@drawable/overlay_grad"
+            android:ellipsize="end"
+            android:maxLines="3"
+            android:padding="6dp"
+            android:textSize="15sp"
+            android:visibility="gone" />
+    </FrameLayout>
+</FrameLayout>

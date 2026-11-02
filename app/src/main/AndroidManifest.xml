@@ -4,6 +4,8 @@
     <uses-permission android:name="android.permission.INTERNET" />
     <!-- Retour du réseau détecté : le direct se relance aussitôt -->
     <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
+    <!-- Wi-Fi gardé en mode faible latence pendant la lecture -->
+    <uses-permission android:name="android.permission.WAKE_LOCK" />
     <!-- Mise à jour depuis l'appli (Android demande quand même une confirmation) -->
     <uses-permission android:name="android.permission.REQUEST_INSTALL_PACKAGES" />
 

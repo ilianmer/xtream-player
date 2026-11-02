@@ -65,6 +65,16 @@ object LiveQuality {
             .sortedWith(compareByDescending<Item> { MatchFinder.tier(it.name).let { t -> if (t == 0) 2 else t } }.thenBy { it.name.length })
     }
 
+    /**
+     * Meilleure qualité que l'écran et le stick affichent vraiment (réglé par le lecteur).
+     * Inutile de télécharger et décoder de la 4K pour un écran Full HD : c'est deux à quatre fois plus
+     * de débit et de calcul pour la même image, et la première cause de saccades sur un stick.
+     */
+    @Volatile
+    var deviceMax = UHD
+
+    private fun tierOf(it: Item) = MatchFinder.tier(it.name).let { t -> if (t == 0) 2 else t }
+
     /** Version à lancer pour cette chaîne : choix retenu pour elle, sinon la qualité préférée, sinon elle-même. */
     fun resolve(src: Long, item: Item): Item {
         val remembered = try {
@@ -72,12 +82,18 @@ object LiveQuality {
         } catch (_: Exception) {
             null
         }
-        val pref = Prefs.liveQuality
-        if (remembered == null && pref == SAME) return item
+        var pref = Prefs.liveQuality
+        val tooBig = MatchFinder.tier(item.name) > deviceMax
+        if (remembered == null && pref == SAME && !tooBig) return item
         val all = variants(src, item)
         if (all.size <= 1) return item
         remembered?.let { id -> all.firstOrNull { it.id == id }?.let { return it } }
-        if (pref == SAME) return item
+        if (pref == SAME) {
+            if (!tooBig) return item
+            // 4K sur un écran Full HD : la meilleure version que l'écran affiche vraiment
+            return all.firstOrNull { tierOf(it) <= deviceMax } ?: item
+        }
+        if (pref > deviceMax) pref = deviceMax
         // Palier le plus proche de celui demandé ; à égalité, le meilleur (sauf 4K non demandée)
         return all.minWithOrNull(
             compareBy<Item> { abs(MatchFinder.tier(it.name).let { t -> if (t == 0) 2 else t } - pref) }
@@ -111,6 +127,21 @@ class DisplayRate(private val act: Activity) {
     }
 
     fun hz(): Float = display()?.mode?.refreshRate ?: 0f
+
+    /** Palier de qualité le plus haut que l'écran sait afficher (4K seulement sur un écran 4K). */
+    fun maxTier(): Int {
+        val d = display() ?: return LiveQuality.UHD
+        val h = try {
+            d.supportedModes.maxOfOrNull { minOf(it.physicalHeight, it.physicalWidth) } ?: 0
+        } catch (_: Exception) {
+            0
+        }
+        return when {
+            h == 0 -> LiveQuality.UHD
+            h >= 2000 -> LiveQuality.UHD
+            else -> LiveQuality.FHD
+        }
+    }
 
     private fun err(refresh: Float, fps: Float): Float {
         val n = max(1, (refresh / fps).roundToInt())

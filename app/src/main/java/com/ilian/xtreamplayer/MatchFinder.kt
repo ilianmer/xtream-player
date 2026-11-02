@@ -25,7 +25,7 @@ import java.util.concurrent.ConcurrentHashMap
  * dans la langue du profil.
  */
 object MatchFinder {
-    class Found(val list: List<Item>, val sure: Boolean, val programme: String?, val reason: String, val score: Int)
+    class Found(val list: List<Item>, val sure: Boolean, val programme: String?, val reason: String, val score: Int, val scores: List<Int> = emptyList())
 
     private class Cand(val item: Item, var score: Int, var why: String?)
 
@@ -338,7 +338,7 @@ object MatchFinder {
             top.score >= 20 -> "le guide annonce ${m.league.label}"
             else -> "diffuseur habituel de ${m.league.label}"
         }
-        return Found(ranked.map { it.item }, s >= 68, top.why, reason, s)
+        return Found(ranked.map { it.item }, s >= 68, top.why, reason, s, ranked.map { eff(it) })
     }
 
     /** Bloquant : liste des chaînes pour ce match, la meilleure en premier (null si rien de plausible). */
@@ -412,10 +412,53 @@ object MatchFinder {
             }
             Session.sportMatchKey = m.key
             SportPrefs.noteWatched(m, 1f)
-            Ui.play(act, ItemList.of(f.list), 0, autoFallback = true)
-            val more = if (f.list.size > 1) " · haut / bas : autres chaînes" else ""
-            Ui.toast(act, (if (f.sure) first.name else "${first.name} (le plus probable)") + more)
+            val api = Session.api()
+            if (api == null) {
+                launch(act, f, f.list, null)
+                return@task
+            }
+            Ui.toast(act, "Test des chaînes pour trouver la plus fluide…")
+            Bg.task(act, { bestOrder(api, f) }) { r2 ->
+                val (list, tested) = r2.getOrNull() ?: (f.list to null)
+                launch(act, f, list, tested)
+            }
         }
+    }
+
+    private fun launch(act: Activity, f: Found, list: List<Item>, tested: StreamProbe.Result?) {
+        val first = list.firstOrNull() ?: return
+        Ui.play(act, ItemList.of(list), 0, autoFallback = true)
+        val more = if (list.size > 1) " · haut / bas : autres chaînes" else ""
+        val how = when {
+            tested?.comfortable == true -> " · testée, fluide"
+            tested?.ok == true -> " · testée"
+            !f.sure -> " (le plus probable)"
+            else -> ""
+        }
+        Ui.toast(act, first.name + how + more)
+    }
+
+    /**
+     * Teste les chaînes les plus probables pour ce match (l'une après l'autre, ~1,5 s chacune) et met
+     * en tête la première qui arrive assez vite pour être parfaitement fluide. Les chaînes qui ne
+     * répondent pas passent en fin de liste (le lecteur les essaiera en dernier).
+     * La preuve « c'est bien ce match » reste prioritaire : on ne teste que les chaînes presque aussi sûres
+     * que la meilleure, dans leur ordre (qualité d'image comprise).
+     */
+    fun bestOrder(api: XtreamApi, f: Found): Pair<List<Item>, StreamProbe.Result?> {
+        val top = f.scores.firstOrNull() ?: return f.list to null
+        val pool = f.list.indices.filter { i -> (f.scores.getOrNull(i) ?: Int.MIN_VALUE) >= top - 25 }.take(4)
+        val results = ArrayList<StreamProbe.Result>()
+        for (i in pool) {
+            val r = StreamProbe.probe(api, f.list[i])
+            results.add(r)
+            if (r.comfortable) break
+        }
+        val chosen = results.firstOrNull { it.comfortable } ?: results.filter { it.ok }.maxByOrNull { it.grade }
+            ?: return (f.list.filter { it !in results.map { r -> r.item } } + results.map { it.item }) to null
+        val bad = results.filter { !it.ok }.map { it.item }.toSet()
+        val order = listOf(chosen.item) + f.list.filter { it != chosen.item && it !in bad } + f.list.filter { it in bad }
+        return order.distinctBy { it.id } to chosen
     }
 
     /** Dans le lecteur : la chaîne sur laquelle on est resté pour ce match devient la sienne (pour ce match seulement). */

@@ -191,6 +191,10 @@ class SettingsActivity : BaseActivity() {
                 Profiles.chooseLangs(this, cur) { Session.profile()?.let { rows.value(v).text = Profiles.langsLabel(it) } }
             }
         }
+        rows.action("Personnaliser l'accueil", "Widgets façon iPhone : ajoute, retire, déplace et choisis la taille de chaque bloc (Top 10, chaînes favorites, ce soir à la TV, matchs du jour…).") {
+            HomeBoard.editOnReturn = true
+            finish()
+        }
         rows.action("Catégories affichées et ordre", "Coche les catégories à voir et range-les dans l'ordre que tu veux (Manga en premier, par exemple), pour le Direct, les Films et les Séries.") {
             startActivity(Intent(this, CategoriesActivity::class.java))
         }

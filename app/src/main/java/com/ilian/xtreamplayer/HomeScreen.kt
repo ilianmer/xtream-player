@@ -30,6 +30,20 @@ class HomeScreen(
 ) {
     private val inf = act.layoutInflater
 
+    /** Blocs posés comme widgets sur le tableau de l'accueil ([HomeBoard]). */
+    val sportView: View = root.findViewById(R.id.sportBox)
+    val rowView: View = root.findViewById(R.id.rowBox)
+    val heroView: View get() = hero
+
+    /** Widget sport en moyen ou grand : les matchs se rangent côte à côte. */
+    private var sportWide = false
+
+    fun setSportWide(wide: Boolean) {
+        if (wide == sportWide) return
+        sportWide = wide
+        paintSport(Sport.cached())
+    }
+
     private val sportList: LinearLayout = root.findViewById(R.id.sportList)
     private val sportEmpty: TextView = root.findViewById(R.id.sportEmpty)
     private val sportTitle: TextView = root.findViewById(R.id.sportTitle)
@@ -435,6 +449,7 @@ class HomeScreen(
         val live = all.filter { it.live }.sortedByDescending { Sport.trend(it) }
         val next = all.filter { it.state == "pre" }.sortedWith(compareByDescending<Sport.Match> { Sport.trend(it) >= 12 }.thenBy { it.start })
         val shown = (live + next).take(3)
+        sportList.orientation = if (sportWide) LinearLayout.HORIZONTAL else LinearLayout.VERTICAL
         sportTitle.text = if (live.isNotEmpty()) "Sport en direct" else "Sport à venir"
         sportDot.visibility = if (live.isNotEmpty()) View.VISIBLE else View.GONE
         sportList.removeAllViews()
@@ -473,7 +488,11 @@ class HomeScreen(
             v.setOnFocusChangeListener { view, has -> Fx.focus(view, has, 1.03f) }
             // L'appli trouve la chaîne et lance le direct, sans rien chercher à la main
             v.setOnClickListener { MatchFinder.watch(act, src.id, m, chans) { openSport() } }
-            sportList.addView(v)
+            if (sportWide) {
+                sportList.addView(v, LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f).apply {
+                    marginEnd = (8 * act.resources.displayMetrics.density).toInt()
+                })
+            } else sportList.addView(v)
         }
     }
 

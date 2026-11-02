@@ -30,7 +30,10 @@ object Updater {
     private const val API = "https://api.github.com/repos/$REPO/releases/latest"
     private const val APK_URL = "https://github.com/$REPO/releases/latest/download/XtreamPlayer.apk"
 
-    data class Release(val build: Long, val notes: String, val apkUrl: String)
+    data class Release(val build: Long, val notes: String, val apkUrl: String, val name: String) {
+        /** Nom affiché (V4.01…), lu dans le titre de la version publiée. */
+        val label: String get() = name.ifEmpty { "version $build" }
+    }
 
     private var askedThisSession = false
     /** APK téléchargé en attente de l'autorisation « installer des applis inconnues ». */
@@ -43,8 +46,9 @@ object Updater {
         0L
     }
 
+    /** Nom de la version installée (V4.01, V4.02… à partir de la V4.01). */
     fun installedLabel(ctx: Context): String = try {
-        ctx.packageManager.getPackageInfo(ctx.packageName, 0).versionName ?: "?"
+        ctx.packageManager.getPackageInfo(ctx.packageName, 0).versionName?.takeIf { it.startsWith("V") } ?: "version ${installedBuild(ctx)}"
     } catch (_: Exception) {
         "?"
     }
@@ -65,8 +69,9 @@ object Updater {
         }
         val notes = o.optString("body").lineSequence().map { it.trim() }
             .filter { it.isNotEmpty() && !it.startsWith("Co-Authored-By") && !it.startsWith("Claude-Session") }
-            .take(8).joinToString("\n")
-        return Release(build, notes, url)
+            .take(30).joinToString("\n")
+        val name = Regex("V\\d+\\.\\d{2}").find(o.optString("name"))?.value.orEmpty()
+        return Release(build, notes, url, name)
     }
 
     /** Au lancement (une fois par session) : propose la nouvelle version s'il y en a une. */
@@ -92,7 +97,7 @@ object Updater {
                     rel.build > installedBuild(act) -> propose(act, rel, fromLaunch = false)
                     else -> {
                         clearCache(act)
-                        Ui.toast(act, "Tu as déjà la dernière version (build ${installedBuild(act)}).")
+                        Ui.toast(act, "Tu as déjà la dernière version (${installedLabel(act)}).")
                     }
                 }
             }.onFailure { Ui.toast(act, "Vérification impossible : ${Bg.err(it)}") }
@@ -106,7 +111,7 @@ object Updater {
             for (w in what) sb.setSpan(w, start, sb.length, android.text.Spanned.SPAN_EXCLUSIVE_EXCLUSIVE)
         }
         var st = sb.length
-        sb.append("Version ${rel.build}  ·  tu as la ${installedBuild(act)}")
+        sb.append("${rel.label}  ·  tu as la ${installedLabel(act)}")
         span(st, android.text.style.ForegroundColorSpan(act.getColor(R.color.accent)), android.text.style.RelativeSizeSpan(0.92f))
         // Les lignes techniques de fin de message (signatures) ne concernent pas l'utilisateur
         val trailer = Regex("^(Co-Authored-By|Claude-Session|Signed-off-by):", RegexOption.IGNORE_CASE)
@@ -144,7 +149,7 @@ object Updater {
 
     private fun download(act: Activity, rel: Release) {
         val cancelled = AtomicBoolean(false)
-        val prog = Sheet.progress(act, "Mise à jour · version ${rel.build}", "Téléchargement…") { cancelled.set(true) }
+        val prog = Sheet.progress(act, "Mise à jour · ${rel.label}", "Téléchargement…") { cancelled.set(true) }
         val dlg = prog.dialog
         val bar = prog.bar
         val label = prog.label

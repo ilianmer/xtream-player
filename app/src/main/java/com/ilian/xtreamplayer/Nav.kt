@@ -235,6 +235,10 @@ object Fx {
             }
         }
         v.animate().cancel()
+        if (!has) {
+            // Le contour de focus disparaît net (pas de trace blanche sur l'affiche qu'on quitte)
+            v.post { if (!v.isFocused) v.foreground?.jumpToCurrentState() }
+        }
         v.setTag(R.id.focus_scale, if (has) scale else 1f)
         // withLayer : pendant le zoom, la carte est dessinée une fois dans une texture puis agrandie
         // (au lieu d'être entièrement redessinée à chaque image)

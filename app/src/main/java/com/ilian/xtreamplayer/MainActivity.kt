@@ -36,6 +36,7 @@ class MainActivity : BaseActivity() {
     private lateinit var grid: GridLayoutManager
 
     private lateinit var home: HomeScreen
+    private lateinit var board: HomeBoard
     private lateinit var direct: DirectScreen
     private lateinit var sport: SportScreen
     private lateinit var movies: StreamScreen
@@ -160,6 +161,7 @@ class MainActivity : BaseActivity() {
         rvItems.itemAnimator = null
 
         home = HomeScreen(this, homeView, src, api, bgImage) { showTab(Tab.SPORT) }
+        board = HomeBoard(this, homeView, src, api, home) { showTab(Tab.SPORT) }
         direct = DirectScreen(this, directView, src, api)
         sport = SportScreen(this, sportView, src, api) { res -> if (tab == Tab.SPORT) Backgrounds.set(root, res) }
         movies = StreamScreen(this, moviesView, src, api, Kind.MOVIE, bgImage) { key, title -> openGrid(Tab.MOVIE, key, title) }
@@ -170,12 +172,13 @@ class MainActivity : BaseActivity() {
         seenHidden = Db.hiddenVersion
         seenSport = SportPrefs.version
         home.start()
+        board.start()
         // Captures automatiques (version de test seulement) : onglet demandé au lancement
         val demoTab = if (applicationInfo.flags and android.content.pm.ApplicationInfo.FLAG_DEBUGGABLE != 0) intent.getStringExtra("demo_tab") else null
         val start = (savedInstanceState?.getString(KEY_TAB) ?: demoTab)?.let { n -> Tab.values().firstOrNull { it.name == n } }
             ?.takeIf { tabViews[it]?.visibility == View.VISIBLE } ?: Tab.HOME
         showTab(start)
-        if (start == Tab.HOME) homeView.post { home.focusDefault() } else tabViews[start]?.post { tabViews[start]?.requestFocus() }
+        if (start == Tab.HOME) homeView.post { board.focusDefault() } else tabViews[start]?.post { tabViews[start]?.requestFocus() }
         // Nouvelle version publiée ? (une fois par lancement, après l'arrivée sur l'accueil)
         Bg.main.postDelayed({ if (!isFinishing && !isDestroyed) Updater.checkOnLaunch(this) }, 1_800)
     }
@@ -190,7 +193,10 @@ class MainActivity : BaseActivity() {
         Updater.resume(this)
         if (!ready) return
         when (tab) {
-            Tab.HOME -> home.resume()
+            Tab.HOME -> {
+                home.resume()
+                board.resume()
+            }
             Tab.LIVE -> direct.show()
             Tab.SPORT -> sport.show()
             Tab.DL -> {
@@ -204,6 +210,7 @@ class MainActivity : BaseActivity() {
     override fun onPause() {
         if (ready) {
             home.pause()
+            board.pause()
             direct.hide()
             sport.hide()
             movies.hide()
@@ -221,9 +228,18 @@ class MainActivity : BaseActivity() {
             return
         }
         if (ready) paintProfile()
+        if (ready && HomeBoard.editOnReturn) {
+            HomeBoard.editOnReturn = false
+            if (tab != Tab.HOME) showTab(Tab.HOME)
+            board.enterEdit()
+            return
+        }
         // Retour du lecteur, d'une fiche ou des réglages : favoris, reprise et masquage ont pu changer.
         when {
-            tab == Tab.HOME -> home.refresh()
+            tab == Tab.HOME -> {
+                home.refresh()
+                board.refresh()
+            }
             tab == Tab.LIVE -> direct.refresh()
             tab == Tab.SPORT -> Unit
             (tab == Tab.MOVIE || tab == Tab.SERIES) && !gridMode -> Unit
@@ -255,6 +271,7 @@ class MainActivity : BaseActivity() {
     /** Quitte l'onglet affiché (arrête ce qui tourne en arrière-plan). */
     private fun leaveCurrent() {
         home.pause()
+        board.pause()
         direct.hide()
         sport.hide()
         movies.hide()
@@ -278,6 +295,8 @@ class MainActivity : BaseActivity() {
                 bgImage.alpha = 0f
                 home.refresh()
                 home.resume()
+                board.refresh()
+                board.resume()
             }
             Tab.LIVE -> {
                 showOnly(directView)
@@ -588,6 +607,8 @@ class MainActivity : BaseActivity() {
     override fun onBackPressed() {
         val tabView = tabViews[tab]
         val inTopBar = topBar.hasFocus()
+        // Accueil en mode personnalisation : Retour termine (et enregistre)
+        if (tab == Tab.HOME && board.onBack()) return
         when {
             catalogView.visibility == View.VISIBLE && rvItems.hasFocus() && catPanel.visibility == View.VISIBLE -> {
                 val v = rvCategories.findViewHolderForAdapterPosition(catAdapter.selected)?.itemView
@@ -620,6 +641,7 @@ class MainActivity : BaseActivity() {
         Bg.main.removeCallbacks(refreshDownloads)
         if (ready) {
             home.pause()
+            board.pause()
             direct.hide()
             sport.hide()
         }
