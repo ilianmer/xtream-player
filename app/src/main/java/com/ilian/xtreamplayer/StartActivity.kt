@@ -131,6 +131,11 @@ class StartActivity : BaseActivity() {
         // 6. Le nom apparaît et ses lettres se resserrent
         word.translationY = 10 * d
         word.animate().alpha(1f).translationY(0f).setStartDelay(760).setDuration(560).setInterpolator(spring).start()
+        // Signature : apparaît juste après le nom, en douceur
+        findViewById<View>(R.id.splashBy)?.let { by ->
+            by.translationY = 6 * d
+            by.animate().alpha(1f).translationY(0f).setStartDelay(1_050).setDuration(520).setInterpolator(spring).start()
+        }
         android.animation.ValueAnimator.ofFloat(0.32f, 0.01f).apply {
             startDelay = 760
             duration = 760
@@ -169,6 +174,7 @@ class StartActivity : BaseActivity() {
         splash.pivotX = (loc[0] - rootLoc[0]) + box.width * 0.55f
         splash.pivotY = (loc[1] - rootLoc[1]) + box.height * 0.5f
         findViewById<View>(R.id.splashWord).animate().alpha(0f).translationY(8 * resources.displayMetrics.density).setDuration(160).start()
+        findViewById<View>(R.id.splashBy)?.animate()?.alpha(0f)?.setDuration(140)?.start()
         splash.animate().scaleX(14f).scaleY(14f).alpha(0f).setStartDelay(90).setInterpolator(AccelerateInterpolator(1.9f)).setDuration(560)
             .withEndAction { afterIntro() }.start()
     }

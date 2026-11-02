@@ -835,6 +835,8 @@ class PlayerActivity : BaseActivity() {
             lighter = null
             stalls.clear()
             dropBursts.clear()
+            // Pastille « Récentes » du Direct
+            if (base.kind == Kind.LIVE) LiveRecent.note(src.id, base)
         }
         val item = lighter ?: if (base.kind == Kind.LIVE && !Session.autoFallback) LiveQuality.resolve(src.id, base) else base
         playing = item

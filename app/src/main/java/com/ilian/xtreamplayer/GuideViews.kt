@@ -25,9 +25,19 @@ class GuideState {
 
     val end: Long get() = start + span
 
+    /**
+     * Décalage d'affichage (secondes) pendant que la fenêtre glisse vers sa nouvelle place :
+     * le guide se déplace en douceur au lieu de sauter d'une demi-heure.
+     */
+    var shift = 0f
+
+    /** Début de la fenêtre tel qu'il est dessiné (avec le glissement en cours). */
+    val viewStart: Double get() = start + shift.toDouble()
+
     fun reset() {
         start = floorHalfHour(nowSec())
         selTime = nowSec()
+        shift = 0f
     }
 
     /** Décale la fenêtre pour que [t] soit visible. Renvoie true si elle a bougé. */
@@ -37,7 +47,16 @@ class GuideState {
         while (t >= start + span - 1_200) start += 1_800
         while (t < start && start > min) start -= 1_800
         if (start < min) start = min
+        if (start != old) shift += (old - start).toFloat()
         return start != old
+    }
+
+    /** Place la fenêtre sur l'heure [t] (« Ce soir »), un peu avant pour voir ce qui commence. */
+    fun jumpTo(t: Long) {
+        val old = start
+        start = maxOf(floorHalfHour(t) - 1_800, floorHalfHour(nowSec()))
+        selTime = t
+        if (start != old) shift += (old - start).toFloat()
     }
 
     companion object {
@@ -103,7 +122,7 @@ class EpgRowView @JvmOverloads constructor(ctx: Context, attrs: AttributeSet? = 
         }
     }
     private val gap = ctx.dp(2f)
-    private val radius = ctx.dp(8f)
+    private val radius = ctx.dp(10f)
     private val pad = ctx.dp(9f)
     private val px1 = ctx.dp(1f)
     private val px2 = ctx.dp(2f)
@@ -161,26 +180,38 @@ class EpgRowView @JvmOverloads constructor(ctx: Context, attrs: AttributeSet? = 
             c.drawText(label, pad, h / 2 + titlePaint.textSize / 3, titlePaint)
             return
         }
+        val vs = st.viewStart
+        val ve = vs + st.span
         for (i in v.indices) {
             val e = v[i]
-            if (e.end <= st.start || e.start >= st.end) continue
-            val a = ((maxOf(e.start, st.start) - st.start).toFloat() / st.span) * w
-            val b = ((minOf(e.end, st.end) - st.start).toFloat() / st.span) * w
+            if (e.end <= vs || e.start >= ve) continue
+            val a = (((maxOf(e.start.toDouble(), vs) - vs) / st.span) * w).toFloat()
+            val b = (((minOf(e.end.toDouble(), ve) - vs) / st.span) * w).toFloat()
             if (b - a < gap * 3) continue
             r.set(a + gap, 0f, b - gap, h)
             val focus = active && i == selected
             val airing = e.start <= now && now < e.end
             fill.color = when {
                 focus -> Color.WHITE
-                airing -> 0x24FFFFFF
-                else -> 0x13FFFFFF
+                airing -> 0x1CFFFFFF
+                else -> 0x10FFFFFF
             }
             c.drawRoundRect(r, radius, radius, fill)
             if (airing && !focus) {
-                // Petite barre d'avancement en bas du programme en cours
+                // Le programme en cours se remplit au fil de son avancement, souligné d'un trait doré
                 val p = ((now - e.start).toFloat() / (e.end - e.start)).coerceIn(0f, 1f)
+                val fullW = ((e.end - e.start).toDouble() / st.span * w).toFloat()
+                val startX = (((e.start - vs) / st.span) * w).toFloat() + gap
+                val doneX = (startX + fullW * p).coerceAtMost(r.right)
+                if (doneX > r.left) {
+                    c.save()
+                    c.clipRect(r.left, r.top, doneX, r.bottom)
+                    fill.color = 0x1FFFFFFF
+                    c.drawRoundRect(r, radius, radius, fill)
+                    c.restore()
+                }
                 fill.color = 0xFFF5C451.toInt()
-                c.drawRect(r.left + radius / 2, h - px2, r.left + radius / 2 + (r.width() - radius) * p, h, fill)
+                c.drawRect(r.left + radius / 2, h - px2, (doneX - radius / 2).coerceAtLeast(r.left + radius / 2), h, fill)
             }
             val room = r.width() - pad * 2
             if (room < px14) continue
@@ -234,15 +265,16 @@ class TimeRulerView @JvmOverloads constructor(ctx: Context, attrs: AttributeSet?
         val st = state ?: return
         val w = width.toFloat()
         val h = height.toFloat()
-        var t = st.start
-        while (t < st.end) {
-            val x = (t - st.start).toFloat() / st.span * w
-            c.drawText(GuideState.hm(t), x + d4, h / 2 + text.textSize / 3, text)
+        val vs = st.viewStart
+        var t = GuideState.floorHalfHour(vs.toLong())
+        while (t < vs + st.span) {
+            val x = ((t - vs) / st.span * w).toFloat()
+            if (x > -d12 * 3) c.drawText(GuideState.hm(t), x + d4, h / 2 + text.textSize / 3, text)
             t += 1_800
         }
         val now = GuideState.nowSec()
-        if (now in st.start until st.end) {
-            val x = (now - st.start).toFloat() / st.span * w
+        if (now >= vs && now < vs + st.span) {
+            val x = ((now - vs) / st.span * w).toFloat()
             val label = GuideState.hm(now)
             val tw = badgeText.measureText(label) + d12
             val left = (x - tw / 2).coerceIn(0f, w - tw)

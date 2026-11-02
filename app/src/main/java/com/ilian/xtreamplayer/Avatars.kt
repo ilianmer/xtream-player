@@ -523,6 +523,37 @@ object Avatars {
         } catch (_: Exception) {
         }
     }
+
+    /** Fonds au choix (dégradé du haut vers le bas) ; « Auto » garde le fond propre à l'avatar. */
+    class Backdrop(val name: String, val top: Int, val bottom: Int)
+
+    val BACKGROUNDS = listOf(
+        Backdrop("Nuit", 0xFF34467E.toInt(), 0xFF141B33.toInt()),
+        Backdrop("Océan", 0xFF2690A6.toInt(), 0xFF0B3C49.toInt()),
+        Backdrop("Forêt", 0xFF46A266.toInt(), 0xFF184A2B.toInt()),
+        Backdrop("Menthe", 0xFF5ED1AE.toInt(), 0xFF1E7A62.toInt()),
+        Backdrop("Soleil", 0xFFF7C04A.toInt(), 0xFFB8741A.toInt()),
+        Backdrop("Feu", 0xFFF5832F.toInt(), 0xFF9C3A0A.toInt()),
+        Backdrop("Corail", 0xFFEA6E7A.toInt(), 0xFF8C2B3A.toInt()),
+        Backdrop("Rose", 0xFFEE7FB2.toInt(), 0xFF8C2D5E.toInt()),
+        Backdrop("Lavande", 0xFF9D8BD3.toInt(), 0xFF4B3B7A.toInt()),
+        Backdrop("Ardoise", 0xFF6A7B8B.toInt(), 0xFF2B343D.toInt()),
+        Backdrop("Noir", 0xFF3A3A3F.toInt(), 0xFF0E0E10.toInt())
+    )
+
+    /** Fond choisi pour ce profil (null : celui de l'avatar). */
+    fun bgOf(p: Profile): Backdrop? = try {
+        Db.kvGet("avatarbg:${p.id}")?.toIntOrNull()?.let { BACKGROUNDS.getOrNull(it) }
+    } catch (_: Exception) {
+        null
+    }
+
+    fun setBg(profileId: Long, index: Int?) {
+        try {
+            Db.kvPut("avatarbg:$profileId", index?.toString())
+        } catch (_: Exception) {
+        }
+    }
 }
 
 /** Crayon des avatars : formes simples dans un carré de 100 × 100, limitées au rond de l'avatar. */
@@ -692,7 +723,7 @@ class Pen(private val c: Canvas, mode: PorterDuffXfermode) {
  * Avatar rond (dessiné une fois dans une image à la bonne taille, puis simplement affiché).
  * [ring] : anneau de la couleur du profil.
  */
-class AvatarDrawable(private val avatar: Avatars.Avatar, private val ring: Int? = null) : Drawable() {
+class AvatarDrawable(private val avatar: Avatars.Avatar, private val ring: Int? = null, private val bg: Avatars.Backdrop? = null) : Drawable() {
     private var cache: Bitmap? = null
     private val paint = Paint(Paint.ANTI_ALIAS_FLAG or Paint.FILTER_BITMAP_FLAG)
 
@@ -716,7 +747,7 @@ class AvatarDrawable(private val avatar: Avatars.Avatar, private val ring: Int? 
         // Masque rond (bords lissés), puis tout le dessin limité à ce rond
         c.drawCircle(50f, 50f, 50f, Paint(Paint.ANTI_ALIAS_FLAG))
         val pen = Pen(c, PorterDuffXfermode(PorterDuff.Mode.SRC_ATOP))
-        pen.background(avatar.top, avatar.bottom)
+        pen.background(bg?.top ?: avatar.top, bg?.bottom ?: avatar.bottom)
         avatar.draw(pen)
         // Liseré de lumière en haut, comme un verre bombé
         pen.arc(3f, 3f, 97f, 97f, 205f, 130f, 0x26FFFFFF, 1.6f)

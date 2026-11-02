@@ -56,7 +56,7 @@ class ProfileEditActivity : BaseActivity() {
         findViewById<TextView>(R.id.pName).text = p.name
         findViewById<TextView>(R.id.pAvatar).text = "${a.name} · OK pour changer d'avatar"
         val glow = findViewById<View>(R.id.glow)
-        glow.post { Profiles.glow(glow, a.top) }
+        glow.post { Profiles.glow(glow, Profiles.glowColor(p)) }
         val focusedRow = (findViewById<LinearLayout>(R.id.rows)).let { box -> (0 until box.childCount).firstOrNull { box.getChildAt(it).hasFocus() } }
         rows.clear()
         rows.header("Profil")

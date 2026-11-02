@@ -203,6 +203,8 @@ class HomeBoard(
         /** Demandé depuis les Réglages : l'accueil s'ouvre directement en mode personnalisation. */
         var editOnReturn = false
         private const val GAP = 12
+        /** Vitesse du ruban du Top 10 (dp par seconde) : lente et régulière. */
+        private const val GLIDE = 30f
     }
 
     private val items = ArrayList<Widget>()
@@ -825,9 +827,10 @@ class HomeBoard(
 
     /**
      * Rangée d'affiches (Top 10 avec ses grands chiffres, nouveautés, Ma liste, catégorie).
-     * Top 10 en petit : une affiche à la fois qui défile toute seule, avec des points de position ;
-     * en moyen et en grand, la rangée avance toute seule. Dès que le focus est dessus, le défilement
-     * automatique s'arrête (gauche / droite à la main) et reprend quand on part.
+     * Top 10 en moyen et en grand : la rangée glisse en continu, comme un ruban, et enchaîne
+     * le n° 1 après le n° 10 (sans retour en arrière). En petit : les affiches glissent l'une
+     * après l'autre, l'ancienne sort à gauche pendant que la nouvelle entre par la droite.
+     * Dès que le focus est dessus, tout ralentit et s'arrête en douceur ; ça repart quand on part.
      */
     private inner class Rail(
         spec: Spec,
@@ -843,26 +846,80 @@ class HomeBoard(
         var loaded = false
         /** 0 : rangée, 1 : carrousel (Top 10 en petit). */
         var mode = -1
+        /** Rangée sans fin (Top 10) : on démarre loin du début pour pouvoir glisser indéfiniment. */
+        val endless get() = top10 && mode == 0 && list.size > 1
+        val loops = 2_000
 
-        var carCard: View? = null
+        // ----- Ruban continu (Top 10 moyen / grand) -----
+        var speed = 0f
+        var carry = 0f
+        var lastFrame = 0L
+        var gliding = false
+        val seen = Rect()
+        val frame = object : android.view.Choreographer.FrameCallback {
+            override fun doFrame(now: Long) {
+                if (!gliding) return
+                val dt = if (lastFrame == 0L) 0f else ((now - lastFrame) / 1_000_000_000f).coerceAtMost(0.05f)
+                lastFrame = now
+                // Vitesse visée : environ un point d'écran par image ; zéro si on regarde la rangée,
+                // si l'accueil est en pause ou en personnalisation, ou si le widget n'est pas à l'écran
+                val visible = cell.isShown && cell.getGlobalVisibleRect(seen)
+                val target = if (running && !editing && !rv.hasFocus() && visible && endless) GLIDE * dp else 0f
+                // Accélère doucement, freine plus vite
+                val k = if (target > speed) 1.6f else 7f
+                speed += (target - speed) * (k * dt).coerceAtMost(1f)
+                if (speed < 0.5f && target == 0f) {
+                    speed = 0f
+                    carry = 0f
+                    gliding = false
+                    lastFrame = 0L
+                    return
+                }
+                carry += speed * dt
+                val step = carry.toInt()
+                if (step > 0) {
+                    carry -= step
+                    rv.scrollBy(step, 0)
+                }
+                android.view.Choreographer.getInstance().postFrameCallback(this)
+            }
+        }
+
+        fun glide() {
+            if (gliding || !endless || !running) return
+            gliding = true
+            lastFrame = 0L
+            android.view.Choreographer.getInstance().postFrameCallback(frame)
+        }
+
+        // ----- Carrousel (Top 10 petit) -----
+        var carBox: FrameLayout? = null
+        var carA: View? = null
+        var carB: View? = null
         var carTitle: TextView? = null
         var carDots: LinearLayout? = null
         var carIndex = 0
+        var sliding = false
 
+        /** Relance : glissement continu, ou affiche suivante du carrousel toutes les 4,5 s. */
         val auto = object : Runnable {
             override fun run() {
                 if (!running) return
-                Bg.main.postDelayed(this, 4_500)
-                if (editing || list.size < 2) return
                 if (mode == 1) {
-                    if (carCard?.hasFocus() == false) step(carIndex + 1, 1)
-                } else if (!rv.hasFocus()) advance()
+                    Bg.main.postDelayed(this, 4_500)
+                    if (!editing && list.size > 1 && carBox?.hasFocus() == false) slide(carIndex + 1, 1)
+                } else {
+                    // Le ruban vérifie de temps en temps s'il peut repartir (focus parti, page revenue…)
+                    Bg.main.postDelayed(this, 700)
+                    glide()
+                }
             }
         }
 
         init {
             horizontal(rv)
             rv.adapter = Posters()
+            rv.setItemViewCacheSize(6)
         }
 
         override fun design(size: Int) = if (top10 && size == 1) 236 else 192
@@ -888,11 +945,13 @@ class HomeBoard(
         override fun resume() {
             if (!top10) return
             Bg.main.removeCallbacks(auto)
-            Bg.main.postDelayed(auto, 4_500)
+            Bg.main.postDelayed(auto, if (mode == 1) 4_500 else 900)
         }
 
         override fun pause() {
             Bg.main.removeCallbacks(auto)
+            gliding = false
+            speed = 0f
         }
 
         fun load() {
@@ -904,6 +963,8 @@ class HomeBoard(
                 if (loaded && l.map { it.key } == list.map { it.key }) return@task
                 loaded = true
                 list = l
+                // Toutes les affiches sont préparées d'avance : rien n'arrive en retard pendant le défilement
+                if (top10) for (i in l) Img.warm(i.icon, 300)
                 paint()
             }
         }
@@ -911,28 +972,29 @@ class HomeBoard(
         fun paint() {
             if (mode == 1) {
                 carIndex = carIndex.coerceIn(0, (list.size - 1).coerceAtLeast(0))
-                carCard?.visibility = if (list.isEmpty()) View.INVISIBLE else View.VISIBLE
+                carBox?.visibility = if (list.isEmpty()) View.INVISIBLE else View.VISIBLE
                 bindCarousel()
-            } else rv.adapter?.notifyDataSetChanged()
+            } else {
+                rv.adapter?.notifyDataSetChanged()
+                // Ruban sans fin : on part du milieu, aligné sur le n° 1
+                if (endless) (rv.layoutManager as? LinearLayoutManager)?.scrollToPositionWithOffset(list.size * (loops / 2), 0)
+            }
             if (loaded) showEmpty(if (list.isEmpty()) empty else null)
         }
 
-        /** La rangée avance d'une affiche ; arrivée au bout, elle revient au début. */
-        fun advance() {
-            val lm = rv.layoutManager as? LinearLayoutManager ?: return
-            if (!rv.canScrollHorizontally(1) && !rv.canScrollHorizontally(-1)) return // tout tient déjà
-            val last = lm.findLastCompletelyVisibleItemPosition()
-            val first = lm.findFirstCompletelyVisibleItemPosition().coerceAtLeast(0)
-            val target = if (last >= list.size - 1) 0 else first + 1
-            val s = object : LinearSmoothScroller(act) {
-                override fun getHorizontalSnapPreference() = SNAP_TO_START
-                override fun calculateSpeedPerPixel(dm: DisplayMetrics) = (if (target == 0) 25f else 110f) / dm.densityDpi
-            }
-            s.targetPosition = target
-            lm.startSmoothScroll(s)
-        }
-
         // ----- Carrousel -----
+
+        fun card(parent: ViewGroup): View {
+            val card = inf.inflate(R.layout.item_top10, parent, false)
+            card.isFocusable = false
+            card.isClickable = false
+            card.isDuplicateParentStateEnabled = true
+            card.findViewById<View>(R.id.frame).let {
+                it.clipToOutline = true
+                Fx.shine(it)
+            }
+            return card
+        }
 
         fun carousel(): View {
             val col = LinearLayout(act).apply {
@@ -941,12 +1003,18 @@ class HomeBoard(
                 clipChildren = false
                 clipToPadding = false
             }
-            val card = inf.inflate(R.layout.item_top10, col, false)
-            card.findViewById<View>(R.id.frame).let {
-                it.clipToOutline = true
-                Fx.shine(it)
+            // Le cadre garde le focus ; les deux affiches glissent à l'intérieur
+            val box = FrameLayout(act).apply {
+                isFocusable = true
+                isClickable = true
+                clipChildren = false
             }
-            col.addView(card, LinearLayout.LayoutParams(px(160), px(144)))
+            val a = card(box)
+            val b = card(box)
+            box.addView(b, FrameLayout.LayoutParams(px(160), px(144)))
+            box.addView(a, FrameLayout.LayoutParams(px(160), px(144)))
+            b.visibility = View.INVISIBLE
+            col.addView(box, LinearLayout.LayoutParams(px(160), px(144)))
             val t = TextView(act, null, 0, R.style.Medium).apply {
                 textSize = 11f
                 gravity = Gravity.CENTER
@@ -964,54 +1032,88 @@ class HomeBoard(
                 gravity = Gravity.CENTER_VERTICAL
             }
             col.addView(dots, LinearLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, px(4)).apply { topMargin = px(7) })
-            card.setOnFocusChangeListener { v, has ->
+            box.setOnFocusChangeListener { v, has ->
                 Fx.focus(v, has, 1.05f)
-                v.findViewById<RankView?>(R.id.rank)?.lit = has
+                carA?.findViewById<RankView?>(R.id.rank)?.lit = has
             }
-            card.setOnKeyListener { _, code, e ->
+            box.setOnKeyListener { _, code, e ->
                 if (e.action != KeyEvent.ACTION_DOWN) return@setOnKeyListener false
                 when (code) {
                     // Aux deux bouts du classement, gauche / droite laissent partir vers les widgets voisins
                     KeyEvent.KEYCODE_DPAD_LEFT -> if (carIndex > 0) {
-                        step(carIndex - 1, -1)
+                        slide(carIndex - 1, -1)
                         true
                     } else false
                     KeyEvent.KEYCODE_DPAD_RIGHT -> if (carIndex < list.size - 1) {
-                        step(carIndex + 1, 1)
+                        slide(carIndex + 1, 1)
                         true
                     } else false
                     else -> false
                 }
             }
-            card.setOnClickListener { list.getOrNull(carIndex)?.let { open(it) } }
-            card.setOnLongClickListener {
+            box.setOnClickListener { list.getOrNull(carIndex)?.let { open(it) } }
+            box.setOnLongClickListener {
                 list.getOrNull(carIndex)?.let { toggleFav(it) }
                 true
             }
-            carCard = card
+            carBox = box
+            carA = a
+            carB = b
             carTitle = t
             carDots = dots
             return col
         }
 
-        fun step(i: Int, dir: Int) {
-            val c = carCard ?: return
-            if (list.isEmpty()) return
+        /** L'affiche en place sort d'un côté pendant que la suivante entre de l'autre, d'un seul mouvement. */
+        fun slide(i: Int, dir: Int) {
+            val a = carA ?: return
+            val b = carB ?: return
+            if (list.size < 2 || sliding) return
             val next = Math.floorMod(i, list.size)
-            c.animate().cancel()
-            c.animate().alpha(0f).translationX(-14 * dp * dir).setDuration(150).withEndAction {
+            sliding = true
+            val w = px(176).toFloat()
+            bindCard(b, list[next], next)
+            b.findViewById<RankView?>(R.id.rank)?.lit = carBox?.hasFocus() == true
+            b.translationX = w * dir
+            b.alpha = 1f
+            b.visibility = View.VISIBLE
+            val curve = PathInterpolator(0.45f, 0f, 0.2f, 1f)
+            a.animate().translationX(-w * dir).alpha(0.4f).setDuration(620).setInterpolator(curve).withLayer().start()
+            b.animate().translationX(0f).setDuration(620).setInterpolator(curve).withLayer().withEndAction {
+                a.visibility = View.INVISIBLE
+                a.translationX = 0f
+                a.alpha = 1f
+                // Les rôles s'échangent : la nouvelle affiche passe devant
+                b.bringToFront()
+                carA = b
+                carB = a
                 carIndex = next
-                bindCarousel()
-                c.translationX = 14 * dp * dir
-                c.animate().alpha(1f).translationX(0f).setDuration(280).setInterpolator(ease).start()
+                sliding = false
+                paintCaption()
             }.start()
+            // La légende et les points suivent en même temps
+            carTitle?.animate()?.alpha(0f)?.setDuration(180)?.withEndAction {
+                carTitle?.text = Tmdb.cleanTitle(list[next].name).first
+                carTitle?.animate()?.alpha(1f)?.setDuration(260)?.start()
+            }?.start()
+            paintDots(next)
+            // L'affiche d'après est déjà prête
+            list.getOrNull(Math.floorMod(next + dir, list.size))?.let { Img.warm(it.icon, 300) }
         }
 
         fun bindCarousel() {
-            val c = carCard ?: return
+            val a = carA ?: return
             val item = list.getOrNull(carIndex) ?: return
-            bindCard(c, item, carIndex)
-            carTitle?.text = Tmdb.cleanTitle(item.name).first
+            bindCard(a, item, carIndex)
+            paintCaption()
+        }
+
+        fun paintCaption() {
+            list.getOrNull(carIndex)?.let { carTitle?.text = Tmdb.cleanTitle(it.name).first }
+            paintDots(carIndex)
+        }
+
+        fun paintDots(cur: Int) {
             val dots = carDots ?: return
             if (dots.childCount != list.size) {
                 dots.removeAllViews()
@@ -1024,13 +1126,21 @@ class HomeBoard(
             }
             for (k in 0 until dots.childCount) {
                 val d = dots.getChildAt(k)
-                d.setBackgroundResource(if (k == carIndex) R.drawable.dot_on else R.drawable.dot_off)
-                d.layoutParams = d.layoutParams.apply { width = px(if (k == carIndex) 12 else 4) }
+                d.setBackgroundResource(if (k == cur) R.drawable.dot_on else R.drawable.dot_off)
+                val target = px(if (k == cur) 12 else 4)
+                val from = d.layoutParams.width
+                if (from == target) continue
+                ValueAnimator.ofInt(from, target).apply {
+                    duration = 420
+                    interpolator = ease
+                    addUpdateListener { an -> d.layoutParams = d.layoutParams.apply { width = an.animatedValue as Int } }
+                    start()
+                }
             }
         }
 
         inner class Posters : RecyclerView.Adapter<RecyclerView.ViewHolder>() {
-            override fun getItemCount() = list.size
+            override fun getItemCount() = if (endless) list.size * loops else list.size
 
             override fun onCreateViewHolder(parent: ViewGroup, viewType: Int): RecyclerView.ViewHolder {
                 val v = inf.inflate(if (top10) R.layout.item_top10 else R.layout.item_card, parent, false)
@@ -1041,9 +1151,10 @@ class HomeBoard(
             }
 
             override fun onBindViewHolder(h: RecyclerView.ViewHolder, position: Int) {
-                val item = list[position]
+                val idx = if (list.isEmpty()) return else position % list.size
+                val item = list[idx]
                 val v = h.itemView
-                bindCard(v, item, position)
+                bindCard(v, item, idx)
                 val rank = v.findViewById<RankView?>(R.id.rank)
                 v.setOnFocusChangeListener { view, has ->
                     Fx.focus(view, has, if (top10) 1.05f else 1.08f)

@@ -416,6 +416,9 @@ class SettingsActivity : BaseActivity() {
             { Prefs.navSound }, { Prefs.navSound = it }
         )
         rows.header("Application")
+        rows.action("À propos et mentions légales", "Conditions d'utilisation, confidentialité, crédits et licences. Créée par ${Legal.CREATOR}.") {
+            startActivity(Intent(this, LegalActivity::class.java))
+        }
         rows.info("Version installée", Updater.installedLabel(this))
         Crash.last(this)?.let { log ->
             rows.action("Dernier incident", log.lineSequence().firstOrNull()?.take(60) ?: "") {

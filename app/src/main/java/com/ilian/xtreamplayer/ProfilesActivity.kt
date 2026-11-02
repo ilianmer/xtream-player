@@ -31,7 +31,10 @@ object Profiles {
     fun initial(p: Profile): String = p.name.trim().take(1).uppercase().ifBlank { "?" }
 
     /** Avatar rond du profil ([ring] : anneau à sa couleur). */
-    fun avatarDrawable(p: Profile, ring: Boolean = false) = AvatarDrawable(Avatars.of(p), if (ring) color(p) else null)
+    fun avatarDrawable(p: Profile, ring: Boolean = false) = AvatarDrawable(Avatars.of(p), if (ring) color(p) else null, Avatars.bgOf(p))
+
+    /** Couleur principale de l'avatar du profil (pour le halo). */
+    fun glowColor(p: Profile): Int = Avatars.bgOf(p)?.top ?: Avatars.of(p).top
 
     /** Ombre ronde sous un avatar. */
     val OVAL = object : android.view.ViewOutlineProvider() {
@@ -159,7 +162,7 @@ class ProfilesActivity : BaseActivity() {
             v.findViewById<View>(R.id.edit).visibility = if (manage) View.VISIBLE else View.GONE
             v.findViewById<TextView>(R.id.name).text = p.name
             v.findViewById<TextView>(R.id.langs).text = Profiles.langsLabel(p)
-            val color = Avatars.of(p).top
+            val color = Profiles.glowColor(p)
             v.setOnFocusChangeListener { view, has ->
                 Fx.focus(view, has, 1.1f)
                 if (has) {

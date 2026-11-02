@@ -185,7 +185,8 @@ class MainActivity : BaseActivity() {
         showTab(start)
         if (start == Tab.HOME) homeView.post { board.focusDefault() } else tabViews[start]?.post { tabViews[start]?.requestFocus() }
         // Nouvelle version publiée ? (une fois par lancement, après l'arrivée sur l'accueil)
-        Bg.main.postDelayed({ if (!isFinishing && !isDestroyed) Updater.checkOnLaunch(this) }, 1_800)
+        // Conditions d'utilisation (premier lancement), puis nouvelle version publiée ?
+        Bg.main.postDelayed({ if (!isFinishing && !isDestroyed) Legal.ask(this) { Updater.checkOnLaunch(this) } }, 1_800)
     }
 
     override fun onSaveInstanceState(outState: Bundle) {
@@ -196,6 +197,8 @@ class MainActivity : BaseActivity() {
     override fun onResume() {
         super.onResume()
         Updater.resume(this)
+        // Retour de la lecture des conditions sans les avoir acceptées : on les repropose
+        if (ready && !Legal.accepted()) Bg.main.postDelayed({ if (!isFinishing && !isDestroyed) Legal.ask(this) { Updater.checkOnLaunch(this) } }, 700)
         if (!ready) return
         when (tab) {
             Tab.HOME -> {

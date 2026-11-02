@@ -55,6 +55,20 @@ object Img {
         }
     }
 
+    /** Prépare une image à l'avance (affiche qui va arriver à l'écran) : elle s'affichera aussitôt, sans fondu ni attente. */
+    fun warm(url: String?, maxPx: Int = 360) {
+        if (url.isNullOrBlank() || !url.startsWith("http", ignoreCase = true) || cache.get(url) != null) return
+        pool.execute {
+            if (cache.get(url) != null) return@execute
+            val bmp = try {
+                decode(bytes(url), maxPx)
+            } catch (_: Throwable) {
+                null
+            }
+            if (bmp != null) cache.put(url, bmp)
+        }
+    }
+
     /** Télécharge une image (avec cache) et la rend sur le fil principal, ou null en cas d'échec. */
     fun fetch(url: String?, maxPx: Int, cb: (Bitmap?) -> Unit) {
         if (url.isNullOrBlank() || !url.startsWith("http", ignoreCase = true)) {
