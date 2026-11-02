@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Personne dans la recherche : contour blanc au focus, léger fond quand elle est choisie -->
+<selector xmlns:android="http://schemas.android.com/apk/res/android" android:enterFadeDuration="140" android:exitFadeDuration="110">
+    <item android:state_focused="true"><shape><solid android:color="#2EFFFFFF" /><stroke android:width="2dp" android:color="#FFFFFF" /><corners android:radius="16dp" /></shape></item>
+    <item android:state_selected="true"><shape><solid android:color="#1FFFFFFF" /><stroke android:width="1dp" android:color="#40FFFFFF" /><corners android:radius="16dp" /></shape></item>
+    <item><shape><solid android:color="#00000000" /><corners android:radius="16dp" /></shape></item>
+</selector>

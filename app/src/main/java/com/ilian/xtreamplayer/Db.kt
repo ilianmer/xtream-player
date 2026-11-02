@@ -466,6 +466,28 @@ object Db {
         return chunk.mapNotNull { byId[it] }
     }
 
+    /** Parcourt les titres d'un type (numéro de ligne, nom), pour l'index des titres. */
+    fun titleRows(src: Long, kind: Kind, fn: (Long, String) -> Unit) {
+        db.rawQuery("SELECT rowid, name FROM items WHERE source_id=? AND kind=?", arrayOf(src.toString(), kind.name)).use { c ->
+            while (c.moveToNext()) fn(c.getLong(0), c.getString(1) ?: "")
+        }
+    }
+
+    /** Éléments visibles (catégories affichées) à partir de leurs numéros de ligne. */
+    fun byRowids(src: Long, kind: Kind, rowids: Collection<Long>): List<Item> {
+        if (rowids.isEmpty()) return emptyList()
+        val out = ArrayList<Item>()
+        for (chunk in rowids.distinct().chunked(400)) {
+            val a = ArrayList<String>()
+            val w = where(src, kind, null, null, a)
+            a.addAll(chunk.map { it.toString() })
+            db.rawQuery("SELECT $ITEM_COLS FROM items WHERE $w AND rowid IN (${chunk.joinToString(",") { "?" }})", a.toTypedArray()).use { c ->
+                while (c.moveToNext()) out.add(item(c))
+            }
+        }
+        return out
+    }
+
     /** Éléments visibles qui portent ces identifiants TMDB (le premier trouvé pour chacun). */
     fun byTmdbVisible(src: Long, kind: Kind, tmdbIds: Collection<String>): Map<String, Item> {
         if (tmdbIds.isEmpty()) return emptyMap()

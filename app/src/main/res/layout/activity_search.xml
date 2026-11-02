@@ -65,82 +65,156 @@
             android:textColor="@color/text_dim"
             android:textSize="12sp" />
 
-        <LinearLayout
-            android:id="@+id/secLive"
+        <!-- Résultats : défilent quand ils ne tiennent pas tous à l'écran -->
+        <ScrollView
+            android:id="@+id/results"
             android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:layout_marginTop="8dp"
-            android:orientation="vertical"
-            android:visibility="gone">
+            android:layout_height="0dp"
+            android:layout_weight="1"
+            android:clipToPadding="false"
+            android:fillViewport="false"
+            android:paddingBottom="16dp"
+            android:scrollbars="none">
 
-            <TextView
-                android:id="@+id/titleLive"
-                style="@style/Section"
-                android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
-                android:layout_marginStart="2dp" />
-
-            <androidx.recyclerview.widget.RecyclerView
-                android:id="@+id/rvLive"
+            <LinearLayout
                 android:layout_width="match_parent"
-                android:layout_height="64dp"
-                android:clipChildren="false"
-                android:clipToPadding="false"
-                android:paddingStart="8dp"
-                android:paddingEnd="20dp"
-                android:scrollbars="none" />
-        </LinearLayout>
-
-        <LinearLayout
-            android:id="@+id/secMovies"
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:layout_marginTop="6dp"
-            android:orientation="vertical"
-            android:visibility="gone">
-
-            <TextView
-                android:id="@+id/titleMovies"
-                style="@style/Section"
-                android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
-                android:layout_marginStart="2dp" />
+                android:orientation="vertical">
 
-            <androidx.recyclerview.widget.RecyclerView
-                android:id="@+id/rvMovies"
-                android:layout_width="match_parent"
-                android:layout_height="150dp"
-                android:clipChildren="false"
-                android:clipToPadding="false"
-                android:paddingStart="8dp"
-                android:paddingEnd="20dp"
-                android:scrollbars="none" />
-        </LinearLayout>
+                <!-- Acteurs et réalisateurs dont le nom correspond -->
+                <LinearLayout
+                    android:id="@+id/secPeople"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="8dp"
+                    android:orientation="vertical"
+                    android:visibility="gone">
 
-        <LinearLayout
-            android:id="@+id/secSeries"
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:layout_marginTop="2dp"
-            android:orientation="vertical"
-            android:visibility="gone">
+                    <TextView
+                        android:id="@+id/titlePeople"
+                        style="@style/Section"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:layout_marginStart="2dp"
+                        android:text="Personnes" />
 
-            <TextView
-                android:id="@+id/titleSeries"
-                style="@style/Section"
-                android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
-                android:layout_marginStart="2dp" />
+                    <androidx.recyclerview.widget.RecyclerView
+                        android:id="@+id/rvPeople"
+                        android:layout_width="match_parent"
+                        android:layout_height="118dp"
+                        android:layout_marginTop="4dp"
+                        android:clipChildren="false"
+                        android:clipToPadding="false"
+                        android:paddingStart="8dp"
+                        android:paddingEnd="20dp"
+                        android:scrollbars="none" />
+                </LinearLayout>
 
-            <androidx.recyclerview.widget.RecyclerView
-                android:id="@+id/rvSeries"
-                android:layout_width="match_parent"
-                android:layout_height="150dp"
-                android:clipChildren="false"
-                android:clipToPadding="false"
-                android:paddingStart="8dp"
-                android:paddingEnd="20dp"
-                android:scrollbars="none" />
-        </LinearLayout>
+                <!-- Films et séries de la personne choisie, dans le catalogue -->
+                <LinearLayout
+                    android:id="@+id/secWorks"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="6dp"
+                    android:orientation="vertical"
+                    android:visibility="gone">
+
+                    <TextView
+                        android:id="@+id/titleWorks"
+                        style="@style/Section"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:layout_marginStart="2dp" />
+
+                    <androidx.recyclerview.widget.RecyclerView
+                        android:id="@+id/rvWorks"
+                        android:layout_width="match_parent"
+                        android:layout_height="150dp"
+                        android:clipChildren="false"
+                        android:clipToPadding="false"
+                        android:paddingStart="8dp"
+                        android:paddingEnd="20dp"
+                        android:scrollbars="none" />
+                </LinearLayout>
+
+                <LinearLayout
+                    android:id="@+id/secLive"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="8dp"
+                    android:orientation="vertical"
+                    android:visibility="gone">
+
+                    <TextView
+                        android:id="@+id/titleLive"
+                        style="@style/Section"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:layout_marginStart="2dp" />
+
+                    <androidx.recyclerview.widget.RecyclerView
+                        android:id="@+id/rvLive"
+                        android:layout_width="match_parent"
+                        android:layout_height="64dp"
+                        android:clipChildren="false"
+                        android:clipToPadding="false"
+                        android:paddingStart="8dp"
+                        android:paddingEnd="20dp"
+                        android:scrollbars="none" />
+                </LinearLayout>
+
+                <LinearLayout
+                    android:id="@+id/secMovies"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="6dp"
+                    android:orientation="vertical"
+                    android:visibility="gone">
+
+                    <TextView
+                        android:id="@+id/titleMovies"
+                        style="@style/Section"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:layout_marginStart="2dp" />
+
+                    <androidx.recyclerview.widget.RecyclerView
+                        android:id="@+id/rvMovies"
+                        android:layout_width="match_parent"
+                        android:layout_height="150dp"
+                        android:clipChildren="false"
+                        android:clipToPadding="false"
+                        android:paddingStart="8dp"
+                        android:paddingEnd="20dp"
+                        android:scrollbars="none" />
+                </LinearLayout>
+
+                <LinearLayout
+                    android:id="@+id/secSeries"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="2dp"
+                    android:orientation="vertical"
+                    android:visibility="gone">
+
+                    <TextView
+                        android:id="@+id/titleSeries"
+                        style="@style/Section"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:layout_marginStart="2dp" />
+
+                    <androidx.recyclerview.widget.RecyclerView
+                        android:id="@+id/rvSeries"
+                        android:layout_width="match_parent"
+                        android:layout_height="150dp"
+                        android:clipChildren="false"
+                        android:clipToPadding="false"
+                        android:paddingStart="8dp"
+                        android:paddingEnd="20dp"
+                        android:scrollbars="none" />
+                </LinearLayout>
+            </LinearLayout>
+        </ScrollView>
     </LinearLayout>
 </FrameLayout>

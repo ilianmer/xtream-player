@@ -32,6 +32,10 @@ class MovieActivity : BaseActivity() {
     private lateinit var btnDownload: ImageView
     private lateinit var tvDl: TextView
     private lateinit var tvSimilar: TextView
+    private lateinit var castRow: android.widget.LinearLayout
+    /** Distribution déjà affichée (pour ne pas reconstruire les boutons, ni perdre le focus). */
+    private var castShown = ""
+    private var castAsked = false
 
     private var info: MovieInfo? = null
     private var tmdb: Tmdb.Info? = null
@@ -58,6 +62,7 @@ class MovieActivity : BaseActivity() {
         tvMeta = findViewById(R.id.tvMeta)
         tvPlot = findViewById(R.id.tvPlot)
         tvCredits = findViewById(R.id.tvCredits)
+        castRow = findViewById(R.id.castRow)
         tvPlay = findViewById(R.id.tvPlay)
         playBar = findViewById(R.id.playBar)
         btnPlay = findViewById(R.id.btnPlay)
@@ -151,6 +156,28 @@ class MovieActivity : BaseActivity() {
             }
         }
         tvCredits.visibility = if (tvCredits.text.isNullOrBlank()) View.GONE else View.VISIBLE
+        // Acteurs et réalisation en boutons : chacun ouvre ses autres films du catalogue
+        val cast = People.names(i?.cast, 3)
+        val dir = People.names(i?.director, 1).firstOrNull()
+        if (cast.isNotEmpty() || dir != null) {
+            showCast(cast, dir)
+        } else if (i != null && Tmdb.enabled && !castAsked) {
+            castAsked = true
+            Bg.task(this, { People.tmdbCast(i.tmdb ?: item.tmdb, tv = false) }) { r ->
+                val (c, d) = r.getOrNull() ?: return@task
+                if (c.isNotEmpty() || d != null) showCast(c, d)
+            }
+        }
+    }
+
+    private fun showCast(cast: List<String>, dir: String?) {
+        val key = cast.joinToString("|") + "#" + dir
+        if (key != castShown) {
+            castShown = key
+            People.fillRow(this, castRow, cast, dir)
+        }
+        // Les boutons remplacent la ligne de texte « Réalisation / Avec »
+        if (castRow.visibility == View.VISIBLE) tvCredits.visibility = View.GONE
     }
 
     /** Image de fond nette si le fournisseur ou TMDB en a une, sinon affiche nette sur fond flouté. */

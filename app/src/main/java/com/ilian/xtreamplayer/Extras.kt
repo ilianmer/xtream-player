@@ -107,6 +107,9 @@ object Tmdb {
         return JSONObject(Http.getText(sb.toString(), headers))
     }
 
+    /** Appel direct à l'API TMDB (recherche de personnes, filmographies). Bloquant. */
+    fun call(path: String, params: Map<String, String> = emptyMap()): JSONObject = get(path, params)
+
     /** Un titre du classement TMDB « les mieux notés ». */
     class Top(val id: String, val title: String, val original: String, val year: String?, val vote: Double)
 

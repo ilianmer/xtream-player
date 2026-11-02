@@ -113,6 +113,7 @@ Pour fonctionner, l'application contacte directement :
 - Ton fournisseur (la source que tu ajoutes) : il reçoit tes identifiants et les demandes de lecture, comme avec n'importe quel lecteur.
 - xmltvfr.fr : téléchargement du guide TV.
 - TMDB, TVmaze et iTunes : titres recherchés pour trouver affiches, résumés, notes et tendances (TMDB seulement si tu ajoutes ta clé).
+- TMDB ou Wikidata et TVmaze : noms d'acteurs ou de réalisateurs tapés dans la recherche, pour retrouver leurs films et séries.
 - ESPN : scores, calendriers et cotes des matchs.
 - The Odds API : cotes des bookmakers français (Winamax, Betclic, Unibet, PMU, NetBet), seulement si tu ajoutes ta clé.
 - GitHub : vérification et téléchargement des mises à jour.
@@ -133,6 +134,7 @@ Xtream Player est conçu et développé par $CREATOR. Les 30 avatars sont des cr
 ## Données et images
 - Ce produit utilise l'API TMDB mais n'est ni approuvé ni certifié par TMDB.
 - Informations de séries : TVmaze (tvmaze.com), licence CC BY-SA.
+- Filmographies sans clé TMDB : Wikidata (wikidata.org), données sous licence CC0.
 - Affiches et informations de films : Apple iTunes Search API.
 - Scores, calendriers et cotes : ESPN.
 - Cotes de bookmakers (facultatif) : The Odds API.

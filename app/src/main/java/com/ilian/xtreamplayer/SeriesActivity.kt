@@ -31,6 +31,8 @@ class SeriesActivity : BaseActivity() {
     private var season = -1
     private val episodeAdapter = EpisodeAdapter(::playEpisode, ::episodeMenu)
     private var info: SeriesInfo? = null
+    private lateinit var castRow: android.widget.LinearLayout
+    private var castShown = ""
     private var tmdb: Tmdb.Info? = null
     private var episodes: List<Item> = emptyList()
     private var resumeTarget: Item? = null
@@ -55,6 +57,7 @@ class SeriesActivity : BaseActivity() {
         ivCover.clipToOutline = true
         tvPlot = findViewById(R.id.tvPlot)
         tvMeta = findViewById(R.id.tvMeta)
+        castRow = findViewById(R.id.castRow)
         tvCount = findViewById(R.id.tvCount)
         tvStatus = findViewById(R.id.tvStatus)
         btnSeason = findViewById(R.id.btnSeason)
@@ -125,6 +128,26 @@ class SeriesActivity : BaseActivity() {
         btnFav.setCompoundDrawablesRelativeWithIntrinsicBounds(if (fav) R.drawable.ic_check_small else R.drawable.ic_plus_small, 0, 0, 0)
     }
 
+    /** Acteurs principaux en boutons : chacun ouvre ses autres films et séries du catalogue. */
+    private fun paintCast(si: SeriesInfo) {
+        val cast = People.names(si.cast, 3)
+        if (cast.isNotEmpty()) {
+            showCast(cast)
+        } else if (Tmdb.enabled) {
+            Bg.task(this, { People.tmdbCast(si.tmdb ?: series.tmdb, tv = true) }) { r ->
+                val (c, _) = r.getOrNull() ?: return@task
+                if (c.isNotEmpty()) showCast(c)
+            }
+        }
+    }
+
+    private fun showCast(cast: List<String>) {
+        val key = cast.joinToString("|")
+        if (key == castShown) return
+        castShown = key
+        People.fillRow(this, castRow, cast, null)
+    }
+
     private fun paintMeta() {
         val si = info
         val t = tmdb
@@ -142,6 +165,7 @@ class SeriesActivity : BaseActivity() {
 
     private fun show(si: SeriesInfo) {
         info = si
+        paintCast(si)
         if (!si.plot.isNullOrBlank()) tvPlot.text = si.plot
         if (series.icon.isNullOrBlank() && si.cover != null) {
             Img.load(ivCover, si.cover, R.drawable.ph_poster, 400)

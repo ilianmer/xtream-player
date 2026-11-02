@@ -199,6 +199,18 @@
                 android:maxLines="2"
                 android:textColor="@color/text_faint"
                 android:textSize="11sp" />
+
+            <!-- « Avec (A) (B) (C)   De (D) » : chaque nom ouvre ses autres films -->
+            <LinearLayout
+                android:id="@+id/castRow"
+                android:layout_width="wrap_content"
+                android:layout_height="28dp"
+                android:layout_marginTop="10dp"
+                android:clipChildren="false"
+                android:clipToPadding="false"
+                android:gravity="center_vertical"
+                android:orientation="horizontal"
+                android:visibility="gone" />
         </LinearLayout>
 
         <View
