@@ -118,7 +118,8 @@ class XtreamApi(server: String, val user: String, val pass: String) {
     }
 
     private fun toItem(kind: Kind, m: Map<String, String>): Item? = when (kind) {
-        Kind.LIVE -> m["stream_id"]?.let {
+        // Les fausses chaînes de séparation (« #### CINÉMA HD/4K #### ») ne diffusent rien : on les laisse de côté
+        Kind.LIVE -> m["stream_id"]?.takeIf { !Separators.isSeparator(m["name"]) }?.let {
             Item(
                 // Pour le direct, le champ tmdb garde l'identifiant du guide (epg_channel_id, ex. « TF1.fr »)
                 Kind.LIVE, it, m["name"] ?: "?", m["stream_icon"], null, catId = m["category_id"], tmdb = m["epg_channel_id"],
@@ -290,5 +291,22 @@ class XtreamApi(server: String, val user: String, val pass: String) {
             val p = uri.getQueryParameter("password") ?: return null
             return Triple(normalizeServer(t), u, p)
         }
+    }
+}
+
+/**
+ * Fausses chaînes que les fournisseurs glissent dans leurs listes comme titres de rubrique :
+ * « #### CINÉMA HD/4K #### », « ===== SPORTS ===== », « ----- FRANCE ----- », « ▬▬ UK ▬▬ »…
+ * Une vraie chaîne n'aligne jamais trois symboles identiques à la suite.
+ */
+object Separators {
+    private val RUN = Regex("""([#=*_~•●▬━─═■◆★☆►▶◄◀<>|+\-])\1{2,}""")
+    private val FRAME = Regex("""^[#=*~•●▬━─═■◆★☆►▶◄◀<>|+\-]{2,}.*[#=*~•●▬━─═■◆★☆►▶◄◀<>|+\-]{2,}$""")
+
+    fun isSeparator(name: String?): Boolean {
+        val n = name?.trim() ?: return false
+        if (n.isEmpty()) return false
+        if (n.none { it.isLetterOrDigit() }) return true
+        return RUN.containsMatchIn(n) || FRAME.matches(n)
     }
 }

@@ -114,7 +114,7 @@ Pour fonctionner, l'application contacte directement :
 - xmltvfr.fr : téléchargement du guide TV.
 - TMDB, TVmaze et iTunes : titres recherchés pour trouver affiches, résumés, notes et tendances (TMDB seulement si tu ajoutes ta clé).
 - ESPN : scores, calendriers et cotes des matchs.
-- The Odds API : cotes de plusieurs bookmakers, seulement si tu ajoutes ta clé.
+- The Odds API : cotes des bookmakers français (Winamax, Betclic, Unibet, PMU, NetBet), seulement si tu ajoutes ta clé.
 - GitHub : vérification et téléchargement des mises à jour.
 Comme pour toute connexion à Internet, ces services voient l'adresse IP de ton réseau. Chacun applique sa propre politique de confidentialité.
 

@@ -269,26 +269,47 @@
         android:gravity="center_vertical"
         android:orientation="horizontal">
 
-        <HorizontalScrollView
-            android:id="@+id/chipScroll"
+        <!-- Seulement des catégories entières ; les flèches disent s'il en reste de chaque côté -->
+        <FrameLayout
             android:layout_width="0dp"
             android:layout_height="match_parent"
             android:layout_weight="1"
-            android:background="@drawable/glass_pill"
-            android:clipToPadding="false"
-            android:fadingEdgeLength="20dp"
-            android:paddingStart="3dp"
-            android:paddingEnd="3dp"
-            android:requiresFadingEdge="horizontal"
-            android:scrollbars="none">
+            android:background="@drawable/glass_pill">
 
-            <LinearLayout
-                android:id="@+id/chips"
-                android:layout_width="wrap_content"
+            <com.ilian.xtreamplayer.ChipScrollView
+                android:id="@+id/chipScroll"
+                android:layout_width="match_parent"
                 android:layout_height="match_parent"
-                android:gravity="center_vertical"
-                android:orientation="horizontal" />
-        </HorizontalScrollView>
+                android:layout_marginStart="17dp"
+                android:layout_marginEnd="17dp"
+                android:scrollbars="none">
+
+                <LinearLayout
+                    android:id="@+id/chips"
+                    android:layout_width="wrap_content"
+                    android:layout_height="match_parent"
+                    android:gravity="center_vertical"
+                    android:orientation="horizontal" />
+            </com.ilian.xtreamplayer.ChipScrollView>
+
+            <ImageView
+                android:id="@+id/chipPrev"
+                android:layout_width="12dp"
+                android:layout_height="12dp"
+                android:layout_gravity="start|center_vertical"
+                android:layout_marginStart="4dp"
+                android:alpha="0"
+                android:src="@drawable/ic_chip_prev" />
+
+            <ImageView
+                android:id="@+id/chipNext"
+                android:layout_width="12dp"
+                android:layout_height="12dp"
+                android:layout_gravity="end|center_vertical"
+                android:layout_marginEnd="4dp"
+                android:alpha="0"
+                android:src="@drawable/ic_chip_next" />
+        </FrameLayout>
 
         <TextView
             android:id="@+id/btnTonight"

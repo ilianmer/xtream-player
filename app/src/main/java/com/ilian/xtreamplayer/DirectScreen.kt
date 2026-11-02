@@ -9,7 +9,6 @@ import android.view.LayoutInflater
 import android.view.View
 import android.view.ViewGroup
 import android.widget.Button
-import android.widget.HorizontalScrollView
 import android.widget.ImageView
 import android.widget.LinearLayout
 import android.widget.ProgressBar
@@ -61,7 +60,9 @@ class DirectScreen(
     private val btnChanFav: Button = root.findViewById(R.id.btnChanFav)
     private val clock: TextView = root.findViewById(R.id.clock)
     private val clockDate: TextView = root.findViewById(R.id.clockDate)
-    private val chipScroll: HorizontalScrollView = root.findViewById(R.id.chipScroll)
+    private val chipScroll: ChipScrollView = root.findViewById(R.id.chipScroll)
+    private val chipPrev: View = root.findViewById(R.id.chipPrev)
+    private val chipNext: View = root.findViewById(R.id.chipNext)
     private val chips: LinearLayout = root.findViewById(R.id.chips)
     private val btnTonight: TextView = root.findViewById(R.id.btnTonight)
     private val modeBar: LinearLayout = root.findViewById(R.id.modeBar)
@@ -117,6 +118,17 @@ class DirectScreen(
     }
 
     init {
+        // Petites flèches de la barre des catégories : seulement s'il en reste de ce côté
+        chipScroll.onEdges = { more, after ->
+            chipPrev.animate().alpha(if (more) 1f else 0f).setDuration(200).start()
+            chipNext.animate().alpha(if (after) 1f else 0f).setDuration(200).start()
+        }
+        // En arrivant sur la barre depuis ailleurs, on se pose sur la catégorie affichée
+        root.viewTreeObserver.addOnGlobalFocusChangeListener { old, new ->
+            if (new != null && new.parent === chips && (old == null || old.parent !== chips) && chips.indexOfChild(new) != groupIndex) {
+                chips.getChildAt(groupIndex)?.requestFocus()
+            }
+        }
         previewVideo.useController = false
         previewVideo.setShowBuffering(PlayerView.SHOW_BUFFERING_WHEN_PLAYING)
         root.findViewById<View>(R.id.preview).clipToOutline = true
@@ -256,10 +268,11 @@ class DirectScreen(
             }
             chips.addView(chip)
         }
+        // Seulement des catégories entières : la barre repart du début et montre celle qui est choisie
+        chipScroll.reset(groupIndex)
         chips.post {
             val sel = chips.getChildAt(groupIndex) ?: return@post
             chipPill.select(sel)
-            chipScroll.smoothScrollTo((sel.left - chipScroll.width / 3).coerceAtLeast(0), 0)
         }
     }
 
@@ -267,6 +280,7 @@ class DirectScreen(
         groupIndex = i
         for (k in 0 until chips.childCount) chips.getChildAt(k).isSelected = k == i
         chips.getChildAt(i)?.let { chipPill.select(it) }
+        chipScroll.show(i, true)
         reload()
         if (focusList) focusDefault()
     }

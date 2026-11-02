@@ -12,14 +12,19 @@
     android:paddingStart="6dp"
     android:paddingEnd="14dp">
 
+    <!-- Numéro : jusqu'à 5 chiffres en entier (au-delà, le texte rapetisse au lieu d'être coupé) -->
     <TextView
         android:id="@+id/num"
         style="@style/Medium"
-        android:layout_width="30dp"
-        android:layout_height="wrap_content"
+        android:layout_width="40dp"
+        android:layout_height="18dp"
+        android:autoSizeMaxTextSize="12sp"
+        android:autoSizeMinTextSize="8sp"
+        android:autoSizeStepGranularity="0.5sp"
+        android:autoSizeTextType="uniform"
         android:duplicateParentState="true"
         android:fontFeatureSettings="tnum"
-        android:gravity="end"
+        android:gravity="end|center_vertical"
         android:maxLines="1"
         android:textColor="@color/row_desc_text"
         android:textSize="12sp" />
@@ -28,7 +33,7 @@
         android:id="@+id/img"
         android:layout_width="54dp"
         android:layout_height="36dp"
-        android:layout_marginStart="10dp"
+        android:layout_marginStart="9dp"
         android:background="@drawable/logo_tile"
         android:padding="4dp"
         android:scaleType="fitCenter" />

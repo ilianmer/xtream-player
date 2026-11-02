@@ -916,6 +916,36 @@ object Db {
             if (n > 400) db.delete("kv", "key LIKE 'sport:m:%'", null)
         } catch (_: Exception) {
         }
+        // Fausses chaînes de séparation déjà enregistrées (les nouvelles listes ne les gardent plus)
+        try {
+            val sep = ArrayList<Array<String>>()
+            db.rawQuery("SELECT source_id, id, name FROM items WHERE kind=?", arrayOf(Kind.LIVE.name)).use { c ->
+                while (c.moveToNext()) if (Separators.isSeparator(c.getString(2))) sep.add(arrayOf(c.getLong(0).toString(), c.getString(1)))
+            }
+            if (sep.isNotEmpty()) {
+                db.beginTransaction()
+                try {
+                    for (a in sep) db.delete("items", "source_id=? AND kind=? AND id=?", arrayOf(a[0], Kind.LIVE.name, a[1]))
+                    db.setTransactionSuccessful()
+                } finally {
+                    db.endTransaction()
+                }
+            }
+        } catch (_: Exception) {
+        }
+        // Cotes : instantanés des matchs de plus de 10 jours
+        try {
+            val old = System.currentTimeMillis() - 10L * 86_400_000L
+            val drop = ArrayList<String>()
+            db.rawQuery("SELECT key, value FROM kv WHERE key LIKE 'odds:m:%'", null).use { c ->
+                while (c.moveToNext()) {
+                    val at = c.getString(1)?.substringBefore('|')?.toLongOrNull() ?: 0L
+                    if (at < old) drop.add(c.getString(0))
+                }
+            }
+            for (k in drop) db.delete("kv", "key=?", arrayOf(k))
+        } catch (_: Exception) {
+        }
     }
 
     fun tmdbPut(key: String, json: String) {

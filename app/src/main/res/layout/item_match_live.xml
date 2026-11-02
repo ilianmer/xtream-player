@@ -26,6 +26,23 @@
             android:textColor="#B4B9C3"
             android:textSize="10sp" />
 
+        <!-- « Exploit en cours » quand l'outsider mène -->
+        <TextView
+            android:id="@+id/tag"
+            style="@style/Semi"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginStart="6dp"
+            android:background="@drawable/tag_pill_bg"
+            android:paddingStart="6dp"
+            android:paddingTop="1dp"
+            android:paddingEnd="6dp"
+            android:paddingBottom="1dp"
+            android:singleLine="true"
+            android:textColor="@color/accent"
+            android:textSize="9sp"
+            android:visibility="gone" />
+
         <TextView
             android:id="@+id/status"
             style="@style/Semi"
@@ -114,17 +131,12 @@
         android:textColor="@color/text_faint"
         android:textSize="10sp" />
 
-    <TextView
-        android:id="@+id/odds"
-        style="@style/Medium"
+    <!-- Pronostic tiré des cotes : chances de chaque équipe et du nul -->
+    <com.ilian.xtreamplayer.OddsBarView
+        android:id="@+id/oddsBar"
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
-        android:layout_marginTop="1dp"
-        android:ellipsize="end"
-        android:fontFeatureSettings="tnum"
-        android:singleLine="true"
-        android:textColor="@color/accent"
-        android:textSize="10sp"
+        android:layout_marginTop="5dp"
         android:visibility="gone" />
 
     <View

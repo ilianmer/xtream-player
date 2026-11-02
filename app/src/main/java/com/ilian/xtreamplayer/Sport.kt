@@ -53,13 +53,14 @@ object Sport {
         val title: String get() = "${home.short} – ${away.short}"
     }
 
-    /** Cotes 1 / N / 2 en décimal. [books] : détail par bookmaker quand on en a plusieurs. */
+    /** Cotes 1 / N / 2 en décimal. [books] : détail par bookmaker quand on en a plusieurs. [at] : heure des cotes. */
     data class Odds(
         val home: Double?,
         val draw: Double?,
         val away: Double?,
         val source: String,
-        val books: List<Book> = emptyList()
+        val books: List<Book> = emptyList(),
+        val at: Long = 0L
     )
 
     data class Book(val name: String, val home: Double?, val draw: Double?, val away: Double?)
@@ -140,6 +141,13 @@ object Sport {
 
     fun cachedAge(): Long = if (cachedAt == 0L) Long.MAX_VALUE else System.currentTimeMillis() - cachedAt
 
+    /** De nouvelles cotes sont arrivées : elles sont posées sur les matchs en mémoire. */
+    @Synchronized
+    fun reattachOdds(): List<Match> {
+        cache = OddsApi.attachCached(cache)
+        return cached()
+    }
+
     @Volatile
     private var fullAt = 0L
 
@@ -166,7 +174,8 @@ object Sport {
                     updated.filter { u -> cache.none { it.key == u.key } }).sortedBy { it.start }
             }
         }
-        val withOdds = if (Prefs.oddsEnabled) OddsApi.attach(fresh) else fresh
+        // Cotes déjà connues seulement : le réseau des cotes est géré à part (budget du mois)
+        val withOdds = if (Prefs.oddsEnabled) OddsApi.attachCached(fresh) else fresh
         cache = withOdds
         cachedAt = System.currentTimeMillis()
         return withOdds
@@ -382,7 +391,7 @@ object Sport {
         val a = ml("awayTeamOdds")
         val d = ml("drawOdds")
         if (h == null && a == null) return null
-        return Odds(h, d, a, o.optJSONObject("provider")?.str("name") ?: "ESPN")
+        return Odds(h, d, a, o.optJSONObject("provider")?.str("name") ?: "ESPN", at = System.currentTimeMillis())
     }
 
     /** Équipes d'une compétition (pour la liste « Mes équipes »). Bloquant. */
@@ -697,95 +706,5 @@ object SportChannels {
 
     fun remember(m: Sport.Match, ch: Item) {
         Db.kvPut("sport:m:${m.key}", ch.id)
-    }
-}
-
-/** Cotes de plusieurs bookmakers via The Odds API (clé gratuite facultative), mises en cache 5 minutes. */
-object OddsApi {
-    private val KEYS = mapOf(
-        "fra.1" to "soccer_france_ligue_one", "fra.2" to "soccer_france_ligue_two",
-        "uefa.champions" to "soccer_uefa_champs_league", "uefa.europa" to "soccer_uefa_europa_league",
-        "uefa.europa.conf" to "soccer_uefa_europa_conference_league", "eng.1" to "soccer_epl",
-        "esp.1" to "soccer_spain_la_liga", "ita.1" to "soccer_italy_serie_a", "ger.1" to "soccer_germany_bundesliga",
-        "nba" to "basketball_nba", "ufc" to "mma_mixed_martial_arts"
-    )
-    private class Ev(val home: String, val away: String, val books: List<Sport.Book>)
-    private val cache = java.util.concurrent.ConcurrentHashMap<String, Pair<Long, List<Ev>>>()
-
-    private fun key(n: String) = normalize(n).replace(Rx.NON_ALNUM, "")
-
-    private fun same(a: String, b: String): Boolean {
-        val x = key(a)
-        val y = key(b)
-        if (x.isEmpty() || y.isEmpty()) return false
-        if (x == y || x.contains(y) || y.contains(x)) return true
-        val ta = normalize(a).split(' ').filter { it.length >= 5 }.toSet()
-        val tb = normalize(b).split(' ').filter { it.length >= 5 }.toSet()
-        return ta.intersect(tb).isNotEmpty()
-    }
-
-    private fun events(sportKey: String): List<Ev> {
-        cache[sportKey]?.let { (at, l) -> if (System.currentTimeMillis() - at < 5 * 60_000L) return l }
-        val k = Prefs.oddsKey.trim()
-        val url = "https://api.the-odds-api.com/v4/sports/$sportKey/odds?apiKey=${java.net.URLEncoder.encode(k, "UTF-8")}" +
-            "&regions=eu&markets=h2h&oddsFormat=decimal"
-        val arr = JSONArray(Http.getText(url))
-        val out = ArrayList<Ev>()
-        for (i in 0 until arr.length()) {
-            val e = arr.optJSONObject(i) ?: continue
-            val home = e.str("home_team") ?: continue
-            val away = e.str("away_team") ?: continue
-            val books = ArrayList<Sport.Book>()
-            val bs = e.optJSONArray("bookmakers") ?: JSONArray()
-            for (j in 0 until bs.length()) {
-                val b = bs.optJSONObject(j) ?: continue
-                val outcomes = b.optJSONArray("markets")?.optJSONObject(0)?.optJSONArray("outcomes") ?: continue
-                var h: Double? = null
-                var a: Double? = null
-                var d: Double? = null
-                for (o in 0 until outcomes.length()) {
-                    val x = outcomes.optJSONObject(o) ?: continue
-                    val price = x.optDouble("price", Double.NaN).takeIf { !it.isNaN() }
-                    when (x.str("name")) {
-                        home -> h = price
-                        away -> a = price
-                        else -> d = price
-                    }
-                }
-                books.add(Sport.Book(b.str("title") ?: "?", h, d, a))
-            }
-            out.add(Ev(home, away, books))
-        }
-        cache[sportKey] = System.currentTimeMillis() to out
-        return out
-    }
-
-    /** Ajoute les cotes aux matchs en cours ou du jour (clé The Odds API si renseignée, sinon cotes ESPN). */
-    fun attach(matches: List<Sport.Match>): List<Sport.Match> {
-        if (Prefs.oddsKey.isBlank()) return matches
-        val soon = System.currentTimeMillis() + 18 * 3_600_000L
-        val needed = matches.filter { !it.finished && it.start < soon }.mapNotNull { KEYS[it.league.path] }.toSet()
-        val byKey = HashMap<String, List<Ev>>()
-        for (k in needed) {
-            try {
-                byKey[k] = events(k)
-            } catch (_: Exception) {
-            }
-        }
-        return matches.map { m ->
-            val evs = byKey[KEYS[m.league.path] ?: ""] ?: return@map m
-            val ev = evs.firstOrNull { same(it.home, m.home.name) && same(it.away, m.away.name) }
-                ?: evs.firstOrNull { same(it.home, m.away.name) && same(it.away, m.home.name) }
-                ?: return@map m
-            val swapped = !same(ev.home, m.home.name)
-            val books = ev.books.map { b -> if (swapped) b.copy(home = b.away, away = b.home) else b }
-            if (books.isEmpty()) return@map m
-            m.copy(
-                odds = Sport.Odds(
-                    books.mapNotNull { it.home }.maxOrNull(), books.mapNotNull { it.draw }.maxOrNull(),
-                    books.mapNotNull { it.away }.maxOrNull(), "${books.size} bookmakers", books.sortedBy { it.name }
-                )
-            )
-        }
     }
 }

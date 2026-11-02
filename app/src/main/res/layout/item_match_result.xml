@@ -28,6 +28,21 @@
             android:textColor="@color/text_faint"
             android:textSize="9sp" />
 
+        <!-- « Surprise » quand l'outsider a gagné -->
+        <TextView
+            android:id="@+id/tag"
+            style="@style/Semi"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginStart="6dp"
+            android:background="@drawable/tag_pill_bg"
+            android:paddingStart="5dp"
+            android:paddingEnd="5dp"
+            android:singleLine="true"
+            android:textColor="@color/accent"
+            android:textSize="8sp"
+            android:visibility="gone" />
+
         <TextView
             android:id="@+id/status"
             style="@style/Txt"

@@ -3,6 +3,7 @@ package com.ilian.xtreamplayer
 import android.app.Activity
 import android.content.Intent
 import android.graphics.drawable.GradientDrawable
+import android.view.KeyEvent
 import android.view.LayoutInflater
 import android.view.View
 import android.view.ViewGroup
@@ -78,7 +79,6 @@ class SportScreen(
         rvResults.adapter = resultAdapter
         rvResults.itemAnimator = null
         Fx.lockColumn(rvResults)
-        Fx.lockColumn(rvUpcoming)
         resultsEmpty.text = "Aucun résultat pour l'instant."
         // Seulement les sports choisis (Réglages > Sport)
         if (filter !in SportPrefs.tabs()) filter = SportPrefs.tabs().first()
@@ -166,7 +166,9 @@ class SportScreen(
             liveEmpty.text = "Chargement des scores…"
         }
         Bg.task(act, {
-            val matches = Sport.get(30_000L)
+            var matches = Sport.get(30_000L)
+            // Cotes : seulement ce qui en a besoin, dans la limite du budget du jour
+            if (OddsApi.refresh(matches)) matches = Sport.reattachOdds()
             val c = SportChannels.candidates(src.id)
             // Recherche automatique de la chaîne de chaque match en cours ou imminent
             MatchFinder.prepare(act, src.id, matches, c)
@@ -268,9 +270,8 @@ class SportScreen(
             labels.add("Choisir la chaîne")
             acts.add { chooseChannel(m) }
         }
-        val books = m.odds?.books.orEmpty()
-        if (books.isNotEmpty()) {
-            labels.add("Voir les cotes des bookmakers")
+        if (Prefs.oddsEnabled && OddsMath.probs(m.odds) != null) {
+            labels.add("Comparer les cotes")
             acts.add { showOdds(m) }
         }
         for (s in listOf(m.home, m.away)) {
@@ -284,10 +285,9 @@ class SportScreen(
         Ui.choose(act, m.title, labels) { w -> acts[w]() }
     }
 
+    /** Fiche des cotes : pronostic, tableau des bookmakers, et « Regarder » pour aller au match. */
     private fun showOdds(m: Sport.Match) {
-        val books = m.odds?.books.orEmpty()
-        val lines = books.map { b -> "${b.name}   1 ${Odds.fmt(b.home)} · N ${Odds.fmt(b.draw)} · 2 ${Odds.fmt(b.away)}" }
-        Ui.choose(act, "Cotes · ${m.title}", lines) { }
+        OddsSheet.show(act, m, if (m.finished) null else ({ watch(m) }))
     }
 
     /** Liste des chaînes : celles du diffuseur officiel et celles qui annoncent le match d'abord. */
@@ -371,7 +371,24 @@ class SportScreen(
         override fun onCreateViewHolder(parent: ViewGroup, viewType: Int): VH {
             val v = LayoutInflater.from(parent.context).inflate(layout, parent, false)
             if (layout == R.layout.item_match_live) v.setOnFocusChangeListener { view, has -> Fx.focus(view, has, 1.03f) }
-            return VH(v)
+            val h = VH(v)
+            if (layout == R.layout.item_match_row) {
+                // Bas sur la dernière ligne : on reste dans la liste, avec un petit rebond
+                val stay = View.OnKeyListener { view, code, e ->
+                    if (e.action != KeyEvent.ACTION_DOWN || code != KeyEvent.KEYCODE_DPAD_DOWN) return@OnKeyListener false
+                    val pos = h.bindingAdapterPosition
+                    if (pos != RecyclerView.NO_POSITION && pos >= itemCount - 1) {
+                        if (e.repeatCount % 3 == 0) Fx.bump(view, 0, 1)
+                        true
+                    } else false
+                }
+                v.findViewById<View>(R.id.main).setOnKeyListener(stay)
+                v.findViewById<View>(R.id.oddsBox).apply {
+                    setOnKeyListener(stay)
+                    setOnFocusChangeListener { view, has -> Fx.focus(view, has, 1.04f) }
+                }
+            }
+            return h
         }
 
         override fun onBindViewHolder(h: VH, position: Int) {
@@ -383,11 +400,13 @@ class SportScreen(
                 else -> bindResult(v, m)
             }
             if (layout != R.layout.item_match_result) {
-                v.setOnClickListener { watch(m) }
-                v.setOnLongClickListener {
+                val target: View = if (layout == R.layout.item_match_row) v.findViewById<View>(R.id.main) else v
+                target.setOnClickListener { watch(m) }
+                target.setOnLongClickListener {
                     options(m)
                     true
                 }
+                if (layout == R.layout.item_match_row) v.findViewById<View>(R.id.oddsBox).setOnClickListener { showOdds(m) }
             } else {
                 // Résultats : on peut s'y déplacer ; la carte sélectionnée se déroule, OK ouvre le détail
                 val more = v.findViewById<TextView>(R.id.more)
@@ -454,14 +473,8 @@ class SportScreen(
         a.setTextColor(if (sa != null && sb != null && sa < sb) dim else bright)
         b.setTextColor(if (sa != null && sb != null && sb < sa) dim else bright)
         v.findViewById<TextView>(R.id.detail).text = m.detail ?: ""
-        val odds = v.findViewById<TextView>(R.id.odds)
-        val o = m.odds
-        if (Prefs.oddsEnabled && o != null) {
-            odds.visibility = View.VISIBLE
-            odds.text = Odds.line(o)
-        } else {
-            odds.visibility = View.GONE
-        }
+        bindOdds(v, m, names = true)
+        OddsTag.bind(v.findViewById(R.id.tag), OddsMath.tag(m), short = false)
         crest(v.findViewById(R.id.crestA), m.home)
         crest(v.findViewById(R.id.crestB), m.away)
         bindWatch(v, m, short = false)
@@ -476,6 +489,26 @@ class SportScreen(
         crest(v.findViewById(R.id.crestA), m.home)
         crest(v.findViewById(R.id.crestB), m.away)
         bindWatch(v, m, short = true)
+        val box = v.findViewById<View>(R.id.oddsBox)
+        val shown = bindOdds(v, m, names = false)
+        // La pastille disparaît : le focus revient sur la ligne
+        if (!shown && box.hasFocus()) v.findViewById<View>(R.id.main).requestFocus()
+        box.visibility = if (shown) View.VISIBLE else View.GONE
+        OddsTag.bind(v.findViewById(R.id.tag), OddsMath.tag(m), short = true)
+    }
+
+    /** Barre de pronostic d'un match (cachée sans cotes). Renvoie true si elle est affichée. */
+    private fun bindOdds(v: View, m: Sport.Match, names: Boolean): Boolean {
+        val bar = v.findViewById<OddsBarView>(R.id.oddsBar)
+        val p = if (Prefs.oddsEnabled) OddsMath.probs(m.odds) else null
+        if (p == null) {
+            bar.visibility = View.GONE
+            return false
+        }
+        bar.visibility = View.VISIBLE
+        val (ch, ca) = OddsMath.colors(m)
+        if (names) bar.set(p, ch, ca, m.home.abbr, m.away.abbr) else bar.set(p, ch, ca)
+        return true
     }
 
     private fun resultDetails(m: Sport.Match): String {
@@ -519,18 +552,6 @@ class SportScreen(
         sa.setTextColor(if (aWins) win else lose)
         tb.setTextColor(if (bWins) win else lose)
         sb.setTextColor(if (bWins) win else lose)
-    }
-}
-
-/** Mise en forme des cotes : « 1 2,10 · N 3,40 · 2 3,25 · Unibet ». */
-object Odds {
-    fun fmt(d: Double?): String = if (d == null) "–" else String.format(Locale.FRANCE, "%.2f", d)
-
-    fun line(o: Sport.Odds): String {
-        val parts = ArrayList<String>()
-        parts.add("1 ${fmt(o.home)}")
-        if (o.draw != null) parts.add("N ${fmt(o.draw)}")
-        parts.add("2 ${fmt(o.away)}")
-        return parts.joinToString("  ·  ") + "   " + (if (o.books.size > 1) "meilleures cotes, ${o.source}" else o.source)
+        OddsTag.bind(v.findViewById(R.id.tag), OddsMath.tag(m), short = true)
     }
 }

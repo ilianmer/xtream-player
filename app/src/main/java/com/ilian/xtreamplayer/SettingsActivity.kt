@@ -493,17 +493,37 @@ class SettingsActivity : BaseActivity() {
         rows.header("Cotes en direct")
         rows.toggle(
             "Afficher les cotes",
-            { if (it) "Cotes 1 / N / 2 sur les matchs (source ESPN, ou plusieurs bookmakers avec une clé The Odds API)." else "Les cotes sont masquées." },
+            { if (it) "Pronostic de chaque match, matchs serrés, exploits en cours et comparateur des bookmakers français." else "Les cotes sont masquées." },
             { Prefs.oddsEnabled }, { Prefs.oddsEnabled = it }
         )
         rows.action(
             "Clé The Odds API",
-            "Facultative et gratuite (500 requêtes par mois) sur the-odds-api.com : compare les cotes de plusieurs bookmakers.",
-            value = if (Prefs.oddsKey.isBlank()) "Aucune" else "Enregistrée"
+            "Gratuite sur the-odds-api.com (500 requêtes par mois) : cotes de Winamax, Betclic, Unibet, PMU et NetBet. Sans clé, les cotes d'ESPN s'affichent quand il y en a.",
+            value = when {
+                Prefs.oddsKey.isBlank() -> "Aucune"
+                OddsApi.problem == "key" -> "Refusée"
+                else -> "Enregistrée"
+            }
         ) {
             Ui.textInput(this, "Clé The Odds API", Prefs.oddsKey, "Colle ta clé ici") { key ->
                 Prefs.oddsKey = key.trim()
+                // Une clé enregistrée : les cotes s'affichent
+                if (key.isNotBlank()) Prefs.oddsEnabled = true
+                OddsApi.keyChanged()
                 reshow()
+            }
+        }
+        if (Prefs.oddsKey.isNotBlank()) {
+            rows.action("Requêtes du mois", OddsBudget.label(), value = if (OddsBudget.known()) "${OddsBudget.remaining()}" else "500") {
+                Sheet.message(
+                    this, "Requêtes du mois",
+                    "Ta clé gratuite donne ${OddsBudget.total()} requêtes par mois, remises à zéro le 1er. Une requête rapporte les cotes de tous les matchs d'un championnat.\n\n" +
+                        "Pour qu'elles tiennent tout le mois, l'appli se fixe une part par jour (ce qui reste, divisé par les jours restants) et reporte ce qu'elle n'a pas dépensé. " +
+                        "Avant le jour du match, les cotes sont mises à jour toutes les 6 heures ; dans les 2 heures avant le coup d'envoi, toutes les heures ; pendant le match, toutes les 15 à 30 minutes selon ce qui reste. " +
+                        "Rien n'est demandé quand l'onglet Sport ou le widget « Cotes en direct » n'est pas à l'écran, et tes équipes passent en premier.\n\n" +
+                        "Aujourd'hui : ${OddsBudget.spentToday()} utilisée(s) sur ${OddsBudget.allowance()} prévue(s).",
+                    primary = "OK", onPrimary = {}, secondary = null
+                )
             }
         }
         rows.note("Les scores viennent du site ESPN, sans compte. La chaîne de chaque match est trouvée dans le guide TV de ton fournisseur ; sinon l'appli affiche le diffuseur officiel et tu choisis la chaîne une fois.")

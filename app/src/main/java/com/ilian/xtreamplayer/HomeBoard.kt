@@ -181,6 +181,7 @@ class HomeBoard(
         Type("channels", "Chaînes favorites", listOf(1, 2, 3), 2),
         Type("tonight", "Ce soir à la TV", listOf(1, 2, 3), 2),
         Type("sportday", "Matchs du jour", listOf(1, 2, 3), 1),
+        Type("odds", "Cotes en direct", listOf(1, 2, 3), 2),
         Type("latest", "Nouveautés", listOf(2, 3), 3),
         Type("mylist", "Ma liste", listOf(2, 3), 3),
         Type("clock", "Horloge", listOf(1, 2), 1),
@@ -758,6 +759,7 @@ class HomeBoard(
         spec.type == "channels" -> Channels(spec)
         spec.type == "tonight" -> Tonight(spec)
         spec.type == "sportday" -> SportDay(spec)
+        spec.type == "odds" -> OddsWidget(spec)
         spec.type == "clock" -> Clock(spec)
         else -> null
     }
@@ -1417,6 +1419,241 @@ class HomeBoard(
                     if (m.finished) openSport() else MatchFinder.watch(act, src.id, m, chans) { openSport() }
                 }
             }
+        }
+    }
+
+    /**
+     * Cotes en direct : les matchs du moment qui valent le coup (exploits en cours, matchs serrés, tes équipes)
+     * avec leur barre de pronostic. OK ouvre la fiche des cotes, d'où l'on lance le match.
+     * Les cotes ne sont redemandées que si le widget est sur la page affichée (budget du mois).
+     */
+    private inner class OddsWidget(spec: Spec) : Panel(spec, "Cotes en direct") {
+        val box = LinearLayout(act).apply { orientation = LinearLayout.VERTICAL }
+        var maxRows = 3
+        var wide = false
+        var big = false
+        var chans: List<Item> = emptyList()
+        var shown: List<Sport.Match> = emptyList()
+        private val rows = ArrayList<OddsRow>()
+        val tick = object : Runnable {
+            override fun run() {
+                if (!running) return
+                load()
+                Bg.main.postDelayed(this, 60_000)
+            }
+        }
+
+        init {
+            body.addView(box, FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT))
+        }
+
+        override fun design(size: Int) = 226
+
+        override fun sized(size: Int, contentH: Int) {
+            val w = size >= 2
+            val n = ((contentH - 41) / (if (w) 50 else 58)).coerceIn(1, 6)
+            if (n != maxRows || w != wide || (size == 3) != big) {
+                maxRows = n
+                wide = w
+                big = size == 3
+                rows.clear()
+                box.removeAllViews()
+                paint(Sport.cached())
+            }
+        }
+
+        override fun start() = paint(Sport.cached())
+        override fun refresh() = load()
+        override fun resume() {
+            Bg.main.removeCallbacks(tick)
+            Bg.main.post(tick)
+        }
+
+        override fun pause() {
+            Bg.main.removeCallbacks(tick)
+        }
+
+        fun load() {
+            val onScreen = !editing && pageOfWidget(this) == page
+            Bg.task(act, {
+                if (chans.isEmpty()) chans = SportChannels.candidates(src.id)
+                val all = Sport.get(60_000L)
+                if (onScreen && OddsApi.refresh(all)) Sport.reattachOdds() else all
+            }) { r -> r.getOrNull()?.let { paint(it) } }
+        }
+
+        fun pick(all: List<Sport.Match>): List<Sport.Match> {
+            val now = System.currentTimeMillis()
+            val withOdds = all.filter { !it.finished && OddsMath.probs(it.odds) != null && (it.live || it.start - now < 24 * 3_600_000L) }
+            val live = withOdds.filter { it.live }
+                .sortedWith(compareByDescending<Sport.Match> { OddsMath.tag(it) == OddsMath.Tag.UPSET }.thenByDescending { Sport.trend(it) })
+            val soon = withOdds.filter { !it.live }
+                .sortedWith(compareByDescending<Sport.Match> { Sport.involvesFollowed(it) }.thenBy { it.start })
+            return (live + soon).take(maxRows)
+        }
+
+        fun emptyMsg(all: List<Sport.Match>): String = when {
+            all.isEmpty() -> "Chargement des matchs…"
+            Prefs.oddsKey.isBlank() -> "Pas de cotes pour l'instant. Ajoute ta clé The Odds API (Réglages, Sport) pour avoir celles de Winamax, Betclic, Unibet, PMU et NetBet."
+            OddsApi.problem == "key" -> "Clé The Odds API refusée : vérifie-la dans Réglages, Sport."
+            OddsBudget.exhaustedNow() -> "Quota de cotes du mois atteint : elles reviennent le 1er ${OddsBudget.nextMonthName()}."
+            else -> "Pas de match avec des cotes d'ici demain."
+        }
+
+        fun paint(all: List<Sport.Match>) {
+            if (!Prefs.oddsEnabled) {
+                for (r in rows) r.view.visibility = View.GONE
+                dot.visibility = View.GONE
+                hint.text = ""
+                showEmpty("Active les cotes dans Réglages, rubrique Sport.")
+                return
+            }
+            val list = pick(all)
+            shown = list
+            dot.visibility = if (list.any { it.live }) View.VISIBLE else View.GONE
+            val at = list.mapNotNull { it.odds?.at?.takeIf { t -> t > 0L } }.maxOrNull()
+            hint.text = at?.let { OddsMath.age(it) } ?: ""
+            showEmpty(if (list.isEmpty()) emptyMsg(all) else null)
+            // Les lignes sont réutilisées : celle qui a le focus le garde pendant les mises à jour
+            while (rows.size < list.size) rows.add(OddsRow().also { box.addView(it.view) })
+            for ((i, r) in rows.withIndex()) {
+                val m = list.getOrNull(i)
+                if (m == null) {
+                    if (r.view.hasFocus()) rows.firstOrNull()?.view?.takeIf { it !== r.view && it.visibility == View.VISIBLE }?.requestFocus()
+                    r.view.visibility = View.GONE
+                } else {
+                    r.view.visibility = View.VISIBLE
+                    r.bind(m)
+                }
+            }
+        }
+
+        /** Une ligne : équipes, score ou heure, étiquette, barre de pronostic (et meilleures cotes en grand). */
+        inner class OddsRow {
+            val view: LinearLayout
+            val teams: TextView
+            val time: TextView
+            val sub: TextView?
+            val tag: TextView
+            val bar: OddsBarView
+            val cells: List<TextView>
+            var match: Sport.Match? = null
+
+            init {
+                val wideRow = wide
+                view = LinearLayout(act).apply {
+                    orientation = if (wideRow) LinearLayout.HORIZONTAL else LinearLayout.VERTICAL
+                    gravity = Gravity.CENTER_VERTICAL
+                    setBackgroundResource(R.drawable.list_row_bg)
+                    isFocusable = true
+                    isClickable = true
+                    setPadding(px(10), px(5), px(10), px(5))
+                    layoutParams = LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, px(if (wideRow) 44 else 52)).apply { topMargin = px(6) }
+                    setOnFocusChangeListener { v, has -> Fx.focus(v, has, 1.03f) }
+                    setOnClickListener { match?.let { m -> openOdds(m) } }
+                }
+                teams = TextView(act, null, 0, R.style.Medium).apply {
+                    textSize = 12f
+                    setSingleLine()
+                    ellipsize = android.text.TextUtils.TruncateAt.END
+                }
+                time = TextView(act, null, 0, R.style.Txt).apply {
+                    textSize = 11f
+                    fontFeatureSettings = "tnum"
+                    setSingleLine()
+                    setTextColor(act.getColor(R.color.text_dim))
+                }
+                tag = TextView(act, null, 0, R.style.Semi).apply {
+                    textSize = 9f
+                    setTextColor(act.getColor(R.color.accent))
+                    setBackgroundResource(R.drawable.tag_pill_bg)
+                    setPadding(px(6), px(1), px(6), px(1))
+                    setSingleLine()
+                    visibility = View.GONE
+                }
+                bar = OddsBarView(act).apply { textSp = 9f }
+                if (wideRow) {
+                    view.addView(time, LinearLayout.LayoutParams(px(58), ViewGroup.LayoutParams.WRAP_CONTENT))
+                    val col = LinearLayout(act).apply { orientation = LinearLayout.VERTICAL }
+                    col.addView(teams)
+                    val league = TextView(act, null, 0, R.style.Txt).apply {
+                        textSize = 10f
+                        setSingleLine()
+                        ellipsize = android.text.TextUtils.TruncateAt.END
+                        setTextColor(act.getColor(R.color.text_faint))
+                    }
+                    col.addView(league)
+                    sub = league
+                    view.addView(col, LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f))
+                    view.addView(tag, LinearLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT).apply {
+                        marginStart = px(6)
+                        marginEnd = px(10)
+                    })
+                    view.addView(bar, LinearLayout.LayoutParams(px(if (big) 190 else 150), ViewGroup.LayoutParams.WRAP_CONTENT))
+                    val cs = ArrayList<TextView>()
+                    if (big) {
+                        for (k in 0 until 3) {
+                            val c = TextView(act, null, 0, R.style.Txt).apply {
+                                textSize = 11f
+                                gravity = Gravity.END
+                                fontFeatureSettings = "tnum"
+                                setSingleLine()
+                            }
+                            view.addView(c, LinearLayout.LayoutParams(px(44), ViewGroup.LayoutParams.WRAP_CONTENT))
+                            cs.add(c)
+                        }
+                    }
+                    cells = cs
+                } else {
+                    sub = null
+                    val top = LinearLayout(act).apply {
+                        orientation = LinearLayout.HORIZONTAL
+                        gravity = Gravity.CENTER_VERTICAL
+                    }
+                    top.addView(teams, LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f))
+                    top.addView(tag, LinearLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT).apply {
+                        marginStart = px(5)
+                    })
+                    top.addView(time, LinearLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT).apply {
+                        marginStart = px(6)
+                    })
+                    view.addView(top, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT))
+                    view.addView(bar, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT).apply {
+                        topMargin = px(4)
+                    })
+                    cells = emptyList()
+                }
+            }
+
+            fun bind(m: Sport.Match) {
+                match = m
+                val score = "${m.home.score ?: 0} – ${m.away.score ?: 0}"
+                teams.text = if (m.live) "${m.home.short} $score ${m.away.short}" else "${m.home.short} – ${m.away.short}"
+                time.text = when {
+                    m.live -> m.status
+                    else -> SimpleDateFormat("HH:mm", Locale.FRANCE).format(Date(m.start))
+                }
+                time.setTextColor(act.getColor(if (m.live) R.color.danger else R.color.text_dim))
+                sub?.text = m.league.label
+                OddsTag.bind(tag, OddsMath.tag(m), short = true)
+                val p = OddsMath.probs(m.odds)
+                val (ch, ca) = OddsMath.colors(m)
+                bar.set(p, ch, ca, m.home.abbr, m.away.abbr)
+                val o = m.odds
+                if (cells.isNotEmpty() && o != null && p != null) {
+                    val (bh, bd, ba) = OddsMath.best(o)
+                    val v = listOf(bh, bd, ba)
+                    val fav = if (p.home >= p.away) 0 else 2
+                    for ((k, c) in cells.withIndex()) {
+                        c.text = if (k == 1 && v[1] == null) "" else OddsMath.fmt(v[k])
+                        c.setTextColor(act.getColor(if (k == fav) R.color.accent else R.color.text))
+                    }
+                }
+            }
+        }
+
+        fun openOdds(m: Sport.Match) {
+            OddsSheet.show(act, m, if (m.finished) null else ({ MatchFinder.watch(act, src.id, m, chans) { openSport() } }))
         }
     }
 

@@ -498,7 +498,7 @@ object Sheet {
         return Progress(dlg, tv, bar)
     }
 
-    private fun pill(act: Activity, label: String, primary: Boolean, danger: Boolean, click: () -> Unit) = TextView(act).apply {
+    fun pill(act: Activity, label: String, primary: Boolean, danger: Boolean, click: () -> Unit) = TextView(act).apply {
         val d = act.resources.displayMetrics.density
         text = label
         isFocusable = true
