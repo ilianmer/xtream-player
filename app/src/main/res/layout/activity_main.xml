@@ -118,6 +118,17 @@
                     android:textSize="12sp" />
             </LinearLayout>
 
+            <!-- Personnaliser l'accueil (visible seulement sur l'Accueil) -->
+            <ImageView
+                android:id="@+id/btnEditHome"
+                style="@style/IconBtn"
+                android:layout_width="39dp"
+                android:layout_height="39dp"
+                android:layout_marginStart="10dp"
+                android:contentDescription="Personnaliser l'accueil"
+                android:padding="10dp"
+                android:src="@drawable/ic_widgets" />
+
             <ImageView
                 android:id="@+id/btnSettings"
                 style="@style/IconBtn"

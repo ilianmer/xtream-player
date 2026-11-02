@@ -180,7 +180,7 @@ class SettingsActivity : BaseActivity() {
         rows.action("Modifier", "Nom, serveur, identifiant, mot de passe.") { editSource(src.id) }
 
         val prof = Session.profile()
-        rows.header("Profil" + (prof?.let { " · ${it.name}" } ?: ""))
+        rows.header("Profil" + (prof?.let { " · ${it.name}" } ?: ""), prof?.let { Profiles.avatarDrawable(it) })
         if (prof != null) {
             rows.action(
                 "Langue du contenu",

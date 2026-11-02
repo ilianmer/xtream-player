@@ -1,36 +1,56 @@
 <?xml version="1.0" encoding="utf-8"?>
+<!-- Profil sur « Qui regarde ? » : avatar rond, anneau au focus, nom et langues -->
 <LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
-    android:layout_width="116dp"
+    android:layout_width="140dp"
     android:layout_height="wrap_content"
-    android:layout_marginStart="10dp"
-    android:layout_marginEnd="10dp"
+    android:layout_marginStart="12dp"
+    android:layout_marginEnd="12dp"
     android:clickable="true"
+    android:clipChildren="false"
+    android:clipToPadding="false"
     android:focusable="true"
     android:gravity="center_horizontal"
     android:orientation="vertical">
 
     <FrameLayout
-        android:id="@+id/avatar"
-        android:layout_width="100dp"
-        android:layout_height="100dp"
-        android:duplicateParentState="true"
-        android:foreground="@drawable/focus_ring_18">
+        android:id="@+id/avatarBox"
+        android:layout_width="118dp"
+        android:layout_height="118dp"
+        android:clipChildren="false">
+
+        <View
+            android:id="@+id/avatar"
+            android:layout_width="match_parent"
+            android:layout_height="match_parent"
+            android:elevation="6dp" />
 
         <TextView
             android:id="@+id/initial"
             style="@style/Title"
             android:layout_width="match_parent"
             android:layout_height="match_parent"
+            android:elevation="6dp"
             android:gravity="center"
-            android:textSize="52sp" />
+            android:textSize="54sp"
+            android:visibility="gone" />
+
+        <View
+            android:id="@+id/ring"
+            android:layout_width="match_parent"
+            android:layout_height="match_parent"
+            android:layout_margin="-6dp"
+            android:background="@drawable/profile_ring"
+            android:duplicateParentState="true"
+            android:elevation="7dp" />
 
         <ImageView
             android:id="@+id/edit"
-            android:layout_width="30dp"
-            android:layout_height="30dp"
+            android:layout_width="38dp"
+            android:layout_height="38dp"
             android:layout_gravity="center"
-            android:background="@drawable/live_pill"
-            android:padding="7dp"
+            android:background="@drawable/edit_badge"
+            android:elevation="8dp"
+            android:padding="9dp"
             android:src="@drawable/ic_edit"
             android:visibility="gone" />
     </FrameLayout>
@@ -40,19 +60,20 @@
         style="@style/Medium"
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
-        android:layout_marginTop="10dp"
+        android:layout_marginTop="14dp"
         android:duplicateParentState="true"
         android:ellipsize="end"
         android:gravity="center"
         android:singleLine="true"
         android:textColor="@color/row_title"
-        android:textSize="14sp" />
+        android:textSize="15sp" />
 
     <TextView
         android:id="@+id/langs"
         style="@style/Txt"
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
+        android:layout_marginTop="1dp"
         android:ellipsize="end"
         android:gravity="center"
         android:singleLine="true"

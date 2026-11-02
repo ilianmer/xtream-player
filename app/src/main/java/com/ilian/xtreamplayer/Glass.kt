@@ -117,7 +117,7 @@ object GlassToast {
 object Sheet {
     private const val CHECK = "✓  "
 
-    private fun base(act: Activity, title: String, message: String?): Triple<Dialog, LinearLayout, LinearLayout> {
+    private fun base(act: Activity, title: String, message: String?, icon: android.graphics.drawable.Drawable? = null): Triple<Dialog, LinearLayout, LinearLayout> {
         val d = act.resources.displayMetrics.density
         val dlg = Dialog(act, R.style.SheetDialog)
         val panel = LinearLayout(act).apply {
@@ -134,6 +134,14 @@ object Sheet {
             textSize = 19f
             letterSpacing = -0.005f
             setPadding((4 * d).toInt(), 0, (4 * d).toInt(), 0)
+            gravity = Gravity.CENTER_VERTICAL
+            // Icône du titre (avatar du profil, par exemple)
+            if (icon != null) {
+                val sz = (34 * d).toInt()
+                icon.setBounds(0, 0, sz, sz)
+                setCompoundDrawablesRelative(icon, null, null, null)
+                compoundDrawablePadding = (12 * d).toInt()
+            }
         })
         if (!message.isNullOrBlank()) {
             panel.addView(TextView(act).apply {
@@ -194,11 +202,12 @@ object Sheet {
         options: List<String>,
         onLong: ((Int) -> Unit)? = null,
         hint: String = "Retour pour annuler",
+        icon: android.graphics.drawable.Drawable? = null,
         onPick: (Int) -> Unit
     ) {
         if (act.isFinishing || act.isDestroyed) return
         val d = act.resources.displayMetrics.density
-        val (dlg, panel, list) = base(act, title, null)
+        val (dlg, panel, list) = base(act, title, null, icon)
         var focusRow: View? = null
         options.forEachIndexed { i, raw ->
             val checked = raw.startsWith(CHECK)

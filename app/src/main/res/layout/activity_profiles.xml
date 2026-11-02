@@ -2,17 +2,28 @@
 <FrameLayout xmlns:android="http://schemas.android.com/apk/res/android"
     android:layout_width="match_parent"
     android:layout_height="match_parent"
-    android:background="@drawable/bg_home">
+    android:background="@drawable/bg_home"
+    android:clipChildren="false">
 
     <View
         android:layout_width="match_parent"
         android:layout_height="match_parent"
         android:background="@drawable/scrim_home" />
 
+    <!-- Halo de couleur qui suit l'avatar choisi -->
+    <View
+        android:id="@+id/glow"
+        android:layout_width="460dp"
+        android:layout_height="460dp"
+        android:layout_gravity="center"
+        android:alpha="0" />
+
     <LinearLayout
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
         android:layout_gravity="center"
+        android:clipChildren="false"
+        android:clipToPadding="false"
         android:gravity="center_horizontal"
         android:orientation="vertical">
 
@@ -22,7 +33,7 @@
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
             android:text="Qui regarde ?"
-            android:textSize="30sp" />
+            android:textSize="32sp" />
 
         <TextView
             android:id="@+id/tvHint"
@@ -37,10 +48,12 @@
             android:id="@+id/row"
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
-            android:layout_marginTop="30dp"
+            android:layout_marginTop="34dp"
             android:clipChildren="false"
             android:clipToPadding="false"
-            android:orientation="horizontal" />
+            android:orientation="horizontal"
+            android:paddingTop="10dp"
+            android:paddingBottom="6dp" />
 
         <Button
             android:id="@+id/btnManage"

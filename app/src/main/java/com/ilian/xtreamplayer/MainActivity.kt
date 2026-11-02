@@ -149,6 +149,11 @@ class MainActivity : BaseActivity() {
             startActivity(Intent(this, SearchActivity::class.java))
         }
         findViewById<View>(R.id.sourceChip).setOnClickListener { profileMenu() }
+        // Personnaliser l'accueil (icône de la barre du haut, seulement sur l'Accueil)
+        findViewById<View>(R.id.btnEditHome).setOnClickListener {
+            if (tab != Tab.HOME) showTab(Tab.HOME)
+            board.enterEdit()
+        }
 
         rvCategories.layoutManager = LinearLayoutManager(this)
         rvCategories.adapter = catAdapter
@@ -286,6 +291,7 @@ class MainActivity : BaseActivity() {
         gridMode = false
         tabViews.forEach { (k, v) -> v.isSelected = k == t }
         tabPill.select(tabViews[t])
+        findViewById<View>(R.id.btnEditHome).visibility = if (t == Tab.HOME) View.VISIBLE else View.GONE
         when (t) {
             Tab.HOME -> {
                 showOnly(homeView)
@@ -410,15 +416,15 @@ class MainActivity : BaseActivity() {
             av.visibility = View.GONE
             return
         }
-        av.background = Profiles.avatar(p, 8f, resources.displayMetrics.density)
-        av.text = Profiles.initial(p)
+        av.background = Profiles.avatarDrawable(p)
+        av.text = ""
         tv.text = if (Db.sources().size > 1) "${p.name} · ${src.name}" else p.name
     }
 
     private fun profileMenu() {
         val many = Db.profiles(src.id).size > 1
         val opts = arrayListOf(if (many) "Changer de profil" else "Ajouter un profil", "Gérer les profils", "Changer de source")
-        Ui.choose(this, Session.profile()?.name ?: src.name, opts) { w ->
+        Sheet.choose(this, Session.profile()?.name ?: src.name, opts, icon = Session.profile()?.let { Profiles.avatarDrawable(it) }) { w ->
             when (w) {
                 0 -> startActivity(Intent(this, ProfilesActivity::class.java))
                 1 -> startActivity(Intent(this, ProfilesActivity::class.java).putExtra(ProfilesActivity.EXTRA_MANAGE, true))

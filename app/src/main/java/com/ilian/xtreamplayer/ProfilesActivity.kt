@@ -1,7 +1,6 @@
 package com.ilian.xtreamplayer
 
 import android.app.Activity
-import android.app.AlertDialog
 import android.content.Intent
 import android.graphics.drawable.GradientDrawable
 import android.os.Bundle
@@ -30,6 +29,26 @@ object Profiles {
     }
 
     fun initial(p: Profile): String = p.name.trim().take(1).uppercase().ifBlank { "?" }
+
+    /** Avatar rond du profil ([ring] : anneau à sa couleur). */
+    fun avatarDrawable(p: Profile, ring: Boolean = false) = AvatarDrawable(Avatars.of(p), if (ring) color(p) else null)
+
+    /** Ombre ronde sous un avatar. */
+    val OVAL = object : android.view.ViewOutlineProvider() {
+        override fun getOutline(view: View, outline: android.graphics.Outline) {
+            outline.setOval(0, 0, view.width, view.height)
+        }
+    }
+
+    /** Halo de couleur (fond radial) qui se pose derrière l'avatar choisi. */
+    fun glow(view: View, color: Int) {
+        val c = (color and 0x00FFFFFF) or 0x8C000000.toInt()
+        view.background = GradientDrawable().apply {
+            gradientType = GradientDrawable.RADIAL_GRADIENT
+            gradientRadius = view.width / 2f
+            colors = intArrayOf(c, color and 0x00FFFFFF)
+        }
+    }
 
     fun langsLabel(p: Profile): String =
         if (p.langSet.isEmpty()) "Toutes les langues" else p.langSet.joinToString(" · ") { Langs.label(it) }
@@ -65,14 +84,24 @@ object Profiles {
     }
 }
 
-/** « Qui regarde ? » : jusqu'à 5 profils par source, chacun avec ses favoris, sa reprise et ses réglages. */
+/**
+ * « Qui regarde ? » : jusqu'à 5 profils par source, chacun avec son avatar, ses favoris, sa reprise et ses réglages.
+ * Comme sur les plateformes de streaming : grands avatars ronds, celui qui a le focus s'avance dans un halo
+ * de sa couleur, les autres s'estompent.
+ */
 class ProfilesActivity : BaseActivity() {
 
     private lateinit var src: Source
     private lateinit var row: LinearLayout
     private lateinit var btnManage: TextView
     private lateinit var hint: TextView
+    private lateinit var glow: View
     private var manage = false
+    private var painted = false
+    private var firstResume = true
+    private var focusId = 0L
+    /** Profil tout juste créé : on lui propose ensuite la langue du contenu. */
+    private var askLangsFor = 0L
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -84,54 +113,88 @@ class ProfilesActivity : BaseActivity() {
         row = findViewById(R.id.row)
         btnManage = findViewById(R.id.btnManage)
         hint = findViewById(R.id.tvHint)
+        glow = findViewById(R.id.glow)
         manage = intent.getBooleanExtra(EXTRA_MANAGE, false)
+        focusId = Db.profile
         btnManage.setOnClickListener {
             manage = !manage
-            paint()
+            paint(animate = false)
         }
-        paint()
+        btnManage.setOnFocusChangeListener { _, has ->
+            if (has) {
+                for (i in 0 until row.childCount) row.getChildAt(i).animate().alpha(0.85f).setDuration(200).start()
+                glow.animate().alpha(0f).setDuration(260).start()
+            }
+        }
+        paint(animate = true)
     }
 
-    private fun paint() {
+    override fun onResume() {
+        super.onResume()
+        // Retour de l'édition ou du choix d'avatar : on repeint sans l'animation d'arrivée
+        if (firstResume) firstResume = false else if (painted) paint(animate = false)
+        val id = askLangsFor
+        if (id != 0L) {
+            askLangsFor = 0L
+            Db.profileById(id)?.let { p -> row.postDelayed({ Profiles.chooseLangs(this, p) { paint(animate = false) } }, 350) }
+        }
+    }
+
+    private fun paint(animate: Boolean) {
+        painted = true
         val d = resources.displayMetrics.density
         val list = Db.profiles(src.id).ifEmpty { listOf(Db.ensureProfile(src.id)) }
         findViewById<TextView>(R.id.tvTitle).text = if (manage) "Gérer les profils" else "Qui regarde ?"
-        hint.text = if (manage) "Choisis un profil à modifier." else "Chaque profil a ses favoris, sa reprise de lecture, ses langues et ses équipes."
+        hint.text = if (manage) "Choisis un profil à modifier : avatar, nom, couleur, langues."
+        else "Chaque profil a son avatar, ses favoris, sa reprise de lecture, ses langues et ses équipes."
         btnManage.text = if (manage) "Terminé" else "Gérer les profils"
         row.removeAllViews()
-        val current = Db.profile
         var focus: View? = null
         for (p in list) {
             val v = layoutInflater.inflate(R.layout.item_profile, row, false)
             val avatar = v.findViewById<View>(R.id.avatar)
-            avatar.background = Profiles.avatar(p, 18f, d)
-            avatar.clipToOutline = true
-            v.findViewById<TextView>(R.id.initial).apply {
-                text = Profiles.initial(p)
-                alpha = if (manage) 0.35f else 1f
-            }
+            avatar.background = Profiles.avatarDrawable(p)
+            avatar.outlineProvider = Profiles.OVAL
+            avatar.alpha = if (manage) 0.55f else 1f
+            v.findViewById<View>(R.id.edit).visibility = if (manage) View.VISIBLE else View.GONE
             v.findViewById<TextView>(R.id.name).text = p.name
             v.findViewById<TextView>(R.id.langs).text = Profiles.langsLabel(p)
-            v.findViewById<View>(R.id.edit).visibility = if (manage) View.VISIBLE else View.GONE
-            v.setOnFocusChangeListener { view, has -> Fx.focus(view, has, 1.1f) }
+            val color = Avatars.of(p).top
+            v.setOnFocusChangeListener { view, has ->
+                Fx.focus(view, has, 1.1f)
+                if (has) {
+                    focusId = p.id
+                    spotlight(view, color)
+                }
+            }
             v.setOnClickListener { if (manage) edit(p) else open(p) }
             row.addView(v)
-            if (p.id == current || focus == null) focus = v
+            if (p.id == focusId || focus == null) focus = v
         }
         if (list.size < Profiles.MAX) {
             val v = layoutInflater.inflate(R.layout.item_profile, row, false)
-            val avatar = v.findViewById<View>(R.id.avatar)
-            avatar.setBackgroundResource(R.drawable.avatar_add_bg)
-            v.findViewById<TextView>(R.id.initial).text = "+"
+            v.findViewById<View>(R.id.avatar).setBackgroundResource(R.drawable.avatar_add_circle)
+            v.findViewById<TextView>(R.id.initial).apply {
+                visibility = View.VISIBLE
+                text = "+"
+            }
             v.findViewById<TextView>(R.id.name).text = "Ajouter"
             v.findViewById<TextView>(R.id.langs).text = "${list.size} / ${Profiles.MAX}"
-            v.setOnFocusChangeListener { view, has -> Fx.focus(view, has, 1.1f) }
+            v.setOnFocusChangeListener { view, has ->
+                Fx.focus(view, has, 1.1f)
+                if (has) {
+                    focusId = -1L
+                    spotlight(view, 0xFF8A93A6.toInt())
+                }
+            }
             v.setOnClickListener { add(list.size) }
             row.addView(v)
+            if (focusId == -1L) focus = v
         }
         val f = focus
         f?.post { f.requestFocus() }
-        // Arrivée en cascade : le titre descend, puis chaque profil éclot l'un après l'autre
+        if (!animate) return
+        // Arrivée en cascade : le titre descend, puis chaque avatar éclot l'un après l'autre
         val title = findViewById<View>(R.id.tvTitle)
         title.alpha = 0f
         title.translationY = -10 * d
@@ -139,14 +202,35 @@ class ProfilesActivity : BaseActivity() {
         hint.alpha = 0f
         hint.animate().alpha(1f).setStartDelay(120).setDuration(420).start()
         for (i in 0 until row.childCount) {
-            val c = row.getChildAt(i).findViewById<View>(R.id.avatar) ?: continue
+            val c = row.getChildAt(i).findViewById<View>(R.id.avatarBox) ?: continue
             c.alpha = 0f
-            c.scaleX = 0.8f
-            c.scaleY = 0.8f
-            c.animate().alpha(1f).scaleX(1f).scaleY(1f).setStartDelay(140L + i * 70L).setDuration(460).setInterpolator(EASE).withLayer().start()
+            c.scaleX = 0.7f
+            c.scaleY = 0.7f
+            c.translationY = 14 * d
+            c.animate().alpha(1f).scaleX(1f).scaleY(1f).translationY(0f).setStartDelay(160L + i * 80L).setDuration(520)
+                .setInterpolator(android.view.animation.OvershootInterpolator(1.3f)).withLayer().start()
         }
         btnManage.alpha = 0f
-        btnManage.animate().alpha(1f).setStartDelay(260L + row.childCount * 70L).setDuration(380).start()
+        btnManage.animate().alpha(1f).setStartDelay(280L + row.childCount * 80L).setDuration(380).start()
+    }
+
+    /** L'avatar qui a le focus reste net, les autres s'estompent ; le halo glisse derrière lui. */
+    private fun spotlight(v: View, color: Int) {
+        for (i in 0 until row.childCount) {
+            val c = row.getChildAt(i)
+            c.animate().alpha(if (c === v) 1f else 0.5f).setDuration(220).start()
+        }
+        glow.post {
+            Profiles.glow(glow, color)
+            val a = IntArray(2)
+            val b = IntArray(2)
+            v.findViewById<View>(R.id.avatarBox).getLocationOnScreen(a)
+            glow.getLocationOnScreen(b)
+            val box = v.findViewById<View>(R.id.avatarBox)
+            val dx = (a[0] + box.width / 2f) - (b[0] - glow.translationX + glow.width / 2f)
+            val dy = (a[1] + box.height / 2f) - (b[1] - glow.translationY + glow.height / 2f)
+            glow.animate().translationX(dx).translationY(dy).alpha(1f).setDuration(420).setInterpolator(EASE).start()
+        }
     }
 
     private val EASE = android.view.animation.PathInterpolator(0.22f, 1f, 0.36f, 1f)
@@ -165,42 +249,22 @@ class ProfilesActivity : BaseActivity() {
         Ui.textInput(this, "Nom du nouveau profil", "", "ex : Sarah") { name ->
             if (name.isBlank()) return@textInput
             val id = Db.addProfile(src.id, name.trim().take(20), count % Profiles.COLORS.size)
-            val p = Db.profileById(id) ?: return@textInput
-            paint()
-            // On propose tout de suite la langue du contenu pour ce profil
-            Profiles.chooseLangs(this, p) { paint() }
+            focusId = id
+            askLangsFor = id
+            // On choisit tout de suite son avatar, puis la langue du contenu
+            startActivity(Intent(this, AvatarPickerActivity::class.java).putExtra(AvatarPickerActivity.EXTRA_PROFILE, id))
         }
     }
 
     private fun edit(p: Profile) {
-        val count = Db.profiles(src.id).size
-        val options = arrayListOf("Renommer", "Couleur", "Langue du contenu")
-        if (count > 1) options.add("Supprimer le profil")
-        Ui.choose(this, p.name, options) { w ->
-            when (w) {
-                0 -> Ui.textInput(this, "Nom du profil", p.name, "Nom") { name ->
-                    if (name.isNotBlank()) Db.updateProfile(p.id, name.trim().take(20), p.color)
-                    paint()
-                }
-                1 -> Ui.choose(this, "Couleur de ${p.name}", Profiles.COLOR_NAMES) { c ->
-                    Db.updateProfile(p.id, p.name, c)
-                    paint()
-                }
-                2 -> Profiles.chooseLangs(this, p) { paint() }
-                3 -> Ui.confirm(this, "Supprimer « ${p.name} » ?", "Ses favoris, sa reprise de lecture et ses réglages seront effacés.", "Supprimer") {
-                    Db.deleteProfile(p.id)
-                    if (Db.profile == p.id) Db.profiles(src.id).firstOrNull()?.let { Session.selectProfile(it) }
-                    paint()
-                }
-            }
-        }
+        startActivity(Intent(this, ProfileEditActivity::class.java).putExtra(ProfileEditActivity.EXTRA_PROFILE, p.id))
     }
 
     @Deprecated("Deprecated in Java")
     override fun onBackPressed() {
         if (manage && !intent.getBooleanExtra(EXTRA_MANAGE, false)) {
             manage = false
-            paint()
+            paint(animate = false)
             return
         }
         @Suppress("DEPRECATION")

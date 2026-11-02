@@ -37,10 +37,13 @@ class HomeScreen(
 
     /** Widget sport en moyen ou grand : les matchs se rangent côte à côte. */
     private var sportWide = false
+    /** Nombre de matchs qui tiennent dans le widget (sans en couper un). */
+    private var sportMax = 3
 
-    fun setSportWide(wide: Boolean) {
-        if (wide == sportWide) return
+    fun setSportLayout(wide: Boolean, max: Int) {
+        if (wide == sportWide && max == sportMax) return
         sportWide = wide
+        sportMax = max.coerceIn(1, 4)
         paintSport(Sport.cached())
     }
 
@@ -448,7 +451,7 @@ class HomeScreen(
     private fun paintSport(all: List<Sport.Match>) {
         val live = all.filter { it.live }.sortedByDescending { Sport.trend(it) }
         val next = all.filter { it.state == "pre" }.sortedWith(compareByDescending<Sport.Match> { Sport.trend(it) >= 12 }.thenBy { it.start })
-        val shown = (live + next).take(3)
+        val shown = (live + next).take(sportMax)
         sportList.orientation = if (sportWide) LinearLayout.HORIZONTAL else LinearLayout.VERTICAL
         sportTitle.text = if (live.isNotEmpty()) "Sport en direct" else "Sport à venir"
         sportDot.visibility = if (live.isNotEmpty()) View.VISIBLE else View.GONE

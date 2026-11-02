@@ -129,9 +129,16 @@ class Rows(private val act: Activity, private val box: LinearLayout) {
 
     fun clear() = box.removeAllViews()
 
-    fun header(text: String) {
+    fun header(text: String, icon: android.graphics.drawable.Drawable? = null) {
         val tv = inf.inflate(R.layout.row_header, box, false) as TextView
         tv.text = text
+        if (icon != null) {
+            val sz = (26 * act.resources.displayMetrics.density).toInt()
+            icon.setBounds(0, 0, sz, sz)
+            tv.setCompoundDrawablesRelative(icon, null, null, null)
+            tv.compoundDrawablePadding = (10 * act.resources.displayMetrics.density).toInt()
+            tv.gravity = android.view.Gravity.CENTER_VERTICAL or android.view.Gravity.START
+        }
         box.addView(tv)
     }
 

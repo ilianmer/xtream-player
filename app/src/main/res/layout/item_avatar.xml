@@ -1,0 +1,43 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Case de la galerie d'avatars -->
+<FrameLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="96dp"
+    android:clickable="true"
+    android:clipChildren="false"
+    android:focusable="true">
+
+    <FrameLayout
+        android:layout_width="76dp"
+        android:layout_height="76dp"
+        android:layout_gravity="center"
+        android:clipChildren="false"
+        android:duplicateParentState="true">
+
+        <View
+            android:id="@+id/avatar"
+            android:layout_width="match_parent"
+            android:layout_height="match_parent"
+            android:elevation="4dp" />
+
+        <View
+            android:layout_width="match_parent"
+            android:layout_height="match_parent"
+            android:layout_margin="-5dp"
+            android:background="@drawable/profile_ring"
+            android:duplicateParentState="true"
+            android:elevation="5dp" />
+
+        <ImageView
+            android:id="@+id/check"
+            android:layout_width="24dp"
+            android:layout_height="24dp"
+            android:layout_gravity="bottom|end"
+            android:background="@drawable/accent_pill"
+            android:elevation="6dp"
+            android:padding="5dp"
+            android:src="@drawable/ic_check_small"
+            android:tint="@color/on_accent"
+            android:visibility="gone" />
+    </FrameLayout>
+</FrameLayout>

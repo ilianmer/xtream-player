@@ -5,31 +5,46 @@ import android.animation.ValueAnimator
 import android.app.Activity
 import android.content.Context
 import android.content.Intent
+import android.graphics.Outline
 import android.graphics.Rect
 import android.util.AttributeSet
+import android.util.DisplayMetrics
 import android.view.Gravity
 import android.view.KeyEvent
 import android.view.LayoutInflater
 import android.view.View
 import android.view.ViewGroup
+import android.view.ViewOutlineProvider
+import android.view.animation.PathInterpolator
 import android.widget.FrameLayout
 import android.widget.ImageView
 import android.widget.LinearLayout
 import android.widget.ScrollView
 import android.widget.TextView
 import androidx.recyclerview.widget.LinearLayoutManager
+import androidx.recyclerview.widget.LinearSmoothScroller
 import androidx.recyclerview.widget.RecyclerView
 import org.json.JSONArray
 import java.text.SimpleDateFormat
 import java.util.Calendar
 import java.util.Date
 import java.util.Locale
+import kotlin.math.roundToInt
 
 /**
- * Défilement du tableau de l'accueil : la rangée qui reçoit le focus glisse en douceur en haut de l'écran
- * (au lieu des sauts de la liste classique), et haut / bas passent directement d'un widget à l'autre.
+ * Défilement du tableau de l'accueil, page par page : chaque page a la hauteur exacte de l'écran,
+ * et l'arrivée du focus dans une autre page la fait glisser en entier, d'un seul mouvement.
+ * Le contenu est coupé net à la limite de la zone (il ne passe jamais sous la barre du haut).
  */
 class BoardScrollView @JvmOverloads constructor(ctx: Context, attrs: AttributeSet? = null) : ScrollView(ctx, attrs) {
+    /** Hauteur visible changée (premier affichage, barre de personnalisation…). */
+    var onHeight: ((Int) -> Unit)? = null
+    /** Page affichée, pour l'indicateur. */
+    var onPage: ((Int) -> Unit)? = null
+    private var anim: ValueAnimator? = null
+    private var target = -1
+    private val ease = PathInterpolator(0.22f, 1f, 0.36f, 1f)
+
     override fun computeScrollDeltaToGetChildRectOnScreen(rect: Rect?): Int = 0
 
     override fun executeKeyEvent(event: KeyEvent): Boolean = when (event.keyCode) {
@@ -37,31 +52,101 @@ class BoardScrollView @JvmOverloads constructor(ctx: Context, attrs: AttributeSe
         else -> super.executeKeyEvent(event)
     }
 
-    override fun requestChildFocus(child: View?, focused: View?) {
-        super.requestChildFocus(child, focused)
-        focused?.let { reveal(it) }
+    override fun onSizeChanged(w: Int, h: Int, ow: Int, oh: Int) {
+        super.onSizeChanged(w, h, ow, oh)
+        if (h != oh && h > 0) post { onHeight?.invoke(h) }
     }
 
-    /** Amène la rangée qui contient [v] en haut de l'écran (la première reste tout en haut). */
-    fun reveal(v: View) {
-        val board = getChildAt(0) as? ViewGroup ?: return
+    override fun requestChildFocus(child: View?, focused: View?) {
+        super.requestChildFocus(child, focused)
+        focused?.let { reveal(it, true) }
+    }
+
+    /** Page (enfant direct du tableau) qui contient [v]. */
+    private fun pageOf(v: View): View? {
+        val board = getChildAt(0) as? ViewGroup ?: return null
         var c: View = v
         var p = c.parent
         while (p != null && p !== board) {
-            c = p as? View ?: return
+            c = p as? View ?: return null
             p = c.parent
         }
-        if (p !== board) return
-        val pad = (6 * resources.displayMetrics.density).toInt()
-        val max = (board.height - height).coerceAtLeast(0)
-        val target = if (board.indexOfChild(c) == 0) 0 else (c.top - pad).coerceIn(0, max)
-        if (target != scrollY) smoothScrollTo(0, target)
+        return if (p === board) c else null
+    }
+
+    fun reveal(v: View, animate: Boolean) {
+        val page = pageOf(v) ?: return
+        goTo(page.top, animate)
+        (getChildAt(0) as? ViewGroup)?.let { onPage?.invoke(it.indexOfChild(page)) }
+    }
+
+    fun goTo(y: Int, animate: Boolean) {
+        if (y == target && anim?.isRunning == true) return
+        target = y
+        anim?.cancel()
+        if (!animate || y == scrollY) {
+            scrollTo(0, y)
+            return
+        }
+        anim = ValueAnimator.ofInt(scrollY, y).apply {
+            duration = 480
+            interpolator = ease
+            addUpdateListener { scrollTo(0, it.animatedValue as Int) }
+            start()
+        }
+    }
+}
+
+/**
+ * Case d'un widget : son contenu est dessiné à sa taille idéale puis réduit (jusqu'à 80 %) pour tenir
+ * exactement dans la case, comme un widget d'iPhone ; tout ce qui dépasserait est coupé au bord arrondi.
+ */
+class FitFrame(ctx: Context) : FrameLayout(ctx) {
+    /** Hauteur idéale du contenu (px). */
+    var designH = 0
+    var fit = 1f
+        private set
+    private val radius = 16f * resources.displayMetrics.density
+
+    init {
+        outlineProvider = object : ViewOutlineProvider() {
+            override fun getOutline(view: View, outline: Outline) {
+                outline.setRoundRect(0, 0, view.width, view.height, radius)
+            }
+        }
+        clipToOutline = true
+    }
+
+    override fun onMeasure(widthMeasureSpec: Int, heightMeasureSpec: Int) {
+        val w = MeasureSpec.getSize(widthMeasureSpec)
+        val h = MeasureSpec.getSize(heightMeasureSpec)
+        fit = if (designH > 0 && h > 0) (h.toFloat() / designH).coerceIn(MIN_FIT, 1f) else 1f
+        val cw = MeasureSpec.makeMeasureSpec((w / fit).roundToInt(), MeasureSpec.EXACTLY)
+        val ch = MeasureSpec.makeMeasureSpec((h / fit).roundToInt(), MeasureSpec.EXACTLY)
+        for (i in 0 until childCount) getChildAt(i).measure(cw, ch)
+        setMeasuredDimension(w, h)
+    }
+
+    override fun onLayout(changed: Boolean, l: Int, t: Int, r: Int, b: Int) {
+        for (i in 0 until childCount) {
+            val c = getChildAt(i)
+            c.layout(0, 0, c.measuredWidth, c.measuredHeight)
+            c.pivotX = 0f
+            c.pivotY = 0f
+            c.scaleX = fit
+            c.scaleY = fit
+        }
+    }
+
+    companion object {
+        const val MIN_FIT = 0.8f
     }
 }
 
 /**
  * Accueil en widgets, façon iPhone : tout se personnalise (ajouter, retirer, déplacer, petit / moyen / grand).
- * Les widgets se rangent sur une grille de trois colonnes ; une rangée prend la hauteur de son plus grand widget.
+ * Les widgets se rangent sur une grille de trois colonnes, puis en pages de la hauteur de l'écran :
+ * une page prend autant de rangées entières qu'il en tient, ajustées pour remplir l'écran sans rien couper.
  * La disposition est retenue par profil.
  */
 class HomeBoard(
@@ -75,10 +160,12 @@ class HomeBoard(
     private val scroll: BoardScrollView = root.findViewById(R.id.boardScroll)
     private val board: LinearLayout = root.findViewById(R.id.board)
     private val stash: FrameLayout = root.findViewById(R.id.homeStash)
-    private val banner: TextView = root.findViewById(R.id.editBanner)
+    private val editBar: View = root.findViewById(R.id.editBar)
+    private val pageDots: LinearLayout = root.findViewById(R.id.pageDots)
     private val inf = LayoutInflater.from(act)
     private val dp = act.resources.displayMetrics.density
     private fun px(v: Int) = (v * dp).toInt()
+    private val ease = PathInterpolator(0.22f, 1f, 0.36f, 1f)
 
     class Spec(val type: String, var size: Int)
 
@@ -89,8 +176,8 @@ class HomeBoard(
         Type("hero", "À la une", listOf(2, 3), 2),
         Type("sport", "Scores en direct", listOf(1, 2, 3), 1),
         Type("resume", "Reprendre la lecture", listOf(2, 3), 3),
-        Type("top10:MOVIE", "Top 10 des films", listOf(2, 3), 3),
-        Type("top10:SERIES", "Top 10 des séries", listOf(2, 3), 3),
+        Type("top10:MOVIE", "Top 10 des films", listOf(1, 2, 3), 3),
+        Type("top10:SERIES", "Top 10 des séries", listOf(1, 2, 3), 3),
         Type("channels", "Chaînes favorites", listOf(1, 2, 3), 2),
         Type("tonight", "Ce soir à la TV", listOf(1, 2, 3), 2),
         Type("sportday", "Matchs du jour", listOf(1, 2, 3), 1),
@@ -115,6 +202,7 @@ class HomeBoard(
     companion object {
         /** Demandé depuis les Réglages : l'accueil s'ouvre directement en mode personnalisation. */
         var editOnReturn = false
+        private const val GAP = 12
     }
 
     private val items = ArrayList<Widget>()
@@ -122,8 +210,35 @@ class HomeBoard(
     private var moving: Widget? = null
     private var running = false
     private val jiggles = ArrayList<ValueAnimator>()
+    private var laidOut = false
+    private var pendingFocus = false
+    private var pageCount = 0
+    private var page = 0
 
-    // ---------- Disposition ----------
+    init {
+        scroll.onHeight = { relayout() }
+        scroll.onPage = { p ->
+            page = p
+            paintDots()
+        }
+        val add = root.findViewById<View>(R.id.btnAddWidget)
+        val reset = root.findViewById<View>(R.id.btnResetWidgets)
+        val done = root.findViewById<View>(R.id.btnDoneWidgets)
+        add.setOnClickListener { addWidget() }
+        reset.setOnClickListener { reset() }
+        done.setOnClickListener { exitEdit() }
+        for (b in listOf(add, reset, done)) {
+            b.setOnFocusChangeListener { v, has -> Fx.focus(v, has, 1.05f) }
+            b.setOnKeyListener { _, code, e ->
+                if (code == KeyEvent.KEYCODE_BACK && editing) {
+                    if (e.action == KeyEvent.ACTION_UP) exitEdit()
+                    true
+                } else false
+            }
+        }
+    }
+
+    // ---------- Enregistrement ----------
 
     private fun load(): List<Spec> {
         val raw = try {
@@ -151,14 +266,16 @@ class HomeBoard(
         }
     }
 
+    // ---------- Cycle de vie ----------
+
     fun start() {
         for (s in load()) create(s)?.let { items.add(it) }
         layout()
         for (w in items) w.start()
-        if (Db.kvGet(Db.pkey("home_widgets_hint")) == null) {
-            Db.kvPut(Db.pkey("home_widgets_hint"), "1")
+        if (Db.kvGet(Db.pkey("home_widgets_hint2")) == null) {
+            Db.kvPut(Db.pkey("home_widgets_hint2"), "1")
             Bg.main.postDelayed({
-                if (!act.isFinishing) Ui.toast(act, "Nouveau : ton accueil se personnalise. Tout en bas : « Personnaliser l'accueil ».")
+                if (!act.isFinishing) Ui.toast(act, "Personnalise ton accueil avec l'icône en haut à droite, à côté des Réglages.")
             }, 2_500)
         }
     }
@@ -178,7 +295,26 @@ class HomeBoard(
     }
 
     fun focusDefault() {
-        if (items.any { it.spec.type == "hero" }) home.focusDefault() else board.requestFocus()
+        if (!laidOut) {
+            pendingFocus = true
+            return
+        }
+        scroll.goTo(0, false)
+        if (items.any { it.spec.type == "hero" } && items.firstOrNull { it.spec.type == "hero" }?.let { pageOfWidget(it) } == 0) {
+            home.focusDefault()
+        } else {
+            (board.getChildAt(0) ?: board).requestFocus()
+        }
+    }
+
+    private fun pageOfWidget(w: Widget): Int {
+        var c: View = w.cell
+        var p = c.parent
+        while (p != null && p !== board) {
+            c = p as? View ?: return -1
+            p = c.parent
+        }
+        return if (p === board) board.indexOfChild(c) else -1
     }
 
     /** Retour : sort du mode personnalisation (true si l'événement est consommé). */
@@ -194,7 +330,27 @@ class HomeBoard(
         return false
     }
 
+    // ---------- Pages ----------
+
+    private class Row(val ws: List<Widget>) {
+        var pref = 0
+        var min = 0
+        var h = 0
+    }
+
+    /** Nouvelle mise en page en gardant le focus là où il était. */
+    private fun relayout() {
+        val f = act.currentFocus
+        layout()
+        if (f != null && f.isAttachedToWindow && f.isShown) f.requestFocus()
+        if (pendingFocus && laidOut) {
+            pendingFocus = false
+            focusDefault()
+        }
+    }
+
     private fun layout() {
+        val pageH = scroll.height - scroll.paddingTop - scroll.paddingBottom
         stopJiggle()
         // Les blocs historiques non posés retournent dans leur réserve (toujours attachés à l'écran)
         for (v in listOf(home.heroView, home.sportView, home.rowView)) {
@@ -203,43 +359,134 @@ class HomeBoard(
                 stash.addView(v)
             }
         }
+        if (pageH <= 0) return // la hauteur de l'écran arrive juste après : onHeight relance la mise en page
+        laidOut = true
         for (w in items) (w.cell.parent as? ViewGroup)?.removeView(w.cell)
         board.removeAllViews()
-        var row: LinearLayout? = null
+
+        // 1. Rangées de trois colonnes
+        val rows = ArrayList<Row>()
+        var cur = ArrayList<Widget>()
         var used = 0
-        var rowH = 0
-        fun close() {
-            val r = row ?: return
-            r.layoutParams = LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, px(rowH)).apply { bottomMargin = px(12) }
-            board.addView(r)
-        }
         for (w in items) {
             val t = typeOf(w.spec) ?: continue
             if (w.spec.size !in t.sizes) w.spec.size = t.size
             val s = w.spec.size
-            if (row == null || used + s > 3) {
-                close()
-                row = LinearLayout(act).apply {
+            if (cur.isNotEmpty() && used + s > 3) {
+                rows.add(Row(cur))
+                cur = ArrayList()
+                used = 0
+            }
+            cur.add(w)
+            used += s
+        }
+        if (cur.isNotEmpty()) rows.add(Row(cur))
+        val gap = px(GAP)
+        for (r in rows) {
+            r.pref = px(r.ws.maxOf { it.design(it.spec.size) })
+            r.min = (r.pref * FitFrame.MIN_FIT).toInt()
+        }
+
+        // 2. Pages : autant de rangées entières qu'il en tient à l'écran
+        val pages = ArrayList<List<Row>>()
+        var pg = ArrayList<Row>()
+        var minSum = 0
+        for (r in rows) {
+            if (pg.isNotEmpty() && minSum + r.min + gap * (pg.size + 1) > pageH) {
+                pages.add(pg)
+                pg = ArrayList()
+                minSum = 0
+            }
+            pg.add(r)
+            minSum += r.min
+        }
+        if (pg.isNotEmpty()) pages.add(pg)
+
+        // 3. Hauteurs : on resserre ou on étire un peu les rangées pour remplir l'écran exactement
+        for (p in pages) {
+            val avail = pageH - gap * p.size
+            val sumPref = p.sumOf { it.pref }
+            val sumMin = p.sumOf { it.min }
+            if (sumPref >= avail) {
+                val t = if (sumPref <= sumMin) 1f else ((sumPref - avail).toFloat() / (sumPref - sumMin)).coerceIn(0f, 1f)
+                for (r in p) r.h = (r.pref - t * (r.pref - r.min)).toInt()
+            } else {
+                val f = (avail.toFloat() / sumPref).coerceAtMost(1.15f)
+                for (r in p) r.h = (r.pref * f).toInt()
+            }
+            for (r in p) r.h = r.h.coerceAtMost(avail)
+        }
+
+        // 4. Vues
+        for (p in pages) {
+            val pv = LinearLayout(act).apply {
+                orientation = LinearLayout.VERTICAL
+                clipChildren = false
+                clipToPadding = false
+            }
+            for (r in p) {
+                val rv = LinearLayout(act).apply {
                     orientation = LinearLayout.HORIZONTAL
                     weightSum = 3f
                     clipChildren = false
                     clipToPadding = false
                 }
-                used = 0
-                rowH = 0
+                for (w in r.ws) {
+                    val design = px(w.design(w.spec.size))
+                    w.cell.designH = design
+                    rv.addView(w.cell, LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.MATCH_PARENT, w.spec.size.toFloat()).apply {
+                        marginStart = px(6)
+                        marginEnd = px(6)
+                    })
+                    val fit = (r.h.toFloat() / design).coerceIn(FitFrame.MIN_FIT, 1f)
+                    w.sized(w.spec.size, (r.h / fit / dp).toInt())
+                    styleCell(w)
+                }
+                pv.addView(rv, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, r.h).apply { bottomMargin = gap })
             }
-            row!!.addView(w.cell, LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.MATCH_PARENT, s.toFloat()).apply {
-                marginStart = px(6)
-                marginEnd = px(6)
-            })
-            used += s
-            rowH = maxOf(rowH, w.height(s))
-            w.sized(s)
-            styleCell(w)
+            board.addView(pv, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, pageH))
         }
-        close()
-        board.addView(footer())
+        pageCount = pages.size
+        page = page.coerceIn(0, (pageCount - 1).coerceAtLeast(0))
+        paintDots()
         if (editing) startJiggle()
+        // On reste aligné sur une page (celle du focus)
+        scroll.post {
+            val f = act.currentFocus
+            if (f != null && board.hasFocus()) scroll.reveal(f, false) else scroll.goTo(page * pageH, false)
+        }
+    }
+
+    /** Points de page à droite (seulement s'il y a plusieurs pages). */
+    private fun paintDots() {
+        if (pageCount <= 1) {
+            pageDots.visibility = View.GONE
+            return
+        }
+        pageDots.visibility = View.VISIBLE
+        if (pageDots.childCount != pageCount) {
+            pageDots.removeAllViews()
+            repeat(pageCount) {
+                pageDots.addView(View(act), LinearLayout.LayoutParams(px(4), px(4)).apply {
+                    topMargin = px(3)
+                    bottomMargin = px(3)
+                })
+            }
+        }
+        for (i in 0 until pageDots.childCount) {
+            val d = pageDots.getChildAt(i)
+            d.setBackgroundResource(if (i == page) R.drawable.dot_on else R.drawable.dot_off)
+            val target = px(if (i == page) 14 else 4)
+            val from = d.layoutParams.height
+            if (from != target) {
+                ValueAnimator.ofInt(from, target).apply {
+                    duration = 320
+                    interpolator = ease
+                    addUpdateListener { a -> d.layoutParams = d.layoutParams.apply { height = a.animatedValue as Int } }
+                    start()
+                }
+            }
+        }
     }
 
     private fun styleCell(w: Widget) {
@@ -262,55 +509,8 @@ class HomeBoard(
             c.rotation = 0f
             c.scaleX = 1f
             c.scaleY = 1f
+            c.translationZ = 0f
         }
-    }
-
-    // ---------- Bas du tableau : personnaliser / ajouter / terminer ----------
-
-    private fun pill(text: String, onClick: () -> Unit): TextView = TextView(act, null, 0, R.style.Btn).apply {
-        this.text = text
-        setOnClickListener { onClick() }
-        setOnKeyListener { _, code, e ->
-            if (code == KeyEvent.KEYCODE_BACK && editing) {
-                if (e.action == KeyEvent.ACTION_UP) exitEdit()
-                true
-            } else false
-        }
-        setOnFocusChangeListener { v, has -> Fx.focus(v, has, 1.05f) }
-    }
-
-    private fun footer(): View {
-        val bar = LinearLayout(act).apply {
-            orientation = LinearLayout.HORIZONTAL
-            gravity = Gravity.CENTER_HORIZONTAL
-            clipChildren = false
-            setPadding(0, px(4), 0, px(8))
-        }
-        fun add(v: View) = bar.addView(v, LinearLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, px(40)).apply {
-            marginStart = px(6)
-            marginEnd = px(6)
-        })
-        if (editing) {
-            add(pill("+  Ajouter un widget") { addWidget() })
-            add(pill("Disposition d'origine") {
-                Ui.confirm(act, "Disposition d'origine", "Remettre l'accueil comme au départ ?", "Remettre") {
-                    for (w in items) w.pause()
-                    items.clear()
-                    for (s in defaults()) create(s)?.let { items.add(it) }
-                    layout()
-                    for (w in items) {
-                        w.start()
-                        if (running) w.resume()
-                    }
-                    save()
-                    focusFirstCell()
-                }
-            })
-            add(pill("Terminé") { exitEdit() })
-        } else {
-            add(pill("Personnaliser l'accueil") { enterEdit() })
-        }
-        return bar
     }
 
     // ---------- Mode personnalisation (les widgets « tremblent » comme sur iPhone) ----------
@@ -318,9 +518,10 @@ class HomeBoard(
     fun enterEdit() {
         if (editing) return
         editing = true
-        banner.visibility = View.VISIBLE
-        banner.alpha = 0f
-        banner.animate().alpha(1f).setDuration(220).start()
+        editBar.visibility = View.VISIBLE
+        editBar.alpha = 0f
+        editBar.translationY = -8 * dp
+        editBar.animate().alpha(1f).translationY(0f).setDuration(260).setInterpolator(ease).start()
         layout()
         focusFirstCell()
     }
@@ -329,10 +530,24 @@ class HomeBoard(
         moving = null
         editing = false
         save()
-        banner.animate().alpha(0f).setDuration(180).withEndAction { banner.visibility = View.GONE }.start()
+        editBar.visibility = View.GONE
         layout()
-        scroll.smoothScrollTo(0, 0)
         board.post { focusDefault() }
+    }
+
+    private fun reset() {
+        Ui.confirm(act, "Disposition d'origine", "Remettre l'accueil comme au départ ?", "Remettre") {
+            for (w in items) w.pause()
+            items.clear()
+            for (s in defaults()) create(s)?.let { items.add(it) }
+            layout()
+            for (w in items) {
+                w.start()
+                if (running) w.resume()
+            }
+            save()
+            focusFirstCell()
+        }
     }
 
     private fun focusFirstCell() {
@@ -341,19 +556,16 @@ class HomeBoard(
 
     private fun startJiggle() {
         stopJiggle()
-        var i = 0
-        for (w in items) {
+        for ((i, w) in items.withIndex()) {
             val c = w.cell
             c.setLayerType(View.LAYER_TYPE_HARDWARE, null)
-            val a = ObjectAnimator.ofFloat(c, View.ROTATION, -0.32f, 0.32f).apply {
+            jiggles.add(ObjectAnimator.ofFloat(c, View.ROTATION, -0.3f, 0.3f).apply {
                 duration = 150L + (i % 3) * 18L
                 repeatMode = ValueAnimator.REVERSE
                 repeatCount = ValueAnimator.INFINITE
                 startDelay = (i * 37L) % 120L
                 start()
-            }
-            jiggles.add(a)
-            i++
+            })
         }
     }
 
@@ -383,7 +595,10 @@ class HomeBoard(
                 items.removeAt(i)
                 items.add(to, w)
                 layout()
-                w.cell.post { w.cell.requestFocus() }
+                w.cell.post {
+                    w.cell.requestFocus()
+                    lift(w)
+                }
             } else Fx.bump(w.cell, if (to < 0) -1 else 1, 0)
             return true
         }
@@ -394,10 +609,13 @@ class HomeBoard(
         return false
     }
 
+    private fun lift(w: Widget) {
+        w.cell.animate().scaleX(1.03f).scaleY(1.03f).translationZ(12 * dp).setDuration(180).start()
+    }
+
     private fun drop() {
         val w = moving ?: return
         moving = null
-        w.cell.animate().scaleX(1f).scaleY(1f).translationZ(0f).setDuration(160).start()
         save()
         layout()
         w.cell.post { w.cell.requestFocus() }
@@ -415,8 +633,10 @@ class HomeBoard(
                 k == 0 -> {
                     moving = w
                     layout()
-                    w.cell.animate().scaleX(1.03f).scaleY(1.03f).translationZ(12 * dp).setDuration(180).start()
-                    w.cell.post { w.cell.requestFocus() }
+                    w.cell.post {
+                        w.cell.requestFocus()
+                        lift(w)
+                    }
                     Ui.toast(act, "Flèches pour déplacer « ${w.title} », OK pour le poser.")
                 }
                 k <= t.sizes.size -> {
@@ -431,7 +651,8 @@ class HomeBoard(
                     w.pause()
                     save()
                     layout()
-                    (items.getOrNull(i) ?: items.lastOrNull())?.cell?.post { (items.getOrNull(i) ?: items.lastOrNull())?.cell?.requestFocus() }
+                    val next = items.getOrNull(i) ?: items.lastOrNull()
+                    next?.cell?.post { next.cell.requestFocus() }
                 }
             }
         }
@@ -482,8 +703,8 @@ class HomeBoard(
 
     private fun create(spec: Spec): Widget? = when {
         spec.type == "hero" -> Core(spec, "À la une", home.heroView) { 250 }
-        spec.type == "sport" -> Core(spec, "Scores en direct", home.sportView) { s -> if (s >= 2) 170 else 250 }
-        spec.type == "resume" -> Core(spec, "Reprendre la lecture", home.rowView) { 206 }
+        spec.type == "sport" -> Core(spec, "Scores en direct", home.sportView) { s -> if (s >= 2) 158 else 260 }
+        spec.type == "resume" -> Core(spec, "Reprendre la lecture", home.rowView) { 200 }
         spec.type == "top10:MOVIE" -> Rail(spec, "Top 10 des films aujourd'hui", top10 = true) { Top10.get(src.id, Kind.MOVIE) }
         spec.type == "top10:SERIES" -> Rail(spec, "Top 10 des séries aujourd'hui", top10 = true) { Top10.get(src.id, Kind.SERIES) }
         spec.type == "latest" -> Rail(spec, "Nouveautés", refreshes = true) {
@@ -512,16 +733,18 @@ class HomeBoard(
 
     private abstract inner class Widget(val spec: Spec, val title: String) {
         abstract val view: View
-        val cell: FrameLayout by lazy {
-            FrameLayout(act).apply {
-                clipChildren = false
-                clipToPadding = false
+        val cell: FitFrame by lazy {
+            FitFrame(act).apply {
                 (view.parent as? ViewGroup)?.removeView(view)
                 addView(view, FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT))
             }
         }
-        abstract fun height(size: Int): Int
-        open fun sized(size: Int) {}
+
+        /** Hauteur idéale (dp) pour cette taille. */
+        abstract fun design(size: Int): Int
+
+        /** Taille et hauteur réelle du contenu (dp) : le widget adapte ce qu'il montre. */
+        open fun sized(size: Int, contentH: Int) {}
         open fun start() {}
         open fun refresh() {}
         open fun resume() {}
@@ -530,9 +753,11 @@ class HomeBoard(
 
     /** Blocs historiques (À la une, sport, reprise) : leur logique reste dans [HomeScreen]. */
     private inner class Core(spec: Spec, title: String, override val view: View, val h: (Int) -> Int) : Widget(spec, title) {
-        override fun height(size: Int) = h(size)
-        override fun sized(size: Int) {
-            if (view === home.sportView) home.setSportWide(size >= 2)
+        override fun design(size: Int) = h(size)
+        override fun sized(size: Int, contentH: Int) {
+            if (view !== home.sportView) return
+            if (size >= 2) home.setSportLayout(true, if (size == 3) 4 else 3)
+            else home.setSportLayout(false, ((contentH - 50) / 104).coerceIn(1, 3))
         }
     }
 
@@ -568,17 +793,42 @@ class HomeBoard(
         act.startActivity(Intent(act, cls).putExtra(MainActivity.EXTRA_ITEM, item.toJson().toString()))
     }
 
+    private fun toggleFav(item: Item) {
+        val added = Db.toggleFav(src.id, item)
+        Ui.toast(act, if (added) "Ajouté à Ma liste" else "Retiré de Ma liste")
+    }
+
     private fun horizontal(rv: RecyclerView) {
         rv.layoutManager = LinearLayoutManager(act, LinearLayoutManager.HORIZONTAL, false)
         rv.itemAnimator = null
         rv.clipToPadding = false
         rv.clipChildren = false
         rv.overScrollMode = View.OVER_SCROLL_NEVER
-        rv.setPadding(px(2), px(2), px(12), 0)
+        rv.setPadding(px(4), px(4), px(12), px(4))
         Fx.lockRow(rv, escapeLeft = true, escapeRight = true)
     }
 
-    /** Rangée d'affiches (Top 10 avec ses grands chiffres, nouveautés, Ma liste, catégorie). */
+    /** Affiche, titre (sans image) et grand chiffre (Top 10) d'une carte. */
+    private fun bindCard(v: View, item: Item, position: Int) {
+        v.findViewById<RankView?>(R.id.rank)?.rank = position + 1
+        val noImage = item.icon.isNullOrBlank()
+        v.findViewById<TextView?>(R.id.name)?.apply {
+            text = Tmdb.cleanTitle(item.name).first
+            visibility = if (noImage) View.VISIBLE else View.GONE
+        }
+        v.findViewById<View?>(R.id.overlay)?.visibility = if (noImage) View.VISIBLE else View.GONE
+        v.findViewById<View?>(R.id.sub)?.visibility = View.GONE
+        v.findViewById<View?>(R.id.bar)?.visibility = View.GONE
+        v.findViewById<View?>(R.id.badge)?.visibility = View.GONE
+        v.findViewById<ImageView?>(R.id.img)?.let { Img.load(it, item.icon, R.drawable.ph_poster, 300) }
+    }
+
+    /**
+     * Rangée d'affiches (Top 10 avec ses grands chiffres, nouveautés, Ma liste, catégorie).
+     * Top 10 en petit : une affiche à la fois qui défile toute seule, avec des points de position ;
+     * en moyen et en grand, la rangée avance toute seule. Dès que le focus est dessus, le défilement
+     * automatique s'arrête (gauche / droite à la main) et reprend quand on part.
+     */
     private inner class Rail(
         spec: Spec,
         title: String,
@@ -591,18 +841,58 @@ class HomeBoard(
         var list: List<Item> = emptyList()
         var loading = false
         var loaded = false
+        /** 0 : rangée, 1 : carrousel (Top 10 en petit). */
+        var mode = -1
+
+        var carCard: View? = null
+        var carTitle: TextView? = null
+        var carDots: LinearLayout? = null
+        var carIndex = 0
+
+        val auto = object : Runnable {
+            override fun run() {
+                if (!running) return
+                Bg.main.postDelayed(this, 4_500)
+                if (editing || list.size < 2) return
+                if (mode == 1) {
+                    if (carCard?.hasFocus() == false) step(carIndex + 1, 1)
+                } else if (!rv.hasFocus()) advance()
+            }
+        }
 
         init {
             horizontal(rv)
             rv.adapter = Posters()
-            body.addView(rv, FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT))
-            if (top10) hint.text = "nouveautés · actualité · mieux notés"
         }
 
-        override fun height(size: Int) = 206
+        override fun design(size: Int) = if (top10 && size == 1) 236 else 192
+
+        override fun sized(size: Int, contentH: Int) {
+            val m = if (top10 && size == 1) 1 else 0
+            if (m == mode) return
+            mode = m
+            body.removeAllViews()
+            if (m == 0) {
+                body.addView(rv, FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT, Gravity.CENTER_VERTICAL))
+            } else {
+                body.addView(carousel(), FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT))
+            }
+            paint()
+        }
+
         override fun start() = load()
         override fun refresh() {
             if (refreshes || top10) load()
+        }
+
+        override fun resume() {
+            if (!top10) return
+            Bg.main.removeCallbacks(auto)
+            Bg.main.postDelayed(auto, 4_500)
+        }
+
+        override fun pause() {
+            Bg.main.removeCallbacks(auto)
         }
 
         fun load() {
@@ -614,8 +904,128 @@ class HomeBoard(
                 if (loaded && l.map { it.key } == list.map { it.key }) return@task
                 loaded = true
                 list = l
-                rv.adapter?.notifyDataSetChanged()
-                showEmpty(if (l.isEmpty()) empty else null)
+                paint()
+            }
+        }
+
+        fun paint() {
+            if (mode == 1) {
+                carIndex = carIndex.coerceIn(0, (list.size - 1).coerceAtLeast(0))
+                carCard?.visibility = if (list.isEmpty()) View.INVISIBLE else View.VISIBLE
+                bindCarousel()
+            } else rv.adapter?.notifyDataSetChanged()
+            if (loaded) showEmpty(if (list.isEmpty()) empty else null)
+        }
+
+        /** La rangée avance d'une affiche ; arrivée au bout, elle revient au début. */
+        fun advance() {
+            val lm = rv.layoutManager as? LinearLayoutManager ?: return
+            if (!rv.canScrollHorizontally(1) && !rv.canScrollHorizontally(-1)) return // tout tient déjà
+            val last = lm.findLastCompletelyVisibleItemPosition()
+            val first = lm.findFirstCompletelyVisibleItemPosition().coerceAtLeast(0)
+            val target = if (last >= list.size - 1) 0 else first + 1
+            val s = object : LinearSmoothScroller(act) {
+                override fun getHorizontalSnapPreference() = SNAP_TO_START
+                override fun calculateSpeedPerPixel(dm: DisplayMetrics) = (if (target == 0) 25f else 110f) / dm.densityDpi
+            }
+            s.targetPosition = target
+            lm.startSmoothScroll(s)
+        }
+
+        // ----- Carrousel -----
+
+        fun carousel(): View {
+            val col = LinearLayout(act).apply {
+                orientation = LinearLayout.VERTICAL
+                gravity = Gravity.CENTER
+                clipChildren = false
+                clipToPadding = false
+            }
+            val card = inf.inflate(R.layout.item_top10, col, false)
+            card.findViewById<View>(R.id.frame).let {
+                it.clipToOutline = true
+                Fx.shine(it)
+            }
+            col.addView(card, LinearLayout.LayoutParams(px(160), px(144)))
+            val t = TextView(act, null, 0, R.style.Medium).apply {
+                textSize = 11f
+                gravity = Gravity.CENTER
+                setSingleLine()
+                ellipsize = android.text.TextUtils.TruncateAt.END
+                setTextColor(act.getColor(R.color.text))
+            }
+            col.addView(t, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT).apply {
+                topMargin = px(6)
+                marginStart = px(8)
+                marginEnd = px(8)
+            })
+            val dots = LinearLayout(act).apply {
+                orientation = LinearLayout.HORIZONTAL
+                gravity = Gravity.CENTER_VERTICAL
+            }
+            col.addView(dots, LinearLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, px(4)).apply { topMargin = px(7) })
+            card.setOnFocusChangeListener { v, has ->
+                Fx.focus(v, has, 1.05f)
+                v.findViewById<RankView?>(R.id.rank)?.lit = has
+            }
+            card.setOnKeyListener { _, code, e ->
+                if (e.action != KeyEvent.ACTION_DOWN) return@setOnKeyListener false
+                when (code) {
+                    // Aux deux bouts du classement, gauche / droite laissent partir vers les widgets voisins
+                    KeyEvent.KEYCODE_DPAD_LEFT -> if (carIndex > 0) {
+                        step(carIndex - 1, -1)
+                        true
+                    } else false
+                    KeyEvent.KEYCODE_DPAD_RIGHT -> if (carIndex < list.size - 1) {
+                        step(carIndex + 1, 1)
+                        true
+                    } else false
+                    else -> false
+                }
+            }
+            card.setOnClickListener { list.getOrNull(carIndex)?.let { open(it) } }
+            card.setOnLongClickListener {
+                list.getOrNull(carIndex)?.let { toggleFav(it) }
+                true
+            }
+            carCard = card
+            carTitle = t
+            carDots = dots
+            return col
+        }
+
+        fun step(i: Int, dir: Int) {
+            val c = carCard ?: return
+            if (list.isEmpty()) return
+            val next = Math.floorMod(i, list.size)
+            c.animate().cancel()
+            c.animate().alpha(0f).translationX(-14 * dp * dir).setDuration(150).withEndAction {
+                carIndex = next
+                bindCarousel()
+                c.translationX = 14 * dp * dir
+                c.animate().alpha(1f).translationX(0f).setDuration(280).setInterpolator(ease).start()
+            }.start()
+        }
+
+        fun bindCarousel() {
+            val c = carCard ?: return
+            val item = list.getOrNull(carIndex) ?: return
+            bindCard(c, item, carIndex)
+            carTitle?.text = Tmdb.cleanTitle(item.name).first
+            val dots = carDots ?: return
+            if (dots.childCount != list.size) {
+                dots.removeAllViews()
+                repeat(list.size) {
+                    dots.addView(View(act), LinearLayout.LayoutParams(px(4), px(4)).apply {
+                        marginStart = px(2)
+                        marginEnd = px(2)
+                    })
+                }
+            }
+            for (k in 0 until dots.childCount) {
+                val d = dots.getChildAt(k)
+                d.setBackgroundResource(if (k == carIndex) R.drawable.dot_on else R.drawable.dot_off)
+                d.layoutParams = d.layoutParams.apply { width = px(if (k == carIndex) 12 else 4) }
             }
         }
 
@@ -633,26 +1043,15 @@ class HomeBoard(
             override fun onBindViewHolder(h: RecyclerView.ViewHolder, position: Int) {
                 val item = list[position]
                 val v = h.itemView
+                bindCard(v, item, position)
                 val rank = v.findViewById<RankView?>(R.id.rank)
-                rank?.rank = position + 1
-                val noImage = item.icon.isNullOrBlank()
-                v.findViewById<TextView?>(R.id.name)?.apply {
-                    text = Tmdb.cleanTitle(item.name).first
-                    visibility = if (noImage) View.VISIBLE else View.GONE
-                }
-                v.findViewById<View?>(R.id.overlay)?.visibility = if (noImage) View.VISIBLE else View.GONE
-                v.findViewById<View?>(R.id.sub)?.visibility = View.GONE
-                v.findViewById<View?>(R.id.bar)?.visibility = View.GONE
-                v.findViewById<View?>(R.id.badge)?.visibility = View.GONE
-                v.findViewById<ImageView?>(R.id.img)?.let { Img.load(it, item.icon, R.drawable.ph_poster, 300) }
                 v.setOnFocusChangeListener { view, has ->
                     Fx.focus(view, has, if (top10) 1.05f else 1.08f)
                     rank?.lit = has
                 }
                 v.setOnClickListener { open(item) }
                 v.setOnLongClickListener {
-                    val added = Db.toggleFav(src.id, item)
-                    Ui.toast(act, if (added) "Ajouté à Ma liste" else "Retiré de Ma liste")
+                    toggleFav(item)
                     true
                 }
             }
@@ -667,10 +1066,10 @@ class HomeBoard(
         init {
             horizontal(rv)
             rv.adapter = Tiles()
-            body.addView(rv, FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT))
+            body.addView(rv, FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT, Gravity.CENTER_VERTICAL))
         }
 
-        override fun height(size: Int) = 156
+        override fun design(size: Int) = 146
         override fun start() = load()
         override fun refresh() = load()
 
@@ -715,12 +1114,24 @@ class HomeBoard(
     /** Lignes simples (logo, titre, détail, heure) : programmes du soir, matchs du jour. */
     private abstract inner class Rows(spec: Spec, title: String) : Panel(spec, title) {
         val box = LinearLayout(act).apply { orientation = LinearLayout.VERTICAL }
+        /** Lignes qui tiennent dans la hauteur du widget (aucune coupée). */
+        var maxRows = 4
 
         init {
             body.addView(box, FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT))
         }
 
-        override fun height(size: Int) = 226
+        override fun design(size: Int) = 226
+
+        override fun sized(size: Int, contentH: Int) {
+            val n = ((contentH - 41) / 46).coerceIn(1, 6)
+            if (n != maxRows) {
+                maxRows = n
+                repaint()
+            }
+        }
+
+        abstract fun repaint()
 
         fun row(name: CharSequence, sub: String?, time: String, icon: String?, onClick: () -> Unit) {
             val v = inf.inflate(R.layout.item_home_channel, box, false)
@@ -741,6 +1152,8 @@ class HomeBoard(
     /** Ce soir à la TV : ce qui commence vers 21 h sur tes chaînes favorites (ou les premières de ta liste). */
     private inner class Tonight(spec: Spec) : Rows(spec, "Ce soir à la TV") {
         var stamp = ""
+        var chans: List<Item> = emptyList()
+        val found = HashMap<String, EpgEntry>()
 
         init {
             hint.text = "vers 21 h"
@@ -748,6 +1161,10 @@ class HomeBoard(
 
         override fun start() = load()
         override fun refresh() = load()
+        override fun repaint() {
+            stamp = ""
+            paint()
+        }
 
         fun load() {
             if (!Prefs.epgEnabled) {
@@ -758,8 +1175,9 @@ class HomeBoard(
                 val favs = Db.favorites(src.id, Kind.LIVE)
                 (if (favs.size >= 3) favs else (favs + Db.page(src.id, Kind.LIVE, null, null, 0, 14))).distinctBy { it.id }.take(14)
             }) { r ->
-                val chans = r.getOrNull() ?: return@task
-                if (chans.isEmpty()) {
+                val list = r.getOrNull() ?: return@task
+                chans = list
+                if (list.isEmpty()) {
                     showEmpty("Aucune chaîne dans cette source.")
                     return@task
                 }
@@ -770,20 +1188,20 @@ class HomeBoard(
                 cal.set(Calendar.MINUTE, 5)
                 cal.set(Calendar.SECOND, 0)
                 val t = cal.timeInMillis / 1000
-                val found = HashMap<String, EpgEntry>()
-                var pending = chans.size
-                for (ch in chans) Epg.prefetch(api, ch.id) { l ->
+                var pending = list.size
+                for (ch in list) Epg.prefetch(api, ch.id) { l ->
                     val p = l.filter { it.start in (t - 25 * 60)..(t + 30 * 60) }.minByOrNull { kotlin.math.abs(it.start - t) }
                         ?: l.firstOrNull { it.start <= t && t < it.end }
                     if (p != null) found[ch.id] = p
                     pending--
-                    if (pending % 4 == 0 || pending == 0) paint(chans, found)
+                    if (pending % 4 == 0 || pending == 0) paint()
                 }
             }
         }
 
-        fun paint(chans: List<Item>, found: Map<String, EpgEntry>) {
-            val list = chans.filter { found.containsKey(it.id) }.take(4)
+        fun paint() {
+            if (chans.isEmpty()) return
+            val list = chans.filter { found.containsKey(it.id) }.take(maxRows)
             val key = list.joinToString { it.id + found[it.id]?.title }
             if (key == stamp) return
             stamp = key
@@ -793,8 +1211,7 @@ class HomeBoard(
             for (ch in list) {
                 val p = found[ch.id] ?: continue
                 row(p.title, ch.name, fmt.format(Date(p.start * 1000)), ch.icon) {
-                    val i = chans.indexOf(ch)
-                    Ui.play(act, ItemList.of(chans), i.coerceAtLeast(0))
+                    Ui.play(act, ItemList.of(chans), chans.indexOf(ch).coerceAtLeast(0))
                 }
             }
         }
@@ -813,6 +1230,11 @@ class HomeBoard(
         }
 
         override fun start() = paint(Sport.cached())
+        override fun repaint() {
+            stamp = ""
+            paint(Sport.cached())
+        }
+
         override fun resume() {
             Bg.main.removeCallbacks(tick)
             Bg.main.post(tick)
@@ -830,16 +1252,14 @@ class HomeBoard(
         }
 
         fun paint(all: List<Sport.Match>) {
-            val cal = Calendar.getInstance()
-            val day = cal.get(Calendar.DAY_OF_YEAR)
+            val day = Calendar.getInstance().get(Calendar.DAY_OF_YEAR)
             val today = all.filter { m ->
                 m.live || (Calendar.getInstance().apply { timeInMillis = m.start }.get(Calendar.DAY_OF_YEAR) == day)
             }
             val list = (today.filter { it.live }.sortedByDescending { Sport.trend(it) } +
                 today.filter { !it.live && !it.finished }.sortedBy { it.start } +
-                today.filter { it.finished }.sortedByDescending { it.start }).take(4)
-            val live = list.any { it.live }
-            dot.visibility = if (live) View.VISIBLE else View.GONE
+                today.filter { it.finished }.sortedByDescending { it.start }).take(maxRows)
+            dot.visibility = if (list.any { it.live }) View.VISIBLE else View.GONE
             val key = list.joinToString { it.key + it.status + it.home.score + it.away.score }
             if (key == stamp && box.childCount > 0) return
             stamp = key
@@ -889,7 +1309,7 @@ class HomeBoard(
             paint()
         }
 
-        override fun height(size: Int) = 156
+        override fun design(size: Int) = 146
         override fun resume() {
             Bg.main.removeCallbacks(tick)
             Bg.main.post(tick)

@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Rond « Ajouter un profil » -->
+<shape xmlns:android="http://schemas.android.com/apk/res/android" android:shape="oval">
+    <solid android:color="#14FFFFFF" />
+    <stroke android:width="2dp" android:color="#59FFFFFF" android:dashWidth="7dp" android:dashGap="6dp" />
+</shape>

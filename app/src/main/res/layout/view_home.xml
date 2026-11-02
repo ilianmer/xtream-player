@@ -1,29 +1,104 @@
 <?xml version="1.0" encoding="utf-8"?>
-<!-- Accueil en widgets, façon iPhone : chaque bloc se déplace, se redimensionne, s'ajoute ou se retire -->
+<!--
+  Accueil en widgets, façon iPhone : le tableau est découpé en pages de la hauteur exacte de l'écran
+  (aucun widget coupé) ; chaque widget se déplace, se redimensionne, s'ajoute ou se retire.
+-->
 <FrameLayout xmlns:android="http://schemas.android.com/apk/res/android"
     android:layout_width="match_parent"
-    android:layout_height="match_parent"
-    android:clipChildren="false">
+    android:layout_height="match_parent">
 
-    <com.ilian.xtreamplayer.BoardScrollView
-        android:id="@+id/boardScroll"
+    <LinearLayout
         android:layout_width="match_parent"
         android:layout_height="match_parent"
-        android:clipChildren="false"
-        android:clipToPadding="false"
-        android:fadingEdgeLength="24dp"
-        android:requiresFadingEdge="vertical"
-        android:scrollbars="none">
+        android:orientation="vertical">
 
+        <!-- Barre du mode personnalisation -->
         <LinearLayout
-            android:id="@+id/board"
+            android:id="@+id/editBar"
             android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:clipChildren="false"
+            android:layout_height="46dp"
+            android:layout_marginBottom="8dp"
+            android:background="@drawable/glass_panel"
+            android:gravity="center_vertical"
+            android:orientation="horizontal"
+            android:paddingStart="16dp"
+            android:paddingEnd="6dp"
+            android:visibility="gone">
+
+            <TextView
+                style="@style/Semi"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="Personnaliser l'accueil"
+                android:textSize="14sp" />
+
+            <TextView
+                style="@style/Txt"
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_marginStart="12dp"
+                android:layout_weight="1"
+                android:ellipsize="end"
+                android:singleLine="true"
+                android:text="OK sur un widget : déplacer · taille · retirer"
+                android:textColor="@color/text_dim"
+                android:textSize="11sp" />
+
+            <TextView
+                android:id="@+id/btnAddWidget"
+                style="@style/Pill"
+                android:layout_height="34dp"
+                android:layout_marginEnd="6dp"
+                android:text="+  Ajouter un widget"
+                android:textSize="12sp" />
+
+            <TextView
+                android:id="@+id/btnResetWidgets"
+                style="@style/Pill"
+                android:layout_height="34dp"
+                android:layout_marginEnd="6dp"
+                android:text="Disposition d'origine"
+                android:textSize="12sp" />
+
+            <TextView
+                android:id="@+id/btnDoneWidgets"
+                style="@style/Pill"
+                android:layout_height="34dp"
+                android:layout_marginEnd="0dp"
+                android:text="Terminé"
+                android:textSize="12sp" />
+        </LinearLayout>
+
+        <!-- Pages du tableau (coupées net sous la barre du haut) -->
+        <com.ilian.xtreamplayer.BoardScrollView
+            android:id="@+id/boardScroll"
+            android:layout_width="match_parent"
+            android:layout_height="0dp"
+            android:layout_weight="1"
             android:clipToPadding="false"
-            android:orientation="vertical"
-            android:paddingBottom="40dp" />
-    </com.ilian.xtreamplayer.BoardScrollView>
+            android:overScrollMode="never"
+            android:paddingTop="6dp"
+            android:scrollbars="none">
+
+            <LinearLayout
+                android:id="@+id/board"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:clipChildren="false"
+                android:clipToPadding="false"
+                android:orientation="vertical" />
+        </com.ilian.xtreamplayer.BoardScrollView>
+    </LinearLayout>
+
+    <!-- Indicateur de page, comme les points de l'iPhone (à la verticale) -->
+    <LinearLayout
+        android:id="@+id/pageDots"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_gravity="end|center_vertical"
+        android:gravity="center"
+        android:orientation="vertical"
+        android:visibility="gone" />
 
     <!-- Blocs historiques de l'accueil, rangés ici tant qu'ils ne sont pas posés sur le tableau -->
     <FrameLayout
@@ -38,21 +113,4 @@
 
         <include layout="@layout/widget_row" />
     </FrameLayout>
-
-    <TextView
-        android:id="@+id/editBanner"
-        style="@style/Medium"
-        android:layout_width="wrap_content"
-        android:layout_height="wrap_content"
-        android:layout_gravity="top|center_horizontal"
-        android:background="@drawable/toast_bg"
-        android:elevation="20dp"
-        android:paddingStart="18dp"
-        android:paddingTop="8dp"
-        android:paddingEnd="18dp"
-        android:paddingBottom="8dp"
-        android:text="Personnalisation · OK sur un widget : déplacer, taille, retirer · Retour : terminer"
-        android:textColor="@color/text"
-        android:textSize="12sp"
-        android:visibility="gone" />
 </FrameLayout>
