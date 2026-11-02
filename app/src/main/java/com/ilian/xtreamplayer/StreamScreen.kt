@@ -80,15 +80,36 @@ class StreamScreen(
         rvRails.setItemViewCacheSize(4)
     }
 
+    /** Moment où l'on a quitté la page (pour la remettre au début après une absence). */
+    private var hiddenAt = 0L
+
     fun show() {
         visible = true
+        // Retour rapide : on retrouve sa place. Après plus de 3 minutes ailleurs : la page repart du début.
+        val stale = built && hiddenAt > 0L && android.os.SystemClock.elapsedRealtime() - hiddenAt > RESET_MS
         if (!built) build() else refresh()
+        if (stale) resetPosition()
         hero?.let { paintBackground(it) }
     }
 
     fun hide() {
+        if (visible) hiddenAt = android.os.SystemClock.elapsedRealtime()
         visible = false
         Bg.main.removeCallbacks(applyHero)
+    }
+
+    /** Page remise au début : en haut, chaque rangée sur sa première affiche, mise en avant sur le premier titre. */
+    private fun resetPosition() {
+        railFocus.clear()
+        activeRail = -1
+        rvRails.stopScroll()
+        rvRails.scrollToPosition(0)
+        adapter.notifyDataSetChanged()
+        rvRails.alpha = 0f
+        rvRails.animate().alpha(1f).setDuration(280).start()
+        val first = rails.firstOrNull { it.key == "latest" && it.items.isNotEmpty() } ?: rails.firstOrNull { it.items.isNotEmpty() }
+        first?.items?.firstOrNull()?.let { setHero(it, first) }
+        if (rvRails.hasFocus()) focusDefault()
     }
 
     fun focusDefault() {
@@ -639,6 +660,8 @@ class StreamScreen(
     }
 
     companion object {
+        /** Absence après laquelle la page repart du début (3 minutes). */
+        private const val RESET_MS = 180_000L
         private val SE = Regex("""Saison (\d+) · Épisode (\d+)""")
     }
 }

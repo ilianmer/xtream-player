@@ -406,7 +406,25 @@ class DirectScreen(
             g.key == LiveRecent.KEY -> "Les chaînes que tu regardes apparaîtront ici."
             else -> "Aucune chaîne dans cette catégorie."
         }
-        if (list.size == 0) clearInfo()
+        if (list.size == 0) clearInfo() else primeInfo()
+    }
+
+    /**
+     * La fiche du haut n'est jamais vide : tant qu'aucune chaîne n'est survolée, elle montre la première
+     * de la catégorie (sans lancer l'aperçu vidéo).
+     */
+    private fun primeInfo() {
+        if (current !in 0 until list.size) current = 0
+        val ch = item(current) ?: return
+        val l = Epg.cached(ch.id)
+        currentEntry = l?.let { Epg.nowAndNext(it).first }
+        paintInfo()
+        if (l == null && Prefs.epgEnabled) Epg.prefetch(api, ch.id) { got ->
+            if (item(current)?.id == ch.id && currentEntry == null) {
+                currentEntry = Epg.nowAndNext(got).first
+                paintInfo()
+            }
+        }
     }
 
     // ---------- Sélection ----------
@@ -467,6 +485,7 @@ class DirectScreen(
     private fun paintInfo() {
         val ch = item(current) ?: return
         infoChan.text = "${ch.num ?: (current + 1)} · ${ch.name}"
+        infoLogo.visibility = View.VISIBLE
         Img.load(infoLogo, ch.icon, R.drawable.ph_live)
         previewNum.text = (ch.num ?: (current + 1)).toString()
         if (previewing != ch.id) Img.load(previewLogo, ch.icon, R.drawable.ic_play)
@@ -510,6 +529,7 @@ class DirectScreen(
     }
 
     private fun clearInfo() {
+        infoLogo.visibility = View.INVISIBLE
         infoChan.text = ""
         infoTitle.text = ""
         infoTime.text = ""

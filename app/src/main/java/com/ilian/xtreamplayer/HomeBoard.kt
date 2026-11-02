@@ -282,12 +282,26 @@ class HomeBoard(
         }
     }
 
+    /** Moment où l'on a quitté l'accueil : après plus de 3 minutes, il revient à sa première page. */
+    private var pausedAt = 0L
+
     fun resume() {
+        val stale = !running && pausedAt > 0L && android.os.SystemClock.elapsedRealtime() - pausedAt > 180_000L
         running = true
         for (w in items) w.resume()
+        if (stale && laidOut && !editing) {
+            page = 0
+            paintDots()
+            scroll.goTo(0, false)
+            board.post {
+                val f = act.currentFocus
+                if (f == null || board.hasFocus()) focusDefault()
+            }
+        }
     }
 
     fun pause() {
+        if (running) pausedAt = android.os.SystemClock.elapsedRealtime()
         running = false
         for (w in items) w.pause()
     }
@@ -517,9 +531,23 @@ class HomeBoard(
 
     // ---------- Mode personnalisation (les widgets « tremblent » comme sur iPhone) ----------
 
+    /** Barre du haut (onglets) : hors d'atteinte pendant la personnalisation, pour ne pas changer d'onglet par erreur. */
+    private var topFocus = ViewGroup.FOCUS_BEFORE_DESCENDANTS
+
+    private fun lockTopBar(lock: Boolean) {
+        val bar = act.findViewById<ViewGroup>(R.id.topBar) ?: return
+        if (lock) {
+            topFocus = bar.descendantFocusability
+            bar.descendantFocusability = ViewGroup.FOCUS_BLOCK_DESCENDANTS
+        } else {
+            bar.descendantFocusability = topFocus
+        }
+    }
+
     fun enterEdit() {
         if (editing) return
         editing = true
+        lockTopBar(true)
         editBar.visibility = View.VISIBLE
         editBar.alpha = 0f
         editBar.translationY = -8 * dp
@@ -531,6 +559,7 @@ class HomeBoard(
     private fun exitEdit() {
         moving = null
         editing = false
+        lockTopBar(false)
         save()
         editBar.visibility = View.GONE
         layout()

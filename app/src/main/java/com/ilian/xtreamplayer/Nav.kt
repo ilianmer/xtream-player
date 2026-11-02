@@ -198,6 +198,9 @@ object Fx {
     private val grow = OvershootInterpolator(0.9f)
     private val shrink = DecelerateInterpolator()
 
+    /** Zone de texte qui défile : la vue elle-même si c'est un ScrollView qui a le focus. */
+    private fun scrollerOf(v: View): ScrollView? = v as? ScrollView
+
     private fun isScroller(v: View) =
         v is RecyclerView || v is ScrollView || v is HorizontalScrollView || v is AbsListView
 
@@ -322,6 +325,9 @@ object Fx {
     fun wrongWay(v: View?, down: Boolean): Boolean {
         v ?: return false
         if (verticalList(v) != null) return false
+        // Long texte qui défile (conditions, notes…) : les flèches le font défiler tant qu'il en reste
+        val scroller = scrollerOf(v)
+        if (scroller != null && scroller.canScrollVertically(if (down) 1 else -1)) return false
         val next = v.focusSearch(if (down) View.FOCUS_DOWN else View.FOCUS_UP) ?: return true
         val a = IntArray(2)
         val b = IntArray(2)

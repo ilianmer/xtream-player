@@ -22,13 +22,13 @@ class SettingsActivity : BaseActivity() {
     private val refreshDownloads = Runnable { updateDownloads() }
     private val dlValues = HashMap<Long, TextView>()
 
-    private val sections = listOf(
-        "Sources IPTV", "Réglages IPTV", "Interface", "Sport", "Protection multi-écran", "Lecteur vidéo", "Téléchargements"
-    ).let { if (Features.DOWNLOADS) it else it.dropLast(1) }
-    private val icons = listOf(
+    private val sections = (listOf(
+        "Sources IPTV", "Réglages IPTV", "Interface", "Sport", "Protection multi-écran", "Lecteur vidéo"
+    ) + (if (Features.DOWNLOADS) listOf("Téléchargements") else emptyList()) + listOf("Mentions légales"))
+    private val icons = (listOf(
         R.drawable.ic_menu_sources, R.drawable.ic_menu_iptv, R.drawable.ic_menu_ui, R.drawable.ic_menu_sport,
-        R.drawable.ic_menu_shield, R.drawable.ic_menu_player, R.drawable.ic_download
-    ).let { if (Features.DOWNLOADS) it else it.dropLast(1) }
+        R.drawable.ic_menu_shield, R.drawable.ic_menu_player
+    ) + (if (Features.DOWNLOADS) listOf(R.drawable.ic_download) else emptyList()) + listOf(R.drawable.ic_menu_legal))
     private lateinit var tvSection: TextView
     private lateinit var menuPill: TabPill
 
@@ -110,14 +110,15 @@ class SettingsActivity : BaseActivity() {
         Bg.main.removeCallbacks(refreshDownloads)
         rows.clear()
         scroll.scrollTo(0, 0)
-        when (i) {
-            0 -> sources()
-            1 -> iptv()
-            2 -> ui()
-            3 -> sportSettings()
-            4 -> protection()
-            5 -> playerSettings()
-            else -> downloads()
+        when (sections.getOrNull(i)) {
+            "Sources IPTV" -> sources()
+            "Réglages IPTV" -> iptv()
+            "Interface" -> ui()
+            "Sport" -> sportSettings()
+            "Protection multi-écran" -> protection()
+            "Lecteur vidéo" -> playerSettings()
+            "Téléchargements" -> downloads()
+            else -> legalSettings()
         }
         // La section arrive en fondu en glissant légèrement (comme une page qu'on tourne)
         content.animate().cancel()
@@ -127,6 +128,26 @@ class SettingsActivity : BaseActivity() {
             .setInterpolator(android.view.animation.PathInterpolator(0.22f, 1f, 0.36f, 1f)).start()
         tvSection.alpha = 0.4f
         tvSection.animate().alpha(1f).setDuration(220).start()
+    }
+
+    /** Mentions légales : chaque document en accès direct, version et créateur. */
+    private fun legalSettings() {
+        rows.header("Xtream Player")
+        rows.info("Version", Updater.installedLabel(this))
+        rows.info("Créée par", Legal.CREATOR)
+        rows.header("Documents")
+        val desc = listOf(
+            "Ce que fait l'appli, ce qu'elle ne fait pas, et ta responsabilité.",
+            "Ce qui reste sur ton appareil et les services contactés.",
+            "Données, images et composants libres utilisés.",
+            "Logos et noms des chaînes, compétitions et programmes."
+        )
+        Legal.DOCS.forEachIndexed { i, d ->
+            rows.action(d.title, desc.getOrNull(i)) {
+                startActivity(Intent(this, LegalActivity::class.java).putExtra(LegalActivity.EXTRA_DOC, i))
+            }
+        }
+        rows.note("Xtream Player est un lecteur : il ne fournit aucun contenu. Tes identifiants et tes données restent sur ton appareil.")
     }
 
     private fun reshow() {
