@@ -309,6 +309,55 @@
         android:textSize="15sp"
         android:visibility="gone" />
 
+    <!--
+      Films et séries : raccourcis affichés avec les commandes du lecteur, juste au-dessus de la barre
+      de progression (vitesse, options, épisode suivant).
+    -->
+    <LinearLayout
+        android:id="@+id/vodBar"
+        android:layout_width="wrap_content"
+        android:layout_height="40dp"
+        android:layout_gravity="bottom|center_horizontal"
+        android:layout_marginBottom="86dp"
+        android:gravity="center_vertical"
+        android:orientation="horizontal"
+        android:visibility="gone">
+
+        <TextView
+            android:id="@+id/btnSpeed"
+            style="@style/Tab"
+            android:layout_height="36dp"
+            android:layout_marginEnd="10dp"
+            android:background="@drawable/glass_pill_btn"
+            android:paddingStart="16dp"
+            android:paddingEnd="16dp"
+            android:text="Vitesse 1×" />
+
+        <TextView
+            android:id="@+id/btnOptions"
+            style="@style/Tab"
+            android:layout_height="36dp"
+            android:layout_marginEnd="10dp"
+            android:background="@drawable/glass_pill_btn"
+            android:paddingStart="16dp"
+            android:paddingEnd="16dp"
+            android:text="Audio, sous-titres et options" />
+
+        <TextView
+            android:id="@+id/btnNextEp"
+            style="@style/Tab"
+            android:layout_height="36dp"
+            android:layout_marginEnd="0dp"
+            android:background="@drawable/glass_pill_btn"
+            android:drawableEnd="@drawable/ic_play_small"
+            android:drawablePadding="8dp"
+            android:drawableTint="@color/tab_text"
+            android:paddingStart="16dp"
+            android:paddingEnd="14dp"
+            android:text="Épisode suivant"
+            android:visibility="gone" />
+    </LinearLayout>
+
     <!-- Épisode suivant, proposé pendant le générique (comme Netflix) -->
     <LinearLayout
         android:id="@+id/nextBox"

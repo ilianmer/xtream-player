@@ -87,6 +87,15 @@ class PlayerActivity : BaseActivity() {
     private lateinit var nextTitle: TextView
     private lateinit var btnNext: TextView
     private lateinit var nextBar: ProgressBar
+    private lateinit var vodBar: View
+    private lateinit var btnSpeed: TextView
+    private lateinit var btnNextEp: TextView
+
+    // ---------- Vitesse de lecture (films et séries) ----------
+    /** Vitesse en cours : gardée pour toute la série, et pour la suite du film en cours. */
+    private var speed = 1f
+    /** Son décodé par le stick pour cette séance (le Dolby envoyé tel quel à l'ampli ne peut pas changer de vitesse). */
+    private var forcePcm = false
 
     // ---------- Épisode suivant pendant le générique ----------
     /** Bulle masquée avec Retour pour cet épisode : on laisse finir, l'enchaînement se fera à la toute fin. */
@@ -262,6 +271,25 @@ class PlayerActivity : BaseActivity() {
         nextBar = findViewById(R.id.nextBar)
         btnNext.setOnClickListener { playNextEpisode() }
         ticker = findViewById(R.id.ticker)
+        vodBar = findViewById(R.id.vodBar)
+        btnSpeed = findViewById(R.id.btnSpeed)
+        btnNextEp = findViewById(R.id.btnNextEp)
+        btnSpeed.setOnClickListener { chooseSpeed() }
+        findViewById<View>(R.id.btnOptions).setOnClickListener { chooseTracks() }
+        btnNextEp.setOnClickListener { nextEpisodeNow() }
+        for (b in listOf<View>(btnSpeed, findViewById(R.id.btnOptions), btnNextEp)) {
+            // Tant qu'on est sur ces boutons, les commandes restent affichées
+            b.setOnFocusChangeListener { v, has ->
+                Fx.focus(v, has, 1.06f)
+                if (has) playerView.showController()
+            }
+            b.setOnKeyListener { _, _, e ->
+                if (e.action == KeyEvent.ACTION_DOWN) playerView.showController()
+                false
+            }
+        }
+        // Les raccourcis apparaissent et disparaissent avec les commandes du lecteur
+        playerView.setControllerVisibilityListener(PlayerView.ControllerVisibilityListener { v -> showVodBar(v == View.VISIBLE) })
 
         playerView.setShowBuffering(PlayerView.SHOW_BUFFERING_ALWAYS)
         // Pendant une reconnexion ou un zapping, la dernière image reste affichée (pas d'écran noir)
@@ -511,7 +539,7 @@ class PlayerActivity : BaseActivity() {
                 DefaultTsPayloadReaderFactory.FLAG_ENABLE_HDMV_DTS_AUDIO_STREAMS
         )
         val leveling = Prefs.volumeLeveling
-        val passthrough = Prefs.audioPassthrough
+        val passthrough = Prefs.audioPassthrough && !forcePcm
         val renderers = object : DefaultRenderersFactory(this) {
             override fun buildAudioSink(context: Context, enableFloatOutput: Boolean, enableAudioTrackPlaybackParams: Boolean): AudioSink {
                 val b = DefaultAudioSink.Builder(context)
@@ -872,6 +900,10 @@ class PlayerActivity : BaseActivity() {
             else -> Db.progress(src.id, item)?.takeIf { !it.finished }?.pos ?: 0L
         }
         p.setMediaItem(builder.build(), resume)
+        // Vitesse : normale en direct ; pour une série, celle retenue pour elle
+        if (item.kind == Kind.EPISODE) speedKey(item)?.let { k -> Db.kvGet(k)?.toFloatOrNull()?.let { speed = it } }
+        p.setPlaybackSpeed(if (item.kind == Kind.LIVE) 1f else speed)
+        paintVodBar()
         p.prepare()
         p.playWhenReady = true
         showInfo(item, withEpg = true)
@@ -1015,6 +1047,7 @@ class PlayerActivity : BaseActivity() {
         if (isLive && base != null && item != null && !Session.autoFallback) {
             options.add("Qualité · ${LiveQuality.label(item.name)}" to { chooseQuality(base, item) })
         }
+        if (!isLive) options.add("Vitesse de lecture · ${if (speed == 1f) "normale" else speedLabel(speed)}" to { chooseSpeed() })
         options.add("Format d'image · ${ASPECTS[aspect].second}" to { chooseAspect() })
         if (audio.size > 1) options.add("Audio · ${audio.firstOrNull { it.selected }?.name ?: audio[0].name}" to { chooseAudio(audio) })
         if (subs.isNotEmpty()) options.add("Sous-titres · ${subs.firstOrNull { it.selected }?.name ?: "aucun"}" to { chooseSubs(subs) })
@@ -1330,6 +1363,94 @@ class PlayerActivity : BaseActivity() {
         if (::nextBox.isInitialized && nextBox.visibility == View.VISIBLE) nextBox.visibility = View.GONE
     }
 
+    // ---------- Raccourcis films / séries ----------
+
+    private fun showVodBar(show: Boolean) {
+        if (isLive || !show) {
+            if (vodBar.visibility == View.VISIBLE) {
+                vodBar.animate().cancel()
+                vodBar.animate().alpha(0f).setDuration(180).withEndAction { vodBar.visibility = View.GONE }.start()
+            }
+            return
+        }
+        paintVodBar()
+        if (vodBar.visibility != View.VISIBLE) {
+            vodBar.alpha = 0f
+            vodBar.translationY = 10 * resources.displayMetrics.density
+            vodBar.visibility = View.VISIBLE
+        }
+        vodBar.animate().cancel()
+        vodBar.animate().alpha(1f).translationY(0f).setDuration(240).start()
+    }
+
+    private fun paintVodBar() {
+        if (!::btnSpeed.isInitialized) return
+        btnSpeed.text = "Vitesse " + (if (speed == 1f) "1×" else speedLabel(speed))
+        btnNextEp.visibility = if (current?.kind == Kind.EPISODE) View.VISIBLE else View.GONE
+    }
+
+    private fun speedLabel(s: Float): String = SPEED_LABELS.getOrNull(SPEEDS.indexOfFirst { it == s }) ?: "${s}×"
+
+    private fun speedKey(item: Item?): String? = item?.takeIf { it.kind == Kind.EPISODE }?.series?.let { Db.pkey("speed:series:$it") }
+
+    private fun chooseSpeed() {
+        if (isLive) return
+        Ui.choose(this, "Vitesse de lecture", SPEEDS.indices.map { i -> (if (SPEEDS[i] == speed) "✓  " else "") + SPEED_LABELS[i] }) { w ->
+            setSpeed(SPEEDS[w])
+        }
+    }
+
+    private fun setSpeed(s: Float) {
+        val p = player ?: return
+        speed = s
+        speedKey(current)?.let { k -> Db.kvPut(k, if (s == 1f) null else s.toString()) }
+        paintVodBar()
+        Ui.toast(this, if (s == 1f) "Vitesse normale" else "Vitesse ${speedLabel(s)}")
+        if (s != 1f && Prefs.audioPassthrough && !forcePcm) {
+            // Le son Dolby envoyé tel quel à l'ampli ne peut pas accélérer : on le fait décoder par le stick
+            // pour cette séance, puis on reprend exactement au même endroit.
+            forcePcm = true
+            retryAt = p.currentPosition.coerceAtLeast(1L)
+            savePosition()
+            p.release()
+            player = null
+            initPlayer()
+            play(keepFormat = true)
+            return
+        }
+        p.setPlaybackSpeed(s)
+    }
+
+    /**
+     * « Épisode suivant » depuis les commandes : l'épisode d'après dans la liste de lecture,
+     * sinon dans toute la série (fin de saison, ou épisode lancé seul).
+     */
+    private fun nextEpisodeNow() {
+        val item = current ?: return
+        if (item.kind != Kind.EPISODE) return
+        if (index + 1 < list.size) {
+            playNextEpisode()
+            return
+        }
+        val sid = item.series ?: run {
+            Ui.toast(this, "C'est le dernier épisode disponible.")
+            return
+        }
+        Bg.task(this, { api.seriesInfo(sid) }) { r ->
+            val all = r.getOrNull()?.seasons?.flatMap { it.episodes }.orEmpty()
+            val i = all.indexOfFirst { it.id == item.id }
+            if (i < 0 || i + 1 >= all.size) {
+                Ui.toast(this, "C'est le dernier épisode disponible.")
+                return@task
+            }
+            markFinished(item)
+            hideNext()
+            Session.playlist = ItemList.of(all)
+            index = i + 1
+            play()
+        }
+    }
+
     private fun playNextEpisode() {
         val item = current ?: return
         if (index + 1 >= list.size) return
@@ -1359,6 +1480,9 @@ class PlayerActivity : BaseActivity() {
     }
 
     companion object {
+        private val SPEEDS = floatArrayOf(0.5f, 0.75f, 1f, 1.25f, 1.5f, 2f)
+        private val SPEED_LABELS = listOf("0,5×", "0,75×", "Normale", "1,25×", "1,5×", "2×")
+
         /** Cadence mesurée par chaîne (pendant que l'appli est ouverte). */
         private val FPS_MEMO = java.util.concurrent.ConcurrentHashMap<String, Float>()
 
