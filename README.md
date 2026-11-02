@@ -1,55 +1,96 @@
-# Xtream Player 2.0
+# Xtream Player
 
-Lecteur IPTV pour Xiaomi TV Stick et Android TV, compatible avec les codes Xtream. Appli à installer à la main, sans passer par le Play Store.
+Lecteur IPTV pour Android TV, pensé pour le Xiaomi TV Stick et sa télécommande. Il fonctionne avec un abonnement IPTV compatible Xtream Codes (adresse du serveur, identifiant et mot de passe).
 
-## Nouveautés de la 2.0
+L'appli ne fournit aucune chaîne ni aucun film : elle lit ceux de ton propre abonnement.
 
-- **Plusieurs sources** : une source active plus d'autres en réserve. Pour chacune : statut, date d'expiration, écrans autorisés, connexions en cours, nombre de chaînes, films et séries, part du catalogue reconnue par TMDB. Avec Rafraîchir, Modifier, Masquer des catégories, Supprimer et Ajouter.
-- **Catalogue enregistré sur le stick** : les listes sont lues en flux et rangées dans une petite base locale, ce qui tient même avec des centaines de milliers de films sur 1 Go de RAM. L'appli s'ouvre ensuite instantanément et se met à jour toute seule selon la fréquence choisie.
-- **Réglages IPTV** : fréquence de mise à jour, guide TV, préchargement du guide (programme en cours affiché dans la liste des chaînes), fusion des catégories similaires, format du direct et User Agent.
-- **Interface** : liste Revoir des films terminés, et liste Reprendre des films commencés.
-- **Protection multi-écran** : avant chaque lecture, l'appli demande au serveur combien d'écrans utilisent le compte, toutes applis et tous appareils confondus, et prévient si la limite est atteinte.
-- **Lecteur** : taille des sous-titres, enchaînement des épisodes (désactivé, fin de saison ou toute la série), durée du tampon et tampon max.
-- **Fiche film** : résumé, note, genre, réalisation, distribution, reprise, favori, téléchargement.
-- **Téléchargements** : films et épisodes gardés hors ligne sur le stick, avec suivi et suppression dans Réglages.
-- **Saisie depuis le téléphone** : le stick affiche un QR code et un code à 4 chiffres. Tu remplis les champs (source, clé TMDB, User Agent) au clavier du téléphone.
-- **TMDB** : avec une clé gratuite, les affiches et résumés manquants sont complétés.
+Créée par ilianmer.
 
-## Obtenir l'APK
+## Installer
 
-### Option A : GitHub (sans rien installer sur ton PC)
+1. Sur le stick, ouvre Paramètres > Préférences de l'appareil > À propos et appuie 7 fois sur « Build » pour activer les options développeur, puis autorise l'installation d'applis de sources inconnues.
+2. Récupère l'APK de la dernière version à cette adresse :
+   https://github.com/ilianmer/xtream-player/releases/latest/download/XtreamPlayer.apk
+   Le plus simple : l'appli Downloader sur le stick (tape l'adresse), ou Send Files to TV depuis ton téléphone.
+3. Ouvre le fichier et installe.
+4. Au premier lancement, accepte les conditions d'utilisation puis ajoute ta source. Tu peux remplir les champs au clavier du téléphone : le stick affiche un QR code et un code à 4 chiffres.
 
-1. Crée un dépôt sur github.com (il peut être privé) et envoie-y tout le dossier du projet.
-2. Va dans l'onglet **Actions** du dépôt. La compilation se lance toute seule (environ 5 minutes).
-3. Ouvre la compilation terminée et télécharge l'artefact **XtreamPlayer-apk**. C'est un zip qui contient `app-release.apk`.
+Avec un gros catalogue, la première mise à jour des listes prend une à deux minutes. Ensuite, l'appli s'ouvre tout de suite.
 
-Si la compilation échoue, copie le message d'erreur et envoie-le-moi.
+## Mises à jour
 
-### Option B : Android Studio
+L'appli prévient au lancement quand une nouvelle version est publiée et l'installe en un clic. Pour vérifier à la main : Réglages > Interface > Rechercher une mise à jour. Les réglages, les profils et les favoris sont conservés.
 
-1. Installe Android Studio et ouvre le dossier du projet.
-2. Laisse-le télécharger ce qu'il demande.
-3. Menu **Build > Build App Bundle(s) / APK(s) > Build APK(s)**.
+Les versions vont de V4.01 à V4.20, puis V5.01, V5.02, etc. Les nouveautés de chaque version sont dans l'onglet Releases.
 
-## Installer sur le Xiaomi TV Stick
+## Accueil
 
-1. Active les options développeur : **Paramètres > Préférences de l'appareil > À propos**, puis appuie 7 fois sur **Build**.
-2. Installe **Send Files to TV** sur le stick et sur ton téléphone.
-3. Envoie l'APK depuis le téléphone, ouvre-le sur le stick et autorise l'installation.
-4. Au premier lancement, choisis **Saisir depuis le téléphone** pour entrer ta source.
+L'accueil est fait de widgets, comme sur un iPhone. Avec « Personnaliser l'accueil » (l'icône en haut à droite, ou dans les Réglages), tu ajoutes, retires et déplaces les widgets, et tu choisis leur taille : petit, moyen ou grand. Chaque page remplit l'écran.
 
-La première mise à jour des listes peut prendre une à deux minutes avec un gros catalogue.
+Widgets disponibles : À la une, Scores en direct, Reprendre la lecture, Top 10 des films, Top 10 des séries, Chaînes favorites, Ce soir à la TV, Matchs du jour, Cotes en direct, Nouveautés, Ma liste, Horloge, et une catégorie de films ou de séries au choix.
 
-## Commandes à la télécommande
+## Direct
 
-- Dans les listes : appui long sur OK pour ajouter ou retirer des favoris. Sur un épisode, l'appui long ouvre le menu (lire depuis le début, télécharger, marquer comme vu).
-- En direct : Haut et Bas pour changer de chaîne, OK pour le guide TV.
-- Films et séries : Gauche et Droite pour reculer ou avancer de 10 secondes, OK pour les commandes.
-- Dans les réglages : Gauche et Droite règlent les curseurs, Retour revient au menu.
+- Les chaînes s'affichent en liste ou en guide des programmes, avec l'aperçu vidéo de la chaîne survolée et la fiche du programme en cours et du suivant.
+- Les catégories sont en pastilles, toujours entières, avec une petite flèche quand il en reste d'un côté. Un appui long sur une catégorie l'affiche à chaque ouverture du Direct.
+- « Ce soir » place le guide sur la soirée.
+- Les touches chiffrées mènent directement à un numéro de chaîne.
+- Les fausses chaînes de séparation du fournisseur (« #### CINÉMA #### »…) sont masquées.
+- En lecture : reprise automatique après une coupure, format TS ou HLS, cadence de l'écran adaptée à la chaîne, volume égal d'une chaîne à l'autre.
+
+## Sport
+
+- Scores en direct, matchs à venir et résultats en football, basket, rugby, tennis et sports de combat. Tu choisis les compétitions et tes équipes, dont les matchs passent en premier.
+- La chaîne qui diffuse un match est cherchée dans le guide de ton fournisseur et testée avant d'être lancée.
+- Pendant que tu regardes une chaîne, les scores de tes équipes et des grands matchs défilent, avec une alerte à chaque but.
+- Cotes : une barre de pronostic donne les chances de chaque équipe. Les étiquettes « Match serré », « Grand favori », « Exploit en cours » et « Surprise » aident à choisir quoi regarder. Un comparateur affiche les cotes de Winamax, Betclic, Unibet, PMU et NetBet.
+
+Les cotes des bookmakers demandent une clé gratuite The Odds API (500 requêtes par mois), à coller dans Réglages > Sport. L'appli répartit ces requêtes pour qu'elles tiennent tout le mois, et le compteur est visible au même endroit. Les cotes sont indicatives : l'appli ne propose aucun pari.
+
+## Films et séries
+
+- Catalogue par catégories, Top 10 du jour (nouveautés, popularité, notes) et Nouveautés.
+- Fiches avec résumé, note, genre, réalisation et distribution, complétées par TMDB si tu ajoutes une clé gratuite.
+- Reprise là où tu t'étais arrêté, Ma liste et la liste Revoir.
+- Pendant la lecture : vitesse de 0,5× à 2×, épisode suivant en un clic, enchaînement automatique des épisodes, sous-titres, pistes audio et format d'image.
+
+## Recherche
+
+Une seule recherche pour les chaînes, les films et les séries, avec les résultats au fil de la saisie. Tu peux aussi taper depuis le téléphone.
+
+## Profils
+
+Jusqu'à 5 profils par source. Chacun a son personnage (une trentaine au choix), sa couleur, ses favoris, sa reprise de lecture, ses langues de contenu, ses équipes et son accueil.
+
+Chaque profil peut être protégé par un code à 4 chiffres : Gérer les profils, choisis le profil, puis « Code à 4 chiffres ». Le code est demandé à l'ouverture du profil, au lancement de l'appli et après 10 minutes passées ailleurs. En cas d'oubli, le mot de passe de la source permet de le retirer.
+
+## Sources et réglages
+
+- Plusieurs sources IPTV, avec pour chacune le statut, la date d'expiration, le nombre d'écrans autorisés et les connexions en cours.
+- Mise à jour automatique du catalogue. Guide TV du fournisseur ou d'une adresse XMLTV de ton choix.
+- Catégories affichées et leur ordre, fusion des catégories qui se ressemblent, langues du contenu.
+- Protection multi-écran : avant chaque lecture, l'appli vérifie combien d'écrans utilisent déjà le compte et prévient si la limite est atteinte.
+- Son Dolby vers l'ampli, taille des sous-titres, tampon de lecture, User Agent.
+- Mentions légales : conditions d'utilisation, confidentialité, crédits et licences, marques et contenus.
+
+## À la télécommande
+
+- OK ouvre. Un appui long ajoute aux favoris ou ouvre les options.
+- Direct : Haut et Bas changent de chaîne, les chiffres tapent un numéro. Un premier OK affiche le programme, un second ouvre les options (audio, sous-titres, qualité, format d'image).
+- Films et séries : Gauche et Droite reculent ou avancent de 10 secondes. OK affiche les commandes, avec Vitesse, Options et, pour une série, Épisode suivant.
+- Retour ferme une fenêtre ou revient à l'écran précédent.
 
 ## Si ça ne marche pas
 
-- **Identifiants refusés ou erreur 403** : essaie un autre User Agent dans Réglages > Réglages IPTV (IPTVSmartersPro est souvent accepté).
-- **Les chaînes tournent dans le vide** : change le format du direct en HLS.
-- **La saisie téléphone ne s'ouvre pas** : le téléphone doit être sur le même Wi-Fi que le stick.
-- **Le téléchargement échoue** : beaucoup de fournisseurs comptent un téléchargement comme un écran. Arrête la lecture en cours avant de télécharger.
+- Identifiants refusés ou erreur 403 : essaie un autre User Agent dans Réglages > Réglages IPTV.
+- Une chaîne tourne dans le vide : passe le format du direct en HLS, au même endroit.
+- La saisie depuis le téléphone ne s'ouvre pas : le téléphone doit être sur le même Wi-Fi que le stick.
+- Plus de cotes : vérifie la clé et le compteur dans Réglages > Sport.
+
+## Compiler
+
+Le projet se compile avec Android Studio, ou avec `./gradlew assembleRelease` et un JDK 17. Les versions publiées sont compilées et signées automatiquement par GitHub Actions.
+
+## Crédits
+
+Scores et calendriers : ESPN. Fiches et affiches : TMDB. Cotes : The Odds API. Polices Outfit et Bebas Neue sous licence SIL Open Font License (dossier `licences`).
