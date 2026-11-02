@@ -56,7 +56,7 @@ object Img {
     }
 
     /** Prépare une image à l'avance (affiche qui va arriver à l'écran) : elle s'affichera aussitôt, sans fondu ni attente. */
-    fun warm(url: String?, maxPx: Int = 360) {
+    fun prefetch(url: String?, maxPx: Int = 360) {
         if (url.isNullOrBlank() || !url.startsWith("http", ignoreCase = true) || cache.get(url) != null) return
         pool.execute {
             if (cache.get(url) != null) return@execute

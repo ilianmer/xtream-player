@@ -964,7 +964,7 @@ class HomeBoard(
                 loaded = true
                 list = l
                 // Toutes les affiches sont préparées d'avance : rien n'arrive en retard pendant le défilement
-                if (top10) for (i in l) Img.warm(i.icon, 300)
+                if (top10) for (i in l) Img.prefetch(i.icon, 300)
                 paint()
             }
         }
@@ -1098,7 +1098,7 @@ class HomeBoard(
             }?.start()
             paintDots(next)
             // L'affiche d'après est déjà prête
-            list.getOrNull(Math.floorMod(next + dir, list.size))?.let { Img.warm(it.icon, 300) }
+            list.getOrNull(Math.floorMod(next + dir, list.size))?.let { Img.prefetch(it.icon, 300) }
         }
 
         fun bindCarousel() {
