@@ -148,7 +148,7 @@ class ProfilesActivity : BaseActivity() {
         val d = resources.displayMetrics.density
         val list = Db.profiles(src.id).ifEmpty { listOf(Db.ensureProfile(src.id)) }
         findViewById<TextView>(R.id.tvTitle).text = if (manage) "Gérer les profils" else "Qui regarde ?"
-        hint.text = if (manage) "Choisis un profil à modifier : avatar, nom, couleur, langues."
+        hint.text = if (manage) "Choisis un profil à modifier : avatar, nom, couleur, langues, code."
         else "Chaque profil a son avatar, ses favoris, sa reprise de lecture, ses langues et ses équipes."
         btnManage.text = if (manage) "Terminé" else "Gérer les profils"
         row.removeAllViews()
@@ -160,6 +160,7 @@ class ProfilesActivity : BaseActivity() {
             avatar.outlineProvider = Profiles.OVAL
             avatar.alpha = if (manage) 0.55f else 1f
             v.findViewById<View>(R.id.edit).visibility = if (manage) View.VISIBLE else View.GONE
+            v.findViewById<View>(R.id.lock).visibility = if (Pin.isSet(p.id)) View.VISIBLE else View.GONE
             v.findViewById<TextView>(R.id.name).text = p.name
             v.findViewById<TextView>(R.id.langs).text = Profiles.langsLabel(p)
             val color = Profiles.glowColor(p)
@@ -238,7 +239,10 @@ class ProfilesActivity : BaseActivity() {
 
     private val EASE = android.view.animation.PathInterpolator(0.22f, 1f, 0.36f, 1f)
 
-    private fun open(p: Profile) {
+    /** Profil protégé : son code est demandé avant de l'ouvrir. */
+    private fun open(p: Profile) = Pin.guard(this, p) { enter(p) }
+
+    private fun enter(p: Profile) {
         Session.selectProfile(p)
         Preload.featured = null
         startActivity(
@@ -259,7 +263,8 @@ class ProfilesActivity : BaseActivity() {
         }
     }
 
-    private fun edit(p: Profile) {
+    /** Modifier un profil protégé demande aussi son code. */
+    private fun edit(p: Profile) = Pin.guard(this, p) {
         startActivity(Intent(this, ProfileEditActivity::class.java).putExtra(ProfileEditActivity.EXTRA_PROFILE, p.id))
     }
 

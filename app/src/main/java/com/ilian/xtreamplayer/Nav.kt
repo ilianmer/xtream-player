@@ -30,6 +30,17 @@ open class BaseActivity : Activity() {
     /** Rebond en bout de liste (désactivé dans le lecteur, qui gère ses flèches lui-même). */
     protected open val edgeBump = true
 
+    /** Profil protégé par un code : redemandé si l'appli revient après un long moment ailleurs. */
+    override fun onStart() {
+        super.onStart()
+        Pin.onStart(this)
+    }
+
+    override fun onStop() {
+        super.onStop()
+        Pin.onStop()
+    }
+
     /** Le zoom de sélection déborde un peu : les panneaux ne le coupent plus dans leur marge intérieure. */
     override fun onResume() {
         super.onResume()

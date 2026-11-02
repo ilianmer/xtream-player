@@ -53,6 +53,18 @@
             android:padding="9dp"
             android:src="@drawable/ic_edit"
             android:visibility="gone" />
+
+        <!-- Profil protégé par un code -->
+        <ImageView
+            android:id="@+id/lock"
+            android:layout_width="32dp"
+            android:layout_height="32dp"
+            android:layout_gravity="bottom|end"
+            android:background="@drawable/edit_badge"
+            android:elevation="8dp"
+            android:padding="8dp"
+            android:src="@drawable/ic_lock_badge"
+            android:visibility="gone" />
     </FrameLayout>
 
     <TextView

@@ -367,7 +367,8 @@ class PlayerActivity : BaseActivity() {
 
     override fun onStart() {
         super.onStart()
-        if (list.size == 0) return
+        // Profil reverrouillé par son code (retour après un long moment) : l'écran se ferme, rien à lancer
+        if (list.size == 0 || isFinishing) return
         holdWifi(true)
         initPlayer()
         Bg.main.removeCallbacks(guard)

@@ -6,7 +6,7 @@ import android.view.View
 import android.widget.LinearLayout
 import android.widget.TextView
 
-/** Modifier un profil : grand avatar (OK pour le changer), nom, couleur, langues, suppression. */
+/** Modifier un profil : grand avatar (OK pour le changer), nom, couleur, langues, code à 4 chiffres, suppression. */
 class ProfileEditActivity : BaseActivity() {
 
     private var id = 0L
@@ -77,11 +77,26 @@ class ProfileEditActivity : BaseActivity() {
         rows.action("Langue du contenu", "Chaînes, films et séries affichés pour ce profil.", Profiles.langsLabel(p)) {
             Profiles.chooseLangs(this, p) { paint() }
         }
+        rows.header("Sécurité")
+        val locked = Pin.isSet(p.id)
+        rows.action(
+            "Code à 4 chiffres",
+            if (locked) "Demandé pour ouvrir ou modifier ce profil." else "Protège ce profil : un code sera demandé pour l'ouvrir.",
+            if (locked) "Activé" else "Aucun"
+        ) { Pin.manage(this, p) { paint() } }
         if (Db.profiles(p.sourceId).size > 1) {
             rows.action("Supprimer le profil", "Ses favoris, sa reprise de lecture et ses réglages seront effacés.", danger = true) {
                 Ui.confirm(this, "Supprimer « ${p.name} » ?", "Ses favoris, sa reprise de lecture et ses réglages seront effacés.", "Supprimer") {
                     Db.deleteProfile(p.id)
-                    if (Db.profile == p.id) Db.profiles(p.sourceId).firstOrNull()?.let { Session.selectProfile(it) }
+                    Pin.set(p.id, null)
+                    if (Db.profile == p.id) {
+                        val next = Db.profiles(p.sourceId).firstOrNull()
+                        next?.let { Session.selectProfile(it) }
+                        // Le profil qui prend la place est protégé : on repasse par « Qui regarde ? »
+                        if (next != null && Pin.isSet(next.id) && !Pin.isUnlocked(next.id)) {
+                            startActivity(Intent(this, ProfilesActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TASK))
+                        }
+                    }
                     finish()
                 }
             }

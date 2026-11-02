@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Point du code : anneau vide, rempli quand le chiffre est tapé -->
+<selector xmlns:android="http://schemas.android.com/apk/res/android" android:enterFadeDuration="120">
+    <item android:state_selected="true"><shape android:shape="oval"><solid android:color="#FFFFFF" /></shape></item>
+    <item><shape android:shape="oval"><solid android:color="#00000000" /><stroke android:width="1.5dp" android:color="#B3FFFFFF" /></shape></item>
+</selector>

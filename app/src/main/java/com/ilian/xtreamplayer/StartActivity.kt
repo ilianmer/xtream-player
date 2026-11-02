@@ -297,12 +297,13 @@ class StartActivity : BaseActivity() {
         return true
     }
 
-    /** Plusieurs profils : « Qui regarde ? ». Sinon l'accueil directement. */
+    /** Plusieurs profils, ou profil protégé par un code : « Qui regarde ? ». Sinon l'accueil directement. */
     private fun next() {
         val src = Session.source() ?: return
         if (demoGo(src)) return
         val many = Db.profiles(src.id).size > 1
-        startActivity(Intent(this, if (many) ProfilesActivity::class.java else MainActivity::class.java))
+        val locked = Session.profile()?.let { Pin.isSet(it.id) && !Pin.isUnlocked(it.id) } == true
+        startActivity(Intent(this, if (many || locked) ProfilesActivity::class.java else MainActivity::class.java))
         overridePendingTransition(android.R.anim.fade_in, android.R.anim.fade_out)
         finish()
     }

@@ -310,7 +310,7 @@ object Sheet {
     }
 
     /** Saisie d'un texte (clavier de la télécommande), avec un bouton optionnel « Depuis le téléphone ». */
-    fun input(act: Activity, title: String, value: String, hint: String, onPhone: (() -> Unit)?, onDone: (String) -> Unit) {
+    fun input(act: Activity, title: String, value: String, hint: String, onPhone: (() -> Unit)?, password: Boolean = false, onDone: (String) -> Unit) {
         if (act.isFinishing || act.isDestroyed) return
         val d = act.resources.displayMetrics.density
         val (dlg, panel, _) = base(act, title, null)
@@ -319,7 +319,8 @@ object Sheet {
             setSelection(text.length)
             this.hint = hint
             setSingleLine()
-            inputType = android.text.InputType.TYPE_CLASS_TEXT or android.text.InputType.TYPE_TEXT_FLAG_NO_SUGGESTIONS
+            inputType = android.text.InputType.TYPE_CLASS_TEXT or
+                (if (password) android.text.InputType.TYPE_TEXT_VARIATION_PASSWORD else android.text.InputType.TYPE_TEXT_FLAG_NO_SUGGESTIONS)
             imeOptions = android.view.inputmethod.EditorInfo.IME_ACTION_DONE
             setBackgroundResource(R.drawable.sheet_field_bg)
             setTextColor(act.getColor(R.color.text))
