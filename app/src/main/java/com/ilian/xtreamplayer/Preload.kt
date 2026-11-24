@@ -35,6 +35,15 @@ object Preload {
 
     /** Sport et chaînes de sport : plus long, on n'attend pas la fin pour ouvrir l'appli. */
     fun runSlow(src: Source) {
+        // Index des titres prêt avant la première recherche par acteur (fil à part, en arrière-plan)
+        kotlin.concurrent.thread(isDaemon = true, name = "titres") {
+            try {
+                android.os.Process.setThreadPriority(android.os.Process.THREAD_PRIORITY_BACKGROUND)
+                Thread.sleep(2_000)
+                Session.source()?.let { TitleIndex.warm(it) }
+            } catch (_: Exception) {
+            }
+        }
         try {
             SportChannels.candidates(src.id)
             Sport.get(60_000L)

@@ -71,8 +71,11 @@ object Bg {
     val main = Handler(Looper.getMainLooper())
 
     /** Lance [work] en arrière-plan, puis [done] sur le thread principal si l'écran existe encore. */
-    fun <T> task(owner: Activity, work: () -> T, done: (Result<T>) -> Unit) {
-        pool.execute {
+    fun <T> task(owner: Activity, work: () -> T, done: (Result<T>) -> Unit) = task(owner, pool, work, done)
+
+    /** Pareil, sur un groupe de fils à part (la recherche ne fait jamais la queue derrière l'accueil). */
+    fun <T> task(owner: Activity, executor: java.util.concurrent.Executor, work: () -> T, done: (Result<T>) -> Unit) {
+        executor.execute {
             val r = runCatching { work() }
             main.post {
                 if (!owner.isFinishing && !owner.isDestroyed) {

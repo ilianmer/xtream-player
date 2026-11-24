@@ -14,17 +14,127 @@ import java.util.concurrent.ConcurrentHashMap
 import kotlin.math.abs
 
 /**
- * Index des titres du catalogue, gardé en mémoire : pour chaque film ou série, une empreinte de son titre
- * nettoyé (« FR - Intouchables (2011) 4K » devient « intouchables »). Il permet de retrouver en un instant
- * les dizaines de films d'un acteur, sans relire tout le catalogue à chaque fois. Moins d'1 Mo pour 100 000 titres.
+ * Clé d'un titre pour relier le catalogue aux filmographies : « FR - Intouchables (2011) 4K » donne
+ * « intouchables » et l'année 2011. Mêmes règles que Tmdb.cleanTitle (étiquettes en tête, année, mentions
+ * de qualité ou de langue), mais calculées en un seul passage, sans expressions régulières : 100 000 titres
+ * en une ou deux secondes sur le stick.
+ */
+object TitleKey {
+    private val NOISE = hashSetOf(
+        "4k", "uhd", "fhd", "hd", "sd", "vf", "vff", "vfq", "vostfr", "vo", "multi", "truefrench", "french",
+        "hevc", "x265", "x264", "1080p", "720p", "2160p", "hdr"
+    )
+    private const val PUNCT = "-–|:•★*"
+    /** Au-delà, un nombre fait partie du titre (« Blade Runner 2049 », « 2046 ») : ce n'est pas une année de sortie. */
+    private val LAST_YEAR = java.util.Calendar.getInstance().get(java.util.Calendar.YEAR) + 2
+
+    private fun letters(s: String, from: Int): Int {
+        var j = from
+        while (j < s.length && s[j] in 'a'..'z') j++
+        return j - from
+    }
+
+    private fun blanks(s: String, from: Int): Int {
+        var j = from
+        while (j < s.length && s[j].isWhitespace()) j++
+        return j
+    }
+
+    /**
+     * Fin de l'étiquette qui commence en [i] : « [multi] », « |fr| », « - fr - », « (en) », « fr - », « fr| »,
+     * « fr:titre » ou des signes (« ★ », « - »). -1 s'il n'y en a pas.
+     */
+    private fun tagEnd(s: String, i: Int): Int {
+        val n = s.length
+        val c = s[i]
+        if (c == '[') return s.indexOf(']', i + 1).let { if (it < 0) -1 else it + 1 }
+        if (c == '|') s.indexOf('|', i + 1).let { if (it >= 0) return it + 1 }
+        if (c == '-') {
+            val j = blanks(s, i + 1)
+            val l = letters(s, j)
+            if (l in 2..3) {
+                val k = blanks(s, j + l)
+                if (k < n && s[k] == '-') return k + 1
+            }
+        }
+        if (c == '(') {
+            val l = letters(s, i + 1)
+            return if (l in 2..3 && i + 1 + l < n && s[i + 1 + l] == ')') i + l + 2 else -1
+        }
+        if (c in 'a'..'z') {
+            val l = letters(s, i)
+            if (l !in 2..3) return -1
+            val e = i + l
+            val k = blanks(s, e)
+            if (k + 1 < n && (s[k] == '-' || s[k] == ':' || s[k] == '|') && s[k + 1].isWhitespace()) return blanks(s, k + 1)
+            if (e < n && s[e] == '|') return blanks(s, e + 1)
+            if (l == 2 && e + 1 < n && s[e] == ':' && !s[e + 1].isWhitespace()) return e + 1
+            return -1
+        }
+        if (c in PUNCT) {
+            var j = i
+            while (j < n && s[j] in PUNCT) j++
+            return blanks(s, j)
+        }
+        return -1
+    }
+
+    /** [norm] : titre déjà en minuscules et sans accents. Renvoie la clé et l'année trouvée. */
+    fun of(norm: String): Pair<String, Int?> {
+        // Jusqu'à 4 étiquettes en tête (« |FR| [4K] - … »)
+        var from = 0
+        for (round in 0 until 4) {
+            val i = blanks(norm, from)
+            if (i >= norm.length) break
+            val e = tagEnd(norm, i)
+            if (e <= i) break
+            from = e
+        }
+        val words = ArrayList<String>(8)
+        val sb = StringBuilder()
+        for (p in from until norm.length) {
+            val ch = norm[p]
+            if (ch in 'a'..'z' || ch in '0'..'9') sb.append(ch)
+            else if (sb.isNotEmpty()) {
+                words.add(sb.toString())
+                sb.setLength(0)
+            }
+        }
+        if (sb.isNotEmpty()) words.add(sb.toString())
+        // L'année : le dernier nombre de 1900 à l'an prochain
+        var year: String? = null
+        for (k in words.indices.reversed()) {
+            val w = words[k]
+            if (w.length == 4 && (w.startsWith("19") || w.startsWith("20")) && w[2] in '0'..'9' && w[3] in '0'..'9' && w.toInt() <= LAST_YEAR) {
+                year = w
+                break
+            }
+        }
+        sb.setLength(0)
+        for (w in words) if (w != year && w !in NOISE) sb.append(w)
+        if (sb.isEmpty()) {
+            // Titre fait seulement d'une année ou d'étiquettes (« 1917 », « 2012 ») : le nom entier, sans année
+            for (ch in norm) if (ch in 'a'..'z' || ch in '0'..'9') sb.append(ch)
+            return sb.toString() to null
+        }
+        return sb.toString() to year?.toInt()
+    }
+
+    fun ofTitle(title: String): Pair<String, Int?> = of(normalize(title))
+}
+
+/**
+ * Index des titres du catalogue, gardé en mémoire : pour chaque film ou série, l'empreinte de sa clé de titre.
+ * Il permet de retrouver en un instant les dizaines de films d'un acteur sans relire tout le catalogue.
+ * Moins d'1 Mo pour 100 000 titres, construit en une seconde ou deux au démarrage de l'appli.
  */
 object TitleIndex {
     private class Idx(val stamp: Long, val keys: LongArray)
 
     private val cache = ConcurrentHashMap<String, Idx>()
 
-    /** Empreinte d'un titre : nettoyé, sans accents ni ponctuation. */
-    fun hash(title: String): Int = normalize(Tmdb.cleanTitle(title).first).replace(Rx.NON_ALNUM, "").hashCode()
+    /** Empreinte d'une clé de titre. */
+    fun hash(key: String): Int = key.hashCode()
 
     /** Construit l'index s'il manque ou si le catalogue a été mis à jour. Bloquant. */
     @Synchronized
@@ -33,16 +143,16 @@ object TitleIndex {
         cache[k]?.takeIf { it.stamp == src.lastSync }?.let { return it }
         var arr = LongArray(4096)
         var n = 0
-        Db.titleRows(src.id, kind) { rowid, name ->
+        Db.titleRows(src.id, kind) { rowid, norm ->
             if (n == arr.size) arr = arr.copyOf(arr.size * 2)
-            arr[n++] = (hash(name).toLong() shl 32) or (rowid and 0xFFFFFFFFL)
+            arr[n++] = (hash(TitleKey.of(norm).first).toLong() shl 32) or (rowid and 0xFFFFFFFFL)
         }
         val keys = arr.copyOf(n)
         keys.sort()
         return Idx(src.lastSync, keys).also { cache[k] = it }
     }
 
-    /** Prépare les index des films et des séries (à l'ouverture de la recherche). */
+    /** Prépare les index des films et des séries (au démarrage de l'appli, puis à l'ouverture de la recherche). */
     fun warm(src: Source) {
         try {
             idx(src, Kind.MOVIE)
@@ -102,6 +212,9 @@ object People {
 
     private const val MONTH = 30L * 86_400_000L
     private const val UA = "XtreamPlayer/4 (Android TV; github.com/ilianmer/xtream-player)"
+
+    /** Fils réservés à la recherche : elle ne fait jamais la queue derrière l'accueil (sport, Top 10…). */
+    val pool: java.util.concurrent.ExecutorService = Pools.fixed(4, "recherche")
 
     private fun enc(s: String) = URLEncoder.encode(s, "UTF-8")
 
@@ -379,35 +492,29 @@ object People {
             }
             // 2. Par le titre (français ou original) et l'année, grâce à l'index des titres
             if (rest.isEmpty()) continue
-            val wanted = HashMap<Int, MutableList<Credit>>()
+            val wanted = HashMap<String, MutableList<Credit>>()
             for (c in rest) {
                 for (t in listOfNotNull(c.title, c.original)) {
-                    if (normalize(t).replace(Rx.NON_ALNUM, "").length < 3) continue
-                    wanted.getOrPut(TitleIndex.hash(t)) { ArrayList() }.add(c)
+                    val k = TitleKey.ofTitle(t).first
+                    if (k.length < 3) continue
+                    wanted.getOrPut(k) { ArrayList() }.add(c)
                 }
             }
             val items = try {
-                Db.byRowids(src.id, kind, TitleIndex.rowids(src, kind, wanted.keys))
+                Db.byRowids(src.id, kind, TitleIndex.rowids(src, kind, wanted.keys.map { TitleIndex.hash(it) }))
             } catch (_: Exception) {
                 emptyList()
             }
             for (item in items) {
-                val (name, y) = Tmdb.cleanTitle(item.name)
-                val h = TitleIndex.hash(item.name)
-                val year = y?.toIntOrNull()
-                val c = wanted[h]?.firstOrNull { c ->
-                    val same = listOfNotNull(c.title, c.original).any { key(it) == key(name) }
-                    same && (year == null || c.year == null || abs(year - c.year) <= 1)
-                } ?: continue
+                val (k, year) = TitleKey.ofTitle(item.name)
+                val c = wanted[k]?.firstOrNull { c -> year == null || c.year == null || abs(year - c.year) <= 1 } ?: continue
                 found.putIfAbsent(dedupeKey(item), item to (c.year ?: year ?: 0))
             }
         }
         return found.values.sortedByDescending { it.second }.map { it.first }.take(80)
     }
 
-    private fun key(title: String) = normalize(Tmdb.cleanTitle(title).first).replace(Rx.NON_ALNUM, "")
-
-    private fun dedupeKey(i: Item) = i.kind.name + ":" + (i.tmdb?.takeIf { it.isNotBlank() && it != "0" } ?: key(i.name))
+    private fun dedupeKey(i: Item) = i.kind.name + ":" + (i.tmdb?.takeIf { it.isNotBlank() && it != "0" } ?: TitleKey.ofTitle(i.name).first)
 
     // ---------- Distribution d'une fiche ----------
 

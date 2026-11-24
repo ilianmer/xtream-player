@@ -38,7 +38,8 @@ class SearchActivity : BaseActivity() {
     private var token = 0
     private val run = Runnable { search() }
 
-    // Recherche par personne
+    // Recherche par personne (lu aussi depuis les fils de recherche : une saisie dépassée s'arrête tôt)
+    @Volatile
     private var personToken = 0
     private var worksToken = 0
     private var titlesFound = 0
@@ -71,7 +72,7 @@ class SearchActivity : BaseActivity() {
         rvPeople.itemAnimator = null
         Fx.lockRow(rvPeople)
         // Index des titres préparé pendant qu'on tape (recherche par acteur instantanée ensuite)
-        Bg.task(this, { TitleIndex.warm(src) }) { }
+        Bg.task(this, People.pool, { TitleIndex.warm(src) }) { }
 
         et.addTextChangedListener(object : TextWatcher {
             override fun beforeTextChanged(s: CharSequence?, start: Int, count: Int, after: Int) {}
@@ -154,7 +155,7 @@ class SearchActivity : BaseActivity() {
             return
         }
         hint.text = "Recherche…"
-        Bg.task(this, {
+        Bg.task(this, TITLES, {
             Triple(
                 Db.page(src.id, Kind.LIVE, null, q, 0, 40),
                 Db.page(src.id, Kind.MOVIE, null, q, 0, 60),
@@ -205,12 +206,15 @@ class SearchActivity : BaseActivity() {
         if (!People.eligible(q)) return
         val t = ++personToken
         val want = forcedPerson
-        Bg.task(this, {
+        Bg.task(this, People.pool, {
+            // Texte changé entre-temps : cette recherche ne sert plus, on libère le fil
+            if (t != personToken) return@task null
             val cands = People.candidates(q)
             val ordered = if (want != null) cands.sortedByDescending { normalize(it.name) == normalize(want) } else cands
             var chosen: People.Person? = null
             var found: List<Item> = emptyList()
             for (p in ordered.take(3)) {
+                if (t != personToken) return@task null
                 val w = People.works(src, p)
                 if (w.isNotEmpty()) {
                     chosen = p
@@ -261,7 +265,7 @@ class SearchActivity : BaseActivity() {
         }
         val t = ++worksToken
         works.title("${p.title} · recherche…")
-        Bg.task(this, { People.works(src, p) }) { r ->
+        Bg.task(this, People.pool, { People.works(src, p) }) { r ->
             if (t != worksToken) return@task
             showWorks(p, r.getOrNull().orEmpty())
             if (focusWorks) focusWorks()
@@ -447,5 +451,8 @@ class SearchActivity : BaseActivity() {
         const val EXTRA_QUERY = "q"
         /** Nom d'une personne (depuis une fiche) : ses films et séries s'affichent directement. */
         const val EXTRA_PERSON = "person"
+
+        /** Recherche dans les titres : un fil à elle, la saisie la plus récente remplace celle en attente. */
+        private val TITLES = Pools.bounded(1, 1, "recherche-titres")
     }
 }

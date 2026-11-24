@@ -20,6 +20,7 @@ import androidx.media3.common.MediaItem
 import androidx.media3.common.MimeTypes
 import androidx.media3.common.PlaybackException
 import androidx.media3.common.Player
+import androidx.media3.common.Timeline
 import androidx.media3.common.util.UnstableApi
 import androidx.media3.datasource.DefaultDataSource
 import androidx.media3.datasource.DefaultHttpDataSource
@@ -644,7 +645,7 @@ class PlayerActivity : BaseActivity() {
                     retries = 0
                     if (readyAt == 0L) {
                         readyAt = SystemClock.elapsedRealtime()
-                        readyPos = player?.currentPosition ?: 0L
+                        readyPos = player?.let { streamPos(it) } ?: 0L
                     }
                 }
                 if (state == Player.STATE_BUFFERING && readyAt > 0L && isLive) noteStall()
@@ -712,6 +713,22 @@ class PlayerActivity : BaseActivity() {
         else -> 14_000L
     }
 
+    private val tlWindow = Timeline.Window()
+
+    /**
+     * Temps lu depuis le début du flux. En HLS, p.currentPosition se compte depuis le début de la fenêtre de
+     * la playlist, qui avance avec le direct : elle reste presque fixe et le lecteur croyait prendre du retard
+     * (« retour au direct » toutes les 20 à 30 s). On y ajoute la place de la fenêtre dans le flux.
+     * En TS, ce décalage vaut 0.
+     */
+    private fun streamPos(p: Player): Long {
+        val tl = p.currentTimeline
+        val i = p.currentMediaItemIndex
+        if (tl.isEmpty || i >= tl.windowCount) return p.currentPosition
+        val offset = tl.getWindow(i, tlWindow).positionInFirstPeriodMs
+        return if (offset == C.TIME_UNSET) p.currentPosition else p.currentPosition + offset
+    }
+
     /**
      * Vérifie le direct chaque seconde : chargement qui n'en finit pas, image figée, position bloquée,
      * retard accumulé sur le direct après des coupures. Dans chaque cas : reconnexion immédiate
@@ -733,7 +750,7 @@ class PlayerActivity : BaseActivity() {
                 }
                 Player.STATE_READY -> {
                     bufferingSince = 0L
-                    val pos = p.currentPosition
+                    val pos = streamPos(p)
                     if (p.isPlaying) {
                         if (pos != lastPos) {
                             lastPos = pos

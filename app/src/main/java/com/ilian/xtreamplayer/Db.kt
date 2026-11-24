@@ -466,9 +466,9 @@ object Db {
         return chunk.mapNotNull { byId[it] }
     }
 
-    /** Parcourt les titres d'un type (numéro de ligne, nom), pour l'index des titres. */
+    /** Parcourt les titres d'un type (numéro de ligne, nom déjà normalisé), pour l'index des titres. */
     fun titleRows(src: Long, kind: Kind, fn: (Long, String) -> Unit) {
-        db.rawQuery("SELECT rowid, name FROM items WHERE source_id=? AND kind=?", arrayOf(src.toString(), kind.name)).use { c ->
+        db.rawQuery("SELECT rowid, norm FROM items WHERE source_id=? AND kind=?", arrayOf(src.toString(), kind.name)).use { c ->
             while (c.moveToNext()) fn(c.getLong(0), c.getString(1) ?: "")
         }
     }
